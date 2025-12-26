@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"logwolf-logger/data"
+	"logwolf-toolbox/data"
 	"net"
 	"net/http"
 	"net/rpc"

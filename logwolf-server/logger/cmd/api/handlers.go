@@ -1,17 +1,12 @@
 package main
 
 import (
-	"logwolf-logger/data"
+	"logwolf-toolbox/data"
 	"net/http"
 )
 
-type JSONPayload struct {
-	Name string `json:"name"`
-	Data string `json:"data"`
-}
-
 func (app *Config) WriteLog(w http.ResponseWriter, r *http.Request) {
-	var requestPayload JSONPayload
+	var requestPayload data.JSONLogPayload
 	_ = app.readJSON(w, r, requestPayload)
 
 	event := data.LogEntry{Name: requestPayload.Name, Data: requestPayload.Data}

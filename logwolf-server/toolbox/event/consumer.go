@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"logwolf-toolbox/data"
 	"net/rpc"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -15,13 +16,8 @@ type Consumer struct {
 }
 
 type Payload struct {
-	Action string     `json:"action"`
-	Log    LogPayload `json:"log,omitempty"`
-}
-
-type LogPayload struct {
-	Name string `json:"name"`
-	Data string `json:"data"`
+	Action string              `json:"action"`
+	Log    data.JSONLogPayload `json:"log,omitempty"`
 }
 
 func NewConsumer(conn *amqp.Connection) (Consumer, error) {
@@ -103,12 +99,7 @@ func handlePayload(p Payload) {
 	}
 }
 
-type RPCLogPayload struct {
-	Name string
-	Data string
-}
-
-func logEvent(p LogPayload) error {
+func logEvent(p data.JSONLogPayload) error {
 	log.Printf("Logging event %s via RPC", p.Name)
 
 	client, err := rpc.Dial("tcp", "logger:5001")
@@ -116,7 +107,7 @@ func logEvent(p LogPayload) error {
 		return err
 	}
 
-	payload := RPCLogPayload(p)
+	payload := data.RPCLogPayload(p)
 
 	var result string
 	err = client.Call("RPCServer.LogInfo", payload, &result)

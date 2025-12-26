@@ -2,17 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
 	"net/http"
 )
 
-type LogPayload struct {
-	Name string `json:"name"`
-	Data string `json:"data"`
-}
-
 func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
-	var payload LogPayload
+	var payload data.JSONLogPayload
 
 	err := app.readJSON(w, r, &payload)
 	if err != nil {
@@ -21,7 +17,7 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Push to queue
-	evp := event.Payload{Action: "log", Log: event.LogPayload(payload)}
+	evp := event.Payload{Action: "log", Log: data.JSONLogPayload(payload)}
 
 	emitter, err := event.NewEmitter(app.Rabbit)
 	if err != nil {
