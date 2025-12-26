@@ -1,0 +1,54 @@
+version: '3'
+
+services:
+  broker:
+    build:
+      context: .
+      dockerfile: ./broker/broker.dockerfile
+    restart: always
+    ports:
+      - '8080:80'
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  logger:
+    build:
+      context: .
+      dockerfile: ./logger/logger.dockerfile
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  listener:
+    build:
+      context: .
+      dockerfile: ./listener/listener.dockerfile
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  mongo:
+    image: 'mongo:4.2.16-bionic'
+    ports:
+      - "27017:27017"
+    deploy:
+      mode: replicated
+      replicas: 1
+    environment:
+      MONGO_INITDB_DATABASE: logs
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - ./db-data/mongo/:/data/db
+
+  rabbitmq:
+    image: 'rabbitmq:3.9-alpine'
+    ports:
+      - "5672:5672"
+    deploy:
+      mode: replicated
+      replicas: 1
+    volumes:
+      - ./db-data/rabbitmq/:/var/lib/rabbitmq/
