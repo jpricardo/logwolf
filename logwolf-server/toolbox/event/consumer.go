@@ -111,7 +111,7 @@ type RPCLogPayload struct {
 func logEvent(p LogPayload) error {
 	log.Printf("Logging event %s via RPC", p.Name)
 
-	client, err := rpc.Dial("tcp", "logger-service:5001")
+	client, err := rpc.Dial("tcp", "logger:5001")
 	if err != nil {
 		return err
 	}
