@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
@@ -38,4 +39,29 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+}
+
+func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
+	var requestBody data.LogEntryFilter
+	err := app.readJSON(w, r, &requestBody)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	collection := client.Database("logs").Collection("logs")
+	docs, err := collection.Find(context.TODO(), requestBody)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	var data []data.LogEntry
+	err = docs.All(context.TODO(), &data)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!", Data: data})
 }
