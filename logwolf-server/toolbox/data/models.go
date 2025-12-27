@@ -28,13 +28,11 @@ type LogEntry struct {
 }
 
 type LogEntryFilter struct {
-	ID        string    `bson:"_id,omitempty" json:"id,omitempty"`
-	Name      string    `bson:"name,omitempty" json:"name,omitempty"`
-	Data      string    `bson:"data,omitempty" json:"data,omitempty"`
-	Severity  string    `bson:"severity,omitempty" json:"severity,omitempty"`
-	Tags      []string  `bson:"tags,omitempty" json:"tags,omitempty"`
-	CreatedAt time.Time `bson:"created_at,omitempty" json:"created_at,omitempty"`
-	UpdatedAt time.Time `bson:"updated_at,omitempty" json:"updated_at,omitempty"`
+	ID       string   `bson:"_id,omitempty" json:"id,omitempty"`
+	Name     string   `bson:"name,omitempty" json:"name,omitempty"`
+	Data     string   `bson:"data,omitempty" json:"data,omitempty"`
+	Severity string   `bson:"severity,omitempty" json:"severity,omitempty"`
+	Tags     []string `bson:"tags,omitempty" json:"tags,omitempty"`
 }
 
 func New(mongo *mongo.Client) Models {

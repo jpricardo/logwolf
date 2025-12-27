@@ -13,3 +13,5 @@ type RPCLogPayload struct {
 	Severity string
 	Tags     []string
 }
+
+type RPCLogEntryFilter LogEntryFilter

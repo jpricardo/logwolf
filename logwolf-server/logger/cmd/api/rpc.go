@@ -30,3 +30,23 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	*resp = fmt.Sprintf("Processed payload via RPC: %s", p.Name)
 	return nil
 }
+
+func (r *RPCServer) GetLogs(f data.RPCLogEntryFilter, resp *[]data.LogEntry) error {
+	log.Printf("Getting logs: %+v\n", f)
+
+	collection := client.Database("logs").Collection("logs")
+	docs, err := collection.Find(context.TODO(), f)
+	if err != nil {
+		log.Println("Error getting logs:", err)
+		return err
+	}
+
+	err = docs.All(context.TODO(), resp)
+	if err != nil {
+		log.Println("Error getting logs:", err)
+		return err
+	}
+
+	log.Printf("Logs found via RPC: %d\n", len(*resp))
+	return nil
+}

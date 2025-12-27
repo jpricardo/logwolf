@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"logwolf-toolbox/data"
@@ -10,16 +9,11 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
-	port     = "80"
-	mongoURL = "mongodb://mongo:27017"
+	port = "80"
 )
-
-var client *mongo.Client
 
 type Config struct {
 	Rabbit *amqp.Connection
@@ -27,18 +21,6 @@ type Config struct {
 }
 
 func main() {
-	// Mongo
-	mongoClient, err := connectToMongo()
-	client = mongoClient
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	defer func() {
-		if err = client.Disconnect(ctx); err != nil {
-			panic(err)
-		}
-	}()
 
 	// RabbitMQ
 	conn, err := connectToRabbitMQ()
@@ -49,7 +31,6 @@ func main() {
 
 	app := Config{
 		Rabbit: conn,
-		Models: data.New(client),
 	}
 
 	log.Printf("Starting server on port %s\n", port)
@@ -93,17 +74,4 @@ func connectToRabbitMQ() (*amqp.Connection, error) {
 	}
 
 	return connection, nil
-}
-
-func connectToMongo() (*mongo.Client, error) {
-	clientOptions := options.Client().ApplyURI(mongoURL)
-	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
-
-	c, err := mongo.Connect(context.TODO(), clientOptions)
-	if err != nil {
-		log.Println("Error connecting to DB:", err)
-		return nil, err
-	}
-
-	return c, nil
 }

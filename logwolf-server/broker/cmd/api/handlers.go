@@ -1,11 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
 	"net/http"
+	"net/rpc"
 )
 
 func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
@@ -42,26 +42,22 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
-	var requestBody data.LogEntryFilter
-	err := app.readJSON(w, r, &requestBody)
+	client, err := rpc.Dial("tcp", "logger:5001")
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 
-	collection := client.Database("logs").Collection("logs")
-	docs, err := collection.Find(context.TODO(), requestBody)
+	var result []data.LogEntry
+	err = client.Call("RPCServer.GetLogs", struct{}{}, &result) // TODO - Filters
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 
-	var data []data.LogEntry
-	err = docs.All(context.TODO(), &data)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
+	if result == nil {
+		result = []data.LogEntry{}
 	}
 
-	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!", Data: data})
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
 }
