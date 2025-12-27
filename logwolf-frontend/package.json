@@ -1,0 +1,50 @@
+{
+	"name": "logwolf-frontend",
+	"private": true,
+	"version": "1.0.0",
+	"description": "Frontend app for Logwolf",
+	"keywords": [
+		"logwolf"
+	],
+	"homepage": "https://github.com/jpricardo/logwolf#readme",
+	"bugs": {
+		"url": "https://github.com/jpricardo/logwolf/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jpricardo/logwolf.git"
+	},
+	"author": "jpricardo",
+	"type": "module",
+	"scripts": {
+		"build": "react-router build",
+		"dev": "react-router dev",
+		"start": "react-router-serve ./build/server/index.js",
+		"typecheck": "react-router typegen && tsc"
+	},
+	"dependencies": {
+		"@react-router/node": "7.10.1",
+		"@react-router/serve": "7.10.1",
+		"class-variance-authority": "^0.7.1",
+		"clsx": "^2.1.1",
+		"isbot": "^5.1.31",
+		"lucide-react": "^0.562.0",
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3",
+		"react-router": "7.10.1",
+		"tailwind-merge": "^3.4.0"
+	},
+	"devDependencies": {
+		"@react-router/dev": "7.10.1",
+		"@tailwindcss/vite": "^4.1.13",
+		"@types/node": "^22",
+		"@types/react": "^19.2.7",
+		"@types/react-dom": "^19.2.3",
+		"prettier": "^3.7.4",
+		"tailwindcss": "^4.1.13",
+		"tw-animate-css": "^1.4.0",
+		"typescript": "^5.9.2",
+		"vite": "^7.1.7",
+		"vite-tsconfig-paths": "^5.1.4"
+	}
+}
