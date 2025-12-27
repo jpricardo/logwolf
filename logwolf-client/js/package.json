@@ -1,0 +1,44 @@
+{
+	"name": "logwolf-client-js",
+	"version": "1.0.0",
+	"description": "JavaScript client for Logwolf",
+	"keywords": [
+		"logwolf"
+	],
+	"homepage": "https://github.com/jpricardo/logwolf#readme",
+	"bugs": {
+		"url": "https://github.com/jpricardo/logwolf/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jpricardo/logwolf.git"
+	},
+	"license": "ISC",
+	"author": "jpricardo",
+	"type": "module",
+	"main": "./dist/logwolf-client.js",
+	"types": "./dist/logwolf-client.d.ts",
+	"files": [
+		"./dist/logwolf-client.d.ts",
+		"./dist/logwolf-client.js",
+		"./dist/logwolf-client.js.map"
+	],
+	"directories": {
+		"lib": "lib"
+	},
+	"scripts": {
+		"build": "tsc && rollup -c",
+		"test": "vitest",
+		"coverage": "vitest run --coverage"
+	},
+	"devDependencies": {
+		"@rollup/plugin-typescript": "^12.3.0",
+		"@types/node": "^25.0.3",
+		"@vitest/coverage-v8": "^4.0.16",
+		"rollup": "^4.54.0",
+		"rollup-plugin-dts": "^6.3.0",
+		"tslib": "^2.8.1",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.16"
+	}
+}
