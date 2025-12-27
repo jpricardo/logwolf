@@ -3,7 +3,7 @@ import dts from 'rollup-plugin-dts';
 
 const config = [
 	{
-		input: 'dist/index.js',
+		input: 'dist/lib/index.js',
 		output: {
 			file: 'dist/logwolf-client.js',
 			format: 'cjs',
@@ -14,7 +14,7 @@ const config = [
 	},
 
 	{
-		input: 'dist/index.d.ts',
+		input: 'dist/lib/index.d.ts',
 		output: {
 			file: 'dist/logwolf-client.d.ts',
 			format: 'es',
