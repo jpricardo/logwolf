@@ -1,7 +1,13 @@
 import { Logwolf } from './client';
 import { LogwolfEvent } from './event';
 
-const mockFetch = vi.fn().mockReturnValue(new Promise((resolve) => resolve(0)));
+const mockFetch = vi.fn().mockReturnValue(
+	new Promise((resolve) => {
+		return resolve({
+			json: vi.fn().mockResolvedValue({ error: false }),
+		});
+	}),
+);
 
 vi.stubGlobal('fetch', mockFetch);
 
@@ -23,5 +29,15 @@ describe('Logwolf', () => {
 
 		expect(mockFetch).toHaveBeenCalled();
 		expect(mockFetch).toHaveBeenCalledWith(new URL('/posts', testUrl), { method: 'POST', body: ev.toJson() });
+	});
+
+	it('should get events correctly', () => {
+		const testUrl = 'http://test.url';
+		const client = new Logwolf(testUrl);
+
+		client.getEvents();
+
+		expect(mockFetch).toHaveBeenCalled();
+		expect(mockFetch).toHaveBeenCalledWith(new URL('/posts', testUrl), { method: 'GET' });
 	});
 });
