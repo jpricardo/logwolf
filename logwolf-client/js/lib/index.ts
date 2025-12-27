@@ -1,7 +1,3 @@
-export function hello() {
-	return 'world';
-}
-
 export * from './client';
 export * from './event';
 
