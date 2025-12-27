@@ -1,5 +1,6 @@
 import { Separator } from '../ui/separator';
 import { SidebarTrigger } from '../ui/sidebar';
+import { ThemePicker } from './theme-picker';
 
 type Props = { title: string };
 export function AppHeader({ title }: Props) {
@@ -10,7 +11,11 @@ export function AppHeader({ title }: Props) {
 
 				<Separator orientation='vertical' className='mx-2 data-[orientation=vertical]:h-4' />
 
-				<span>{title}</span>
+				<div className='w-full flex flex-row items-center justify-between'>
+					<span>{title}</span>
+
+					<ThemePicker />
+				</div>
 			</div>
 		</header>
 	);
