@@ -16,7 +16,7 @@ export class Api {
 	static async getLogs() {
 		const url = new URL('/logs', this.apiUrl);
 		const res = await fetch(url, { method: 'GET' })
-			.then((r) => r.json() as Promise<ApiResponse<Log[]>>)
+			.then<ApiResponse<Log[]>>((r) => r.json())
 			.then((r) => {
 				if (r.error) {
 					throw new Error(r.message);
@@ -26,5 +26,20 @@ export class Api {
 			});
 
 		return res;
+	}
+
+	static async getLog(id: string) {
+		const url = new URL('/logs', this.apiUrl);
+		const res = await fetch(url, { method: 'GET' })
+			.then<ApiResponse<Log[]>>((r) => r.json())
+			.then((r) => {
+				if (r.error) {
+					throw new Error(r.message);
+				}
+
+				return r.data;
+			});
+
+		return res.find((i) => i.id === id);
 	}
 }

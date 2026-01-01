@@ -4,5 +4,9 @@ export default [
 	index('pages/home/index.tsx'),
 	route('auth', 'pages/auth/index.tsx'),
 
-	layout('pages/layout.tsx', [route('dashboard', 'pages/dashboard/index.tsx')]),
+	layout('pages/layout.tsx', [
+		route('dashboard', 'pages/dashboard/index.tsx'),
+		route('events', 'pages/events/index.tsx'),
+		route('events/:id', 'pages/events/details/index.tsx'),
+	]),
 ] satisfies RouteConfig;

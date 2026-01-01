@@ -1,4 +1,4 @@
-import { LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, ScrollText } from 'lucide-react';
 import type { Route } from '../../+types/root';
 import {
 	Sidebar,
@@ -18,6 +18,12 @@ const items = [
 		title: 'Dashboard',
 		url: '/dashboard',
 		icon: LayoutDashboard,
+	},
+
+	{
+		title: 'Events',
+		url: '/events',
+		icon: ScrollText,
 	},
 ] as const;
 
