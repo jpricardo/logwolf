@@ -18,9 +18,7 @@ const maxAmt = 20;
 
 type Props = { events: Event[] };
 export function EventsTable({ events }: Props) {
-	const data = events
-		.toSorted((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-		.slice(0, maxAmt);
+	const data = events.slice(0, maxAmt);
 
 	return (
 		<Table>
