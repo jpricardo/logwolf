@@ -31,7 +31,6 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
 	const [theme, setTheme] = useLocalStorage(storageKey, defaultTheme);
 
-	// TODO - Solve FOUC
 	useEffect(() => {
 		const root = window.document.documentElement;
 
@@ -62,7 +61,7 @@ export function ThemeProvider({
 
 	return (
 		<ThemeProviderContext.Provider {...props} value={value}>
-			{children}
+			{typeof window !== 'undefined' && children}
 		</ThemeProviderContext.Provider>
 	);
 }
