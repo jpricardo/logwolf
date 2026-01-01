@@ -3,15 +3,12 @@ import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/ca
 import { cn } from '~/lib/utils';
 
 type Props = React.ComponentProps<typeof Card> & { events: Event[] };
-export function AverageDuration({ className = '', events, ...props }: Props) {
-	const total = events.reduce((acc, l) => acc + (l.data.duration ?? 0), 0);
-	const avg = total > 0 ? total / events.length : '-';
-
+export function TotalEvents({ className = '', events, ...props }: Props) {
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
-				<CardDescription>Average duration</CardDescription>
-				<CardTitle className='text-3xl'>{avg}</CardTitle>
+				<CardDescription>Total events</CardDescription>
+				<CardTitle className='text-3xl'>{events.length}</CardTitle>
 			</CardHeader>
 		</Card>
 	);

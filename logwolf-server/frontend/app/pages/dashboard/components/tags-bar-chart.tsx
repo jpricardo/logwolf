@@ -1,18 +1,18 @@
 import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 
+import type { Event } from '~/api/events';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '~/components/ui/chart';
-import type { Log } from '~/lib/api';
 
 const maxBarAmt = 5;
 
-type Props = { logs: Log[] };
-export function TagsBarChart({ logs }: Props) {
-	const tags = Array.from(new Set(logs.flatMap((l) => l.tags)));
+type Props = { events: Event[] };
+export function TagsBarChart({ events }: Props) {
+	const tags = Array.from(new Set(events.flatMap((l) => l.tags)));
 
 	const data = tags
 		.reduce<{ tag: string; ammount: number }[]>((acc, curr) => {
-			const amt = logs.filter((l) => l.tags.includes(curr)).length;
+			const amt = events.filter((l) => l.tags.includes(curr)).length;
 			return [...acc, { tag: curr, ammount: amt }];
 		}, [])
 		.toSorted((a, b) => b.ammount - a.ammount)

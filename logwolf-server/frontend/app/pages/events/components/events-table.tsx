@@ -1,6 +1,7 @@
 import { MoreHorizontal } from 'lucide-react';
 import { Link } from 'react-router';
 
+import type { Event } from '~/api/events';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import {
@@ -12,13 +13,12 @@ import {
 	DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
-import type { Log } from '~/lib/api';
 
 const maxAmt = 20;
 
-type Props = { logs: Log[] };
-export function LogsTable({ logs }: Props) {
-	const data = logs
+type Props = { events: Event[] };
+export function EventsTable({ events }: Props) {
+	const data = events
 		.toSorted((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 		.slice(0, maxAmt);
 

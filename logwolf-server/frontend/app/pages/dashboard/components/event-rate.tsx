@@ -1,5 +1,5 @@
+import type { Event } from '~/api/events';
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
-import type { Log } from '~/lib/api';
 import { locale } from '~/lib/locale';
 import { cn } from '~/lib/utils';
 
@@ -8,12 +8,12 @@ const minutes = hours * 60;
 const seconds = minutes * 60;
 const ms = seconds * 1000;
 
-type Props = React.ComponentProps<typeof Card> & { logs: Log[] };
-export function LogRate({ className = '', logs, ...props }: Props) {
+type Props = React.ComponentProps<typeof Card> & { events: Event[] };
+export function EventRate({ className = '', events, ...props }: Props) {
 	const end = new Date().getTime();
 	const start = new Date().setTime(end - ms);
 
-	const data = logs.filter((l) => {
+	const data = events.filter((l) => {
 		const time = new Date(l.created_at).getTime();
 		return time >= start && time <= end;
 	});
@@ -21,7 +21,7 @@ export function LogRate({ className = '', logs, ...props }: Props) {
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
-				<CardDescription>Log rate</CardDescription>
+				<CardDescription>Event rate</CardDescription>
 				<CardTitle className='text-3xl'>
 					~{(data.length / minutes).toLocaleString(locale, { maximumFractionDigits: 2 })} TPM
 				</CardTitle>

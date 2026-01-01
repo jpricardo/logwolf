@@ -1,11 +1,11 @@
 import { redirect } from 'react-router';
 import type { Route } from './+types';
 
+import { EventsApi } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Badge } from '~/components/ui/badge';
 import { Card, CardContent } from '~/components/ui/card';
 import { Section } from '~/components/ui/section';
-import { Api } from '~/lib/api';
 import { InfoItem } from './components/info-item';
 import { JSONBlock } from './components/json-block';
 
@@ -14,7 +14,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
-	const log = await Api.getLog(params.id);
+	const log = await EventsApi.getOne(params.id);
 	if (!log) throw redirect('/events');
 
 	return log;

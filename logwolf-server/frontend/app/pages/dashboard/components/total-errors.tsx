@@ -1,22 +1,22 @@
+import type { Event } from '~/api/events';
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
-import type { Log } from '~/lib/api';
 import { formatPercent } from '~/lib/format';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { logs: Log[] };
-export function TotalErrors({ className = '', logs, ...props }: Props) {
-	const errors = logs.filter((l) => l.severity === 'error');
+type Props = React.ComponentProps<typeof Card> & { events: Event[] };
+export function TotalErrors({ className = '', events, ...props }: Props) {
+	const errors = events.filter((l) => l.severity === 'error');
 
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
-				<CardDescription>Error logs</CardDescription>
+				<CardDescription>Error events</CardDescription>
 				<CardTitle className='text-3xl'>{errors.length}</CardTitle>
 			</CardHeader>
 
 			<CardFooter>
 				<span className='text-muted-foreground'>
-					~{formatPercent(errors.length / logs.length)} of the logs are errors!
+					~{formatPercent(errors.length / events.length)} of events are errors!
 				</span>
 			</CardFooter>
 		</Card>

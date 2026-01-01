@@ -1,4 +1,4 @@
-export type Log = {
+export type Event = {
 	id: string;
 	name: string;
 	severity: string;
@@ -10,13 +10,13 @@ export type Log = {
 
 export type ApiResponse<T> = { message: string } & ({ error: true } | { error: false; data: T });
 
-export class Api {
+export class EventsApi {
 	static readonly apiUrl = process.env.API_URL;
 
-	static async getLogs() {
+	static async getAll() {
 		const url = new URL('/logs', this.apiUrl);
 		const res = await fetch(url, { method: 'GET' })
-			.then<ApiResponse<Log[]>>((r) => r.json())
+			.then<ApiResponse<Event[]>>((r) => r.json())
 			.then((r) => {
 				if (r.error) {
 					throw new Error(r.message);
@@ -28,10 +28,10 @@ export class Api {
 		return res;
 	}
 
-	static async getLog(id: string) {
+	static async getOne(id: string) {
 		const url = new URL('/logs', this.apiUrl);
 		const res = await fetch(url, { method: 'GET' })
-			.then<ApiResponse<Log[]>>((r) => r.json())
+			.then<ApiResponse<Event[]>>((r) => r.json())
 			.then((r) => {
 				if (r.error) {
 					throw new Error(r.message);
