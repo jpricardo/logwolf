@@ -1,104 +1,79 @@
 # Logwolf Server
 
-**Logwolf** is a distributed log aggregation system built with Go. It demonstrates a microservices architecture where ingestion is decoupled from storage, and all database operations are centralized in a single service accessed via RPC.
+## Overview
 
-## Architecture
-
-The system is composed of three main Go services and a shared library, orchestrating data flow through **HTTP**, **AMQP (RabbitMQ)**, and **RPC (TCP)**.
-
-### Services Overview
-
-| Service      | Role           | Description                                                                                                                     |
-| ------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Broker**   | API Gateway    | The public-facing entry point (HTTP). It accepts log submissions and queries. It does not touch the database directly.          |
-| **Listener** | Queue Consumer | An asynchronous worker that consumes messages from RabbitMQ and forwards them to the Logger for storage.                        |
-| **Logger**   | Storage Engine | The centralized RPC Server that owns the MongoDB connection. It handles both writing (from Listener) and reading (from Broker). |
-| **Toolbox**  | Shared Lib     | Contains shared data models, RabbitMQ configuration, and JSON helpers.                                                          |
+- **logwolf** is a containerized logging platform composed of a React-based `frontend`, a Go `broker` API, `logger` and `listener` services, and infrastructure services (`mongo`, `rabbitmq`) used for persistence and messaging.
+- This repository contains both the server-side services (under logwolf-server) and the client app (under frontend).
 
 ---
 
-## Data Flow
+## 🔧 Quick Start (Full stack with Docker Compose)
 
-### 1. Log Ingestion (Asynchronous Write)
+1. Build and start everything:
+   - `docker-compose up --build -d`
+2. Open services:
+   - Frontend: http://localhost:3000
+   - Broker API: http://localhost:8080
+3. Stop:
+   - `docker-compose down`
 
-This path is optimized for high throughput. The Broker accepts the request immediately, while processing happens in the background.
+Ports exposed by the compose stack:
 
-1. **Client Request**: User sends `POST /logs` to the **Broker**.
-2. **Queue Push**: The **Broker** pushes the payload to the `logs_topic` exchange in **RabbitMQ** and responds with `202 Accepted`.
-3. **Consumption**: The **Listener** service receives the message from the queue.
-4. **RPC Call**: The Listener dials the **Logger** via TCP (`logger:5001`) and calls the `RPCServer.LogInfo` method.
-5. **Storage**: The **Logger** inserts the entry into **MongoDB**.
+- Frontend: 3000
+- Broker (API): 8080
+- MongoDB: 27017
+- RabbitMQ: 5672
 
-### 2. Log Retrieval (Synchronous Read)
-
-This path allows the Broker to retrieve data without connecting to the database itself.
-
-1. **Client Request**: User sends `GET /logs` to the **Broker**.
-2. **RPC Call**:
-
-- The **Broker** dials the **Logger** via TCP (`logger:5001`).
-- It executes the `RPCServer.GetLogs` method.
-
-3. **Database Query**: The **Logger** queries **MongoDB** and returns the results to the Broker.
-4. **Response**: The Broker formats the data as JSON and sends it to the client.
+> Note: Docker Compose config sets `API_URL` for the `frontend` to `http://broker:80/` when running the stack.
 
 ---
 
-## Technical Stack
+## 🚀 Frontend (developer notes)
 
-- **Language**: Go (Golang) 1.25
-- **Communication**:
-- **RPC**: Native Go `net/rpc` for inter-service communication (Broker Logger, Listener Logger).
-- **AMQP**: `rabbitmq/amqp091-go` for the message queue.
-- **REST**: `go-chi/chi` for the HTTP API.
-- **Database**: MongoDB (Official `mongo-driver`).
+- Path: frontend
+- Dev server:
+  - `cd logwolf-server/frontend`
+  - `npm install`
+  - `npm run dev` (defaults to `http://localhost:5173`)
+  - Edit .env to set `API_URL` (defaults to `http://localhost:8080/`)
+- Build for production:
+  - `npm run build`
+  - The build output is under `build/` (contains `client/` and `server/` artifacts)
+- Docker:
+  - `docker build -t logwolf-frontend ./frontend`
+  - `docker run -p 3000:3000 -e API_URL=http://broker:80/ logwolf-frontend`
 
-## Project Structure
+---
 
-```text
-logwolf-server/
-├── broker/     # HTTP API Gateway
-├── listener/   # RabbitMQ Worker
-├── logger/     # RPC Server & DB Manager
-└── toolbox/    # Shared Go Workspace (Models, Event, JSON)
+## 🧩 Backend services & how to run locally
 
-```
+- Broker: `logwolf-server/cmd/api` (Go)
+  - Run: `go run ./cmd/api` (or build and run the container via Dockerfile)
+- Logger & Listener:
+  - Similar: `go run ./logger/cmd/api` and `go run ./listener/cmd/api`
+- Messaging & DB (from `docker-compose.yml`):
+  - Mongo: `MONGO_INITDB_DATABASE=logs`, user `admin`, password `password` from compose defaults
+  - RabbitMQ: default settings; volumes persist data under `db-data/rabbitmq/`
 
-## Getting Started
+---
 
-The environment is fully containerized.
+## ✅ Recommended local workflow
 
-### Prerequisites
+- If developing frontend only:
+  - Run backend via `docker-compose up -d broker mongo rabbitmq` and run the frontend locally with `npm run dev`.
+- If developing backend only:
+  - Run `docker-compose up -d mongo rabbitmq`, then run Go services locally with `go run ...`.
+- For full integration tests, run the full compose stack.
 
-- Docker
+---
 
-### Run the System
+## 🤝 Contributing
 
-1. **Build and Start**:
+- Fork, create feature branches, and send PRs.
+- Keep changes focused; add tests and update docs.
 
-```bash
-docker compose up --build
-```
+---
 
-This will start the following containers:
+## 📜 License
 
-- `broker`: Mapped to port **8080**.
-- `logger`: Internal RPC on port **5001**.
-- `listener`: Internal worker.
-- `rabbitmq`: Port **5672**.
-- `mongo`: Port **27017**.
-
-2. **API Endpoints**:
-
-- **Submit Log**: `POST http://localhost:8080/logs`
-
-```json
-{
-	"name": "Service A",
-	"data": "Something happened",
-	"severity": "info",
-	"tags": ["something"]
-}
-```
-
-- **View Logs**: `GET http://localhost:8080/logs`
+- See LICENSE in repo root.
