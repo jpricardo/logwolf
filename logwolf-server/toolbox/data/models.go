@@ -153,3 +153,22 @@ func (l *LogEntry) Update() (*mongo.UpdateResult, error) {
 
 	return result, nil
 }
+
+func (l *LogEntry) DeleteOne(id string) (*mongo.DeleteResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	collection := client.Database("logs").Collection("logs")
+
+	docID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := collection.DeleteOne(ctx, bson.M{"_id": docID})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

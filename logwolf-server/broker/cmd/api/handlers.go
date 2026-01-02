@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
 	"net/http"
@@ -60,4 +61,28 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
+}
+
+func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
+	var requestBody data.LogEntryFilter
+	err := app.readJSON(w, r, &requestBody)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	client, err := rpc.Dial("tcp", "logger:5001")
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	var result int64
+	err = client.Call("RPCServer.DeleteLog", requestBody, &result)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!", Data: fmt.Sprintf("Deleted entries: %d", result)})
 }
