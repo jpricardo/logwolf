@@ -10,16 +10,16 @@ describe('LogwolfEvent', () => {
 	});
 
 	it('should be initialized correctly', () => {
-		const ev = new LogwolfEvent('Test', 'test', [], {});
+		const ev = new LogwolfEvent('Test', 'info', [], {});
 
 		expect(ev.name).toEqual('Test');
-		expect(ev.severity).toEqual('test');
+		expect(ev.severity).toEqual('info');
 		expect(ev.tags).toEqual([]);
 		expect(ev.data).toEqual({});
 	});
 
 	it('should update data correctly', () => {
-		const ev = new LogwolfEvent('Test', 'test', [], {});
+		const ev = new LogwolfEvent('Test', 'info', [], {});
 
 		ev.set('testKey', 'testValue');
 
@@ -28,7 +28,7 @@ describe('LogwolfEvent', () => {
 	});
 
 	it('should inject `duration` while serializing', () => {
-		const ev = new LogwolfEvent('Test', 'test', [], {});
+		const ev = new LogwolfEvent('Test', 'info', [], {});
 
 		vi.advanceTimersByTime(200);
 		const now = new Date();

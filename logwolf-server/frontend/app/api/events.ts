@@ -1,9 +1,12 @@
 import z from 'zod';
 
+const SeveritySchema = z.enum(['info', 'warning', 'error', 'critical']);
+export type Severity = z.infer<typeof SeveritySchema>;
+
 export const EventSchema = z.object({
 	id: z.string(),
 	name: z.string(),
-	severity: z.string(),
+	severity: SeveritySchema,
 	tags: z.array(z.string()),
 	data: z.unknown(),
 	duration: z.number().optional(),

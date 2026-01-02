@@ -4,7 +4,7 @@ import { redirect, useFetcher } from 'react-router';
 import z from 'zod';
 import type { Route } from './+types';
 
-import { CreateEventDTOSchema, EventsApi } from '~/api/events';
+import { CreateEventDTOSchema, EventsApi, type Severity } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
@@ -15,6 +15,16 @@ import { Section } from '~/components/ui/section';
 import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
 
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectTrigger,
+	SelectValue,
+} from '~/components/ui/select';
+import { formatSeverity, severityMap } from '~/lib/format';
 import { Preview } from './components/preview';
 
 export function meta({}: Route.MetaArgs) {
@@ -85,7 +95,22 @@ export default function Create({}: Route.ComponentProps) {
 
 									<Field>
 										<FieldLabel htmlFor='severity'>Severity</FieldLabel>
-										<Input id='severity' name='severity' type='text' required />
+										<Select name='severity' required>
+											<SelectTrigger id='severity'>
+												<SelectValue placeholder='Severity' />
+											</SelectTrigger>
+
+											<SelectContent>
+												<SelectGroup>
+													<SelectLabel>Severity</SelectLabel>
+													{Object.keys(severityMap).map((s) => (
+														<SelectItem key={s} value={s}>
+															{formatSeverity(s as Severity)}
+														</SelectItem>
+													))}
+												</SelectGroup>
+											</SelectContent>
+										</Select>
 										<FieldError>{fetcherError?.fieldErrors.severity}</FieldError>
 									</Field>
 

@@ -16,6 +16,7 @@ import {
 import { Input } from '~/components/ui/input';
 import { Spinner } from '~/components/ui/spinner';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
+import { formatSeverity } from '~/lib/format';
 
 type EventRowProps = { data: Event };
 export function EventRow({ data }: EventRowProps) {
@@ -31,7 +32,7 @@ export function EventRow({ data }: EventRowProps) {
 			</TableCell>
 			<TableCell>{new Date(data.created_at).toLocaleString()}</TableCell>
 			<TableCell>{data.name}</TableCell>
-			<TableCell>{data.severity}</TableCell>
+			<TableCell>{formatSeverity(data.severity)}</TableCell>
 			<TableCell>{data.duration ? `${data.duration}ms` : '-'}</TableCell>
 
 			<TableCell>

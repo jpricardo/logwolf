@@ -1,11 +1,13 @@
 import type { LogPayload } from './types';
 
+type Severity = 'info' | 'warning' | 'error' | 'critical';
+
 export class LogwolfEvent {
 	public readonly createdAt = new Date();
 
 	constructor(
 		public name: string,
-		public severity: string,
+		public severity: Severity,
 		public tags: string[] = [],
 		public readonly data: Record<string, unknown>,
 	) {}
