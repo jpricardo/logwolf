@@ -6,10 +6,10 @@ import { EventsApi } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Badge } from '~/components/ui/badge';
 import { Card, CardContent } from '~/components/ui/card';
+import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
 
 import { InfoItem } from './components/info-item';
-import { JSONBlock } from './components/json-block';
 import { RelatedEvents, RelatedEventsSkeleton } from './components/related-events';
 
 export function meta({ loaderData }: Route.MetaArgs) {

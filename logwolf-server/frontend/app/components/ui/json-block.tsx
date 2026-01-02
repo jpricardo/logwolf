@@ -7,7 +7,7 @@ export type Props = Omit<React.ComponentProps<typeof Card>, 'children'> & {
 
 export function JSONBlock({ data, className, ...props }: Props) {
 	return (
-		<Card className={cn('shadow-none', className)} {...props}>
+		<Card className={cn('shadow-none overflow-x-auto', className)} {...props}>
 			<CardContent>
 				<pre className='font-mono'>
 					<code>{JSON.stringify(data, undefined, '\t')}</code>
