@@ -34,6 +34,6 @@ describe('LogwolfEvent', () => {
 		const now = new Date();
 		const elapsed = now.getTime() - ev.createdAt.getTime();
 
-		expect(ev.toJson()).toMatch(`{"duration":${elapsed}}`);
+		expect(ev.toJson()).toMatch(`"duration":${elapsed}`);
 	});
 });

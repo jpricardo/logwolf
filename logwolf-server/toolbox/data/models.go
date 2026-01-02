@@ -23,6 +23,7 @@ type LogEntry struct {
 	Data      string    `bson:"data" json:"data"`
 	Severity  string    `bson:"severity" json:"severity"`
 	Tags      []string  `bson:"tags" json:"tags"`
+	Duration  int       `bson:"duration,omitempty" json:"duration,omitempty"`
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
@@ -51,6 +52,7 @@ func (l *LogEntry) Insert(entry LogEntry) error {
 		Data:      entry.Data,
 		Severity:  entry.Severity,
 		Tags:      entry.Tags,
+		Duration:  entry.Duration,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	})

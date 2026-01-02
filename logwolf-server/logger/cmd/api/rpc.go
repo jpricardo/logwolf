@@ -20,6 +20,7 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 		Data:     p.Data,
 		Severity: p.Severity,
 		Tags:     p.Tags,
+		Duration: p.Duration,
 	})
 	if err != nil {
 		log.Println("Error inserting into logs:", err)

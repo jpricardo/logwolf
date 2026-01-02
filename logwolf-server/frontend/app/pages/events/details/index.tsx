@@ -49,7 +49,7 @@ export default function Details({ params, loaderData }: Route.ComponentProps) {
 									/>
 									<InfoItem
 										label='Duration'
-										value={loaderData.data.duration !== undefined ? `${loaderData.data.duration}ms` : '-'}
+										value={loaderData.duration !== undefined ? `${loaderData.duration}ms` : '-'}
 										className='pt-2'
 									/>
 								</CardContent>

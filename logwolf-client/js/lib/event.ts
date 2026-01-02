@@ -7,7 +7,7 @@ export class LogwolfEvent {
 		public name: string,
 		public severity: string,
 		public tags: string[] = [],
-		public readonly data: Record<string, unknown>
+		public readonly data: Record<string, unknown>,
 	) {}
 
 	public set(key: string, value: unknown) {
@@ -26,7 +26,8 @@ export class LogwolfEvent {
 			name: this.name,
 			severity: this.severity,
 			tags: this.tags,
-			data: { ...this.data, duration },
+			data: this.data,
+			duration: duration,
 		};
 
 		return JSON.stringify(payload);

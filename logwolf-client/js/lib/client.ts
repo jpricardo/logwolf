@@ -5,11 +5,11 @@ import type { LogEvent } from './types';
 export class Logwolf {
 	constructor(private readonly baseUrl: string) {}
 
-	public async logEvent(ev: LogwolfEvent): Promise<never> {
+	public async logEvent(ev: LogwolfEvent): Promise<void> {
 		return fetch(new URL('/posts', this.baseUrl), {
 			method: 'POST',
 			body: ev.toJson(),
-		}).then(handleResponse<never>);
+		}).then(handleResponse<void>);
 	}
 
 	public async getEvents(): Promise<LogEvent[]> {

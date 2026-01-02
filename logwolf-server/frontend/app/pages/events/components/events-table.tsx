@@ -32,6 +32,7 @@ export function EventRow({ data }: EventRowProps) {
 			<TableCell>{new Date(data.created_at).toLocaleString()}</TableCell>
 			<TableCell>{data.name}</TableCell>
 			<TableCell>{data.severity}</TableCell>
+			<TableCell>{data.duration ? `${data.duration}ms` : '-'}</TableCell>
 
 			<TableCell>
 				<div className='flex flex-row gap-2 items-center'>
@@ -94,6 +95,7 @@ export function EventsTable({ events }: Props) {
 					<TableHead className='w-50'>Created at</TableHead>
 					<TableHead>Name</TableHead>
 					<TableHead>Severity</TableHead>
+					<TableHead>Duration</TableHead>
 					<TableHead>Tags</TableHead>
 					<TableHead className='flex flex-row items-center justify-end'>Actions</TableHead>
 				</TableRow>

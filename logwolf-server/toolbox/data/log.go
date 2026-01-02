@@ -5,6 +5,7 @@ type JSONLogPayload struct {
 	Data     string   `json:"data"`
 	Severity string   `json:"severity"`
 	Tags     []string `json:"tags"`
+	Duration int      `json:"duration"`
 }
 
 type RPCLogPayload struct {
@@ -12,6 +13,7 @@ type RPCLogPayload struct {
 	Data     string
 	Severity string
 	Tags     []string
+	Duration int
 }
 
 type RPCLogEntryFilter LogEntryFilter

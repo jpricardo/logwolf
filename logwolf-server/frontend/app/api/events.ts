@@ -5,7 +5,8 @@ export const EventSchema = z.object({
 	name: z.string(),
 	severity: z.string(),
 	tags: z.array(z.string()),
-	data: z.object({ duration: z.optional(z.number()) }).or(z.any()),
+	data: z.unknown(),
+	duration: z.number().optional(),
 	// TODO - date
 	created_at: z.string(),
 	// TODO - date
@@ -13,7 +14,13 @@ export const EventSchema = z.object({
 });
 export type Event = z.infer<typeof EventSchema>;
 
-export const CreateEventDTOSchema = EventSchema.pick({ name: true, severity: true, tags: true, data: true });
+export const CreateEventDTOSchema = EventSchema.pick({
+	name: true,
+	severity: true,
+	tags: true,
+	data: true,
+	duration: true,
+});
 export type CreateEventDTO = z.infer<typeof CreateEventDTOSchema>;
 
 export const DeleteEventDTOSchema = EventSchema.pick({ id: true });
