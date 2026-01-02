@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"logwolf-toolbox/data"
-	"time"
 )
 
 type RPCServer struct{}
@@ -17,11 +16,10 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	}
 
 	err := app.Models.LogEntry.Insert(data.LogEntry{
-		Name:      p.Name,
-		Data:      p.Data,
-		Severity:  p.Severity,
-		Tags:      p.Tags,
-		CreatedAt: time.Now(),
+		Name:     p.Name,
+		Data:     p.Data,
+		Severity: p.Severity,
+		Tags:     p.Tags,
 	})
 	if err != nil {
 		log.Println("Error inserting into logs:", err)

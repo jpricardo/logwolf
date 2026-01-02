@@ -49,6 +49,7 @@ func (l *LogEntry) Insert(entry LogEntry) error {
 	_, err := collection.InsertOne(context.TODO(), LogEntry{
 		Name:      entry.Name,
 		Data:      entry.Data,
+		Tags:      entry.Tags,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	})
