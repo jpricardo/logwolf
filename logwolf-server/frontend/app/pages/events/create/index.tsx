@@ -128,7 +128,7 @@ export default function Create({}: Route.ComponentProps) {
 								<FieldGroup>
 									<Field>
 										<FieldLabel htmlFor='data'>Data</FieldLabel>
-										<Textarea id='data' name='data' defaultValue='{}' required />
+										<Textarea id='data' name='data' defaultValue='{}' required className='font-mono' />
 										<FieldError>{fetcherError?.fieldErrors.data}</FieldError>
 									</Field>
 								</FieldGroup>
