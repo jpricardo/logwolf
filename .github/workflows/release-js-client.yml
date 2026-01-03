@@ -4,12 +4,13 @@ on:
   release:
     types: [created]
 
+defaults:
+  run:
+    working-directory: ./logwolf-client/js
+
 jobs:
   publish-gpr:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./logwolf-client/js
     permissions:
       packages: write
       contents: read
