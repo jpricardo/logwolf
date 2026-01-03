@@ -1,6 +1,6 @@
 import z from 'zod';
 
-import { jsonCodec } from '~/lib/parse';
+import { datetimeCodec, jsonCodec } from '~/lib/parse';
 
 const SeveritySchema = z.enum(['info', 'warning', 'error', 'critical']);
 export type Severity = z.infer<typeof SeveritySchema>;
@@ -15,9 +15,9 @@ export const EventSchema = z.object({
 	data: DataSchema,
 	duration: z.int().optional(),
 	// TODO - date
-	created_at: z.string(),
+	created_at: datetimeCodec,
 	// TODO - date
-	updated_at: z.string(),
+	updated_at: datetimeCodec,
 });
 export type Event = z.infer<typeof EventSchema>;
 

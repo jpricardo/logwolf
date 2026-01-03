@@ -14,7 +14,7 @@ export function ErrorRate({ className = '', events, ...props }: Props) {
 	const start = new Date().setTime(end - ms);
 
 	const data = events.filter((l) => {
-		const time = new Date(l.created_at).getTime();
+		const time = l.created_at.getTime();
 		return l.severity === 'error' && time >= start && time <= end;
 	});
 

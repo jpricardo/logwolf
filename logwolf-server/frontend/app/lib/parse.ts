@@ -17,3 +17,8 @@ export const jsonCodec = <T extends z.core.$ZodType>(schema: T) =>
 		},
 		encode: (value) => JSON.stringify(value),
 	});
+
+export const datetimeCodec = z.codec(z.iso.datetime(), z.date(), {
+	decode: (isoString) => new Date(isoString),
+	encode: (date) => date.toISOString(),
+});

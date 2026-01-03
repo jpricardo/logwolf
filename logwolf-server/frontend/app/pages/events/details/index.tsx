@@ -44,7 +44,7 @@ export default function Details({ params, loaderData }: Route.ComponentProps) {
 								<CardContent className='flex flex-col gap-0'>
 									<InfoItem
 										label='Created at'
-										value={new Date(loaderData.created_at).toLocaleString()}
+										value={loaderData.created_at.toLocaleString()}
 										className='border-b pb-2'
 									/>
 									<InfoItem

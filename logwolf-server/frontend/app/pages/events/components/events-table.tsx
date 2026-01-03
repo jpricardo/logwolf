@@ -30,7 +30,7 @@ export function EventRow({ data }: EventRowProps) {
 			<TableCell>
 				<Link to={data.id}>{data.id}</Link>
 			</TableCell>
-			<TableCell>{new Date(data.created_at).toLocaleString()}</TableCell>
+			<TableCell>{data.created_at.toLocaleString()}</TableCell>
 			<TableCell>{data.name}</TableCell>
 			<TableCell>{formatSeverity(data.severity)}</TableCell>
 			<TableCell>{data.duration ? `${data.duration}ms` : '-'}</TableCell>

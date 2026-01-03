@@ -20,7 +20,7 @@ export function RelatedEvents({ p }: Props) {
 								<span>
 									{e.name} - {e.severity}
 								</span>
-								<div className='text-xs'>{new Date(e.created_at).toLocaleString()}</div>
+								<div className='text-xs'>{e.created_at.toLocaleString()}</div>
 							</Link>
 						);
 					})}
