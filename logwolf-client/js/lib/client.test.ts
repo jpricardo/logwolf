@@ -23,7 +23,7 @@ describe('Logwolf', () => {
 	it('should log events correctly', () => {
 		const testUrl = 'http://test.url';
 		const client = new Logwolf(testUrl);
-		const ev = new LogwolfEvent('Test', 'test', [], {});
+		const ev = new LogwolfEvent('Test', 'info', [], {});
 
 		client.logEvent(ev);
 

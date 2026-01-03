@@ -29,7 +29,8 @@
 	"scripts": {
 		"build": "tsc && rollup -c",
 		"test": "vitest",
-		"coverage": "vitest run --coverage"
+		"coverage": "vitest run --coverage",
+		"prepublishOnly": "npm run build"
 	},
 	"devDependencies": {
 		"@rollup/plugin-typescript": "^12.3.0",

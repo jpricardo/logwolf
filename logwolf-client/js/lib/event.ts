@@ -3,6 +3,7 @@ import type { LogPayload } from './types';
 type Severity = 'info' | 'warning' | 'error' | 'critical';
 
 export class LogwolfEvent {
+	private readonly start = performance.now();
 	public readonly createdAt = new Date();
 
 	constructor(
@@ -21,8 +22,8 @@ export class LogwolfEvent {
 	}
 
 	public toJson() {
-		const now = new Date();
-		const duration = now.getTime() - this.createdAt.getTime();
+		const now = performance.now();
+		const duration = Math.floor(now - this.start);
 
 		const payload: LogPayload = {
 			name: this.name,
