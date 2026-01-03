@@ -1,5 +1,5 @@
 {
-	"name": "logwolf-client-js",
+	"name": "@jpricardo/logwolf-client-js",
 	"version": "1.0.0",
 	"description": "JavaScript client for Logwolf",
 	"keywords": [
