@@ -9,6 +9,7 @@ import { Card, CardContent } from '~/components/ui/card';
 import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
 
+import { severityMap } from '~/lib/format';
 import { InfoItem } from './components/info-item';
 import { RelatedEvents, RelatedEventsSkeleton } from './components/related-events';
 
@@ -57,7 +58,7 @@ export default function Details({ params, loaderData }: Route.ComponentProps) {
 
 							<Card className='flex-1 shadow-none'>
 								<CardContent className='flex flex-col gap-0'>
-									<InfoItem label='Severity' value={loaderData.severity} className='border-b pb-2' />
+									<InfoItem label='Severity' value={severityMap[loaderData.severity]} className='border-b pb-2' />
 									<InfoItem
 										label='Tags'
 										value={
