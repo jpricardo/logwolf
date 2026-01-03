@@ -4,10 +4,6 @@ on:
   release:
     types: [created]
 
-defaults:
-  run:
-    working-directory: logwolf-client/js
-
 jobs:
   publish-gpr:
     runs-on: ubuntu-latest
@@ -15,14 +11,16 @@ jobs:
       packages: write
       contents: read
     steps:
-      - name: List files
-        run: ls
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://npm.pkg.github.com/
-      - run: npm ci
-      - run: npm publish
+      - name: ci
+        working-directory: logwolf-client/js
+        run: npm ci
+      - name: publish
+        working-directory: logwolf-client/js
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
