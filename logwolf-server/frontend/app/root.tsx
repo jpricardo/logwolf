@@ -2,7 +2,7 @@ import { LogwolfEvent } from '@jpricardo/logwolf-client-js';
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
 import type { Route } from './+types/root';
 
-import { logwolf } from './lib/logwolf';
+import { injectRequest, injectResponse, logwolf } from './lib/logwolf';
 
 import './app.css';
 
@@ -18,26 +18,8 @@ const logMiddleware: Route.MiddlewareFunction = async function ({ request, param
 	event.set('requestId', crypto.randomUUID());
 	event.set('context', context);
 	event.set('params', params);
-	event.set('request', {
-		cache: request.cache,
-		credentials: request.credentials,
-		destination: request.destination,
-		headers: Object.fromEntries(response.headers.entries()),
-		integrity: request.integrity,
-		keepalive: request.keepalive,
-		method: request.method,
-		mode: request.mode,
-		referrer: request.referrer,
-		redirect: request.redirect,
-		url: request.url,
-	});
-	event.set('response', {
-		headers: Object.fromEntries(response.headers.entries()),
-		status: response.status,
-		statusText: response.statusText,
-		type: response.type,
-		url: response.url,
-	});
+	injectRequest(event, request);
+	injectResponse(event, response);
 
 	logwolf.capture(event).catch((err) => console.error(err));
 };

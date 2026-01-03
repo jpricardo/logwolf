@@ -5,7 +5,7 @@ import { cn } from '~/lib/utils';
 
 type Props = React.ComponentProps<typeof Card> & { events: Event[] };
 export function TotalErrors({ className = '', events, ...props }: Props) {
-	const errors = events.filter((l) => l.severity === 'error');
+	const errors = events.filter((l) => l.severity === 'error' || l.severity === 'critical');
 
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>

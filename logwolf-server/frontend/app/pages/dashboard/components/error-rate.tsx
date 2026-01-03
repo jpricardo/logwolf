@@ -15,7 +15,7 @@ export function ErrorRate({ className = '', events, ...props }: Props) {
 
 	const data = events.filter((l) => {
 		const time = l.created_at.getTime();
-		return l.severity === 'error' && time >= start && time <= end;
+		return (l.severity === 'error' || l.severity === 'critical') && time >= start && time <= end;
 	});
 
 	return (
