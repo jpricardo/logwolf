@@ -9,7 +9,7 @@ export const EventSchema = z.object({
 	severity: SeveritySchema,
 	tags: z.array(z.string()),
 	data: z.unknown(),
-	duration: z.number().optional(),
+	duration: z.int().optional(),
 	// TODO - date
 	created_at: z.string(),
 	// TODO - date
