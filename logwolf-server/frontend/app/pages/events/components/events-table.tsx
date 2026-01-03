@@ -28,11 +28,10 @@ export function EventRow({ data }: EventRowProps) {
 	return (
 		<TableRow key={data.id}>
 			<TableCell>
-				<Link to={data.id}>{data.id}</Link>
+				<Link to={data.id}>{data.name}</Link>
 			</TableCell>
-			<TableCell>{data.created_at.toLocaleString()}</TableCell>
-			<TableCell>{data.name}</TableCell>
 			<TableCell>{formatSeverity(data.severity)}</TableCell>
+			<TableCell>{data.created_at.toLocaleString()}</TableCell>
 			<TableCell>{data.duration ? `${data.duration}ms` : '-'}</TableCell>
 
 			<TableCell>
@@ -92,10 +91,9 @@ export function EventsTable({ events }: Props) {
 
 			<TableHeader>
 				<TableRow>
-					<TableHead className='w-60'>ID</TableHead>
-					<TableHead className='w-50'>Created at</TableHead>
-					<TableHead>Name</TableHead>
+					<TableHead className='w-80'>Name</TableHead>
 					<TableHead>Severity</TableHead>
+					<TableHead>Created at</TableHead>
 					<TableHead>Duration</TableHead>
 					<TableHead>Tags</TableHead>
 					<TableHead className='flex flex-row items-center justify-end'>Actions</TableHead>
