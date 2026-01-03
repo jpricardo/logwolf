@@ -1,17 +1,34 @@
-import type { LogPayload } from './types';
+import type z from 'zod';
 
-type Severity = 'info' | 'warning' | 'error' | 'critical';
+import { CreateLogwolfEventDTOSchema, LogwolfEventSchema } from './schema';
+
+export const LogwolfEventDTOSchema = LogwolfEventSchema.pick({
+	name: true,
+	severity: true,
+	tags: true,
+	data: true,
+}).partial({
+	data: true,
+});
+export type LogwolfEventDTO = z.infer<typeof LogwolfEventDTOSchema>;
 
 export class LogwolfEvent {
 	private readonly start = performance.now();
 	public readonly createdAt = new Date();
 
-	constructor(
-		public name: string,
-		public severity: Severity,
-		public tags: string[] = [],
-		public readonly data: Record<string, unknown>,
-	) {}
+	public readonly name: LogwolfEventDTO['name'];
+	public readonly severity: LogwolfEventDTO['severity'];
+	public readonly tags: LogwolfEventDTO['tags'];
+	public readonly data: NonNullable<LogwolfEventDTO['data']> = {};
+
+	constructor(props: LogwolfEventDTO) {
+		this.name = props.name;
+		this.severity = props.severity;
+		this.tags = props.tags;
+		if (props.data) {
+			this.data = props.data;
+		}
+	}
 
 	public set(key: string, value: unknown) {
 		this.data[key] = value;
@@ -25,14 +42,14 @@ export class LogwolfEvent {
 		const now = performance.now();
 		const duration = Math.floor(now - this.start);
 
-		const payload: LogPayload = {
+		const encoded = CreateLogwolfEventDTOSchema.encode({
 			name: this.name,
 			severity: this.severity,
 			tags: this.tags,
 			data: this.data,
 			duration: duration,
-		};
+		});
 
-		return JSON.stringify(payload);
+		return JSON.stringify(encoded);
 	}
 }
