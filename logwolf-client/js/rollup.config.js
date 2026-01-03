@@ -6,7 +6,7 @@ const config = [
 		input: 'dist/lib/index.js',
 		output: {
 			file: 'dist/logwolf-client.js',
-			format: 'cjs',
+			format: 'esm',
 			sourcemap: true,
 		},
 		external: ['axios', 'os', 'url'],
