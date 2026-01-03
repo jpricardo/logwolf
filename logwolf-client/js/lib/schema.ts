@@ -49,3 +49,21 @@ export const DeleteLogwolfEventDTOSchema = LogwolfEventSchema.pick({ id: true })
 export type DeleteLogwolfEventDTO = z.infer<typeof DeleteLogwolfEventDTOSchema>;
 
 export type LogwolfApiResponse<T> = { message: string } & ({ error: true } | { error: false; data: T });
+
+export const LogwolfConfigSchema = z.object({
+	url: z.url(),
+	sampleRate: z.number().positive().lte(1).optional(),
+	errorSampleRate: z.number().positive().lte(1).optional(),
+});
+
+export type LogwolfConfig = z.infer<typeof LogwolfConfigSchema>;
+
+export const LogwolfEventDTOSchema = LogwolfEventSchema.pick({
+	name: true,
+	severity: true,
+	tags: true,
+	data: true,
+}).partial({
+	data: true,
+});
+export type LogwolfEventDTO = z.infer<typeof LogwolfEventDTOSchema>;

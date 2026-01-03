@@ -1,23 +1,12 @@
-import type z from 'zod';
-
-import { CreateLogwolfEventDTOSchema, LogwolfEventSchema } from './schema';
-
-export const LogwolfEventDTOSchema = LogwolfEventSchema.pick({
-	name: true,
-	severity: true,
-	tags: true,
-	data: true,
-}).partial({
-	data: true,
-});
-export type LogwolfEventDTO = z.infer<typeof LogwolfEventDTOSchema>;
+import { CreateLogwolfEventDTOSchema, type LogwolfEventDTO } from './schema';
 
 export class LogwolfEvent {
-	private readonly start = performance.now();
+	public readonly random = Math.random();
+	public readonly start = performance.now();
 	public readonly createdAt = new Date();
 
-	public readonly name: LogwolfEventDTO['name'];
-	public readonly severity: LogwolfEventDTO['severity'];
+	public name: LogwolfEventDTO['name'];
+	public severity: LogwolfEventDTO['severity'];
 	public readonly tags: LogwolfEventDTO['tags'];
 	public readonly data: NonNullable<LogwolfEventDTO['data']> = {};
 
@@ -36,6 +25,10 @@ export class LogwolfEvent {
 
 	public get(key: string) {
 		return this.data[key];
+	}
+
+	public addTag(t: string) {
+		this.tags.push(t);
 	}
 
 	public toJson() {
