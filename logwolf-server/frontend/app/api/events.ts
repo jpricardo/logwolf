@@ -41,7 +41,6 @@ export class EventsApi {
 		return r.data;
 	}
 
-	// TODO - Return created item id
 	static async create(p: CreateEventDTO) {
 		const url = new URL('/logs', this.apiUrl);
 		const res = await fetch(url, {
