@@ -1,14 +1,18 @@
 import z from 'zod';
 
+import { jsonCodec } from '~/lib/parse';
+
 const SeveritySchema = z.enum(['info', 'warning', 'error', 'critical']);
 export type Severity = z.infer<typeof SeveritySchema>;
+
+const DataSchema = jsonCodec(z.record(z.string(), z.any()));
 
 export const EventSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	severity: SeveritySchema,
 	tags: z.array(z.string()),
-	data: z.unknown(),
+	data: DataSchema,
 	duration: z.int().optional(),
 	// TODO - date
 	created_at: z.string(),
@@ -44,7 +48,7 @@ export class EventsApi {
 		const url = new URL('/logs', this.apiUrl);
 		const res = await fetch(url, {
 			method: 'POST',
-			body: JSON.stringify(p),
+			body: JSON.stringify(CreateEventDTOSchema.encode(p)),
 		})
 			.then<ApiResponse<void>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
@@ -58,7 +62,7 @@ export class EventsApi {
 			.then<ApiResponse<Event[]>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
 
-		return res;
+		return z.array(EventSchema).parse(res);
 	}
 
 	static async getOne(id: string) {

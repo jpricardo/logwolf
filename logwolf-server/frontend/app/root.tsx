@@ -15,7 +15,7 @@ const logMiddleware: Route.MiddlewareFunction = async function ({ request, param
 		name: 'Navigation',
 		severity: 'info',
 		tags: ['test', 'logwolf_frontend', 'navigation', 'frontend'],
-		data: JSON.stringify({ context, params, request }),
+		data: { context, params, request },
 		duration: Math.floor(duration),
 	};
 

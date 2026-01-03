@@ -12,9 +12,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Field, FieldError, FieldGroup, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { Section } from '~/components/ui/section';
-import { Spinner } from '~/components/ui/spinner';
-import { Textarea } from '~/components/ui/textarea';
-
 import {
 	Select,
 	SelectContent,
@@ -24,26 +21,33 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '~/components/ui/select';
+import { Spinner } from '~/components/ui/spinner';
+import { Textarea } from '~/components/ui/textarea';
 import { formatSeverity, severityMap } from '~/lib/format';
+
 import { Preview } from './components/preview';
 
 export function meta({}: Route.MetaArgs) {
 	return [{ title: 'New Event - Logwolf' }];
 }
 
-type CreateEventFormData = {
-	name: string;
-	severity: string;
-	tags: string; // split, trim
-	data: string;
-};
+const FormDataSchema = CreateEventDTOSchema.pick({ name: true, severity: true, data: true }).and(
+	z.object({
+		tags: z.codec(z.string(), z.array(z.string()), {
+			encode: (v) => v.join(','),
+			decode: (v) => v.split(',').map((t) => t.trim()),
+		}),
+	}),
+);
+
+type CreateEventFormData = z.input<typeof FormDataSchema>;
 
 export async function action({ request }: Route.ActionArgs) {
 	const fd = await request.formData();
-	const data: Partial<CreateEventFormData> = Object.fromEntries(fd.entries());
+	const fData: Partial<CreateEventFormData> = Object.fromEntries(fd.entries());
+	const data = FormDataSchema.decode(fData as CreateEventFormData);
 
-	const splitTags = data.tags?.split(',').map((t) => t.trim()) ?? [];
-	const pr = CreateEventDTOSchema.safeParse({ ...data, tags: splitTags });
+	const pr = CreateEventDTOSchema.safeParse(data);
 	if (pr.error) return { error: z.flattenError(pr.error) };
 
 	return await EventsApi.create(pr.data).then(() => redirect('/events'));

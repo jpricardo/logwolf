@@ -76,7 +76,7 @@ export default function Details({ params, loaderData }: Route.ComponentProps) {
 						</div>
 					</Section>
 					<Section title='Event data'>
-						<JSONBlock data={{ data: loaderData.data }} />
+						<JSONBlock data={loaderData.data} />
 					</Section>
 				</div>
 
