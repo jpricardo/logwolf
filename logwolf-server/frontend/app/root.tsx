@@ -8,19 +8,38 @@ import './app.css';
 
 const logMiddleware: Route.MiddlewareFunction = async function ({ request, params, context }, next) {
 	const event = new LogwolfEvent({
-		name: 'Navigation',
+		name: 'Server Event',
 		severity: 'info',
-		tags: ['logwolf_frontend', 'navigation'],
+		tags: ['logwolf_frontend', 'server', 'navigation'],
 	});
 
 	const response = await next();
 
+	event.set('requestId', crypto.randomUUID());
 	event.set('context', context);
 	event.set('params', params);
-	event.set('request', request);
-	event.set('response', response);
+	event.set('request', {
+		cache: request.cache,
+		credentials: request.credentials,
+		destination: request.destination,
+		headers: Object.fromEntries(response.headers.entries()),
+		integrity: request.integrity,
+		keepalive: request.keepalive,
+		method: request.method,
+		mode: request.mode,
+		referrer: request.referrer,
+		redirect: request.redirect,
+		url: request.url,
+	});
+	event.set('response', {
+		headers: Object.fromEntries(response.headers.entries()),
+		status: response.status,
+		statusText: response.statusText,
+		type: response.type,
+		url: response.url,
+	});
 
-	logwolf.create(event).catch((err) => console.error(err));
+	logwolf.capture(event).catch((err) => console.error(err));
 };
 
 export const middleware: Route.MiddlewareFunction[] = [logMiddleware];

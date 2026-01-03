@@ -16,7 +16,7 @@ export function TotalErrors({ className = '', events, ...props }: Props) {
 
 			<CardFooter>
 				<span className='text-muted-foreground'>
-					~{formatPercent(errors.length / events.length)} of events are errors!
+					~{formatPercent(errors.length / events.length)} of captured events are errors!
 				</span>
 			</CardFooter>
 		</Card>
