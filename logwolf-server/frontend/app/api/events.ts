@@ -14,9 +14,7 @@ export const EventSchema = z.object({
 	tags: z.array(z.string()),
 	data: DataSchema,
 	duration: z.int().optional(),
-	// TODO - date
 	created_at: datetimeCodec,
-	// TODO - date
 	updated_at: datetimeCodec,
 });
 export type Event = z.infer<typeof EventSchema>;
