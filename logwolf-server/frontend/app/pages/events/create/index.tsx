@@ -1,10 +1,10 @@
+import { CreateLogwolfEventDTOSchema, LogwolfEvent, type Severity } from '@jpricardo/logwolf-client-js';
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { redirect, useFetcher } from 'react-router';
 import z from 'zod';
 import type { Route } from './+types';
 
-import { CreateEventDTOSchema, EventsApi, type Severity } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
@@ -24,6 +24,7 @@ import {
 import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
 import { formatSeverity, severityMap } from '~/lib/format';
+import { logwolf } from '~/lib/logwolf';
 
 import { Preview } from './components/preview';
 
@@ -31,7 +32,7 @@ export function meta({}: Route.MetaArgs) {
 	return [{ title: 'New Event - Logwolf' }];
 }
 
-const FormDataSchema = CreateEventDTOSchema.pick({ name: true, severity: true, data: true }).and(
+const FormDataSchema = CreateLogwolfEventDTOSchema.pick({ name: true, severity: true, data: true }).and(
 	z.object({
 		tags: z.codec(z.string(), z.array(z.string()), {
 			encode: (v) => v.join(','),
@@ -44,13 +45,12 @@ type CreateEventFormData = z.input<typeof FormDataSchema>;
 
 export async function action({ request }: Route.ActionArgs) {
 	const fd = await request.formData();
-	const fData: Partial<CreateEventFormData> = Object.fromEntries(fd.entries());
-	const data = FormDataSchema.decode(fData as CreateEventFormData);
+	const d = FormDataSchema.safeDecode(Object.fromEntries(fd.entries()) as CreateEventFormData);
+	if (d.error) return { error: z.flattenError(d.error) };
 
-	const pr = CreateEventDTOSchema.safeParse(data);
-	if (pr.error) return { error: z.flattenError(pr.error) };
+	const event = new LogwolfEvent(d.data);
 
-	return await EventsApi.create(pr.data).then(() => redirect('/events'));
+	return await logwolf.create(event).then(() => redirect('/events'));
 }
 
 export default function Create({}: Route.ComponentProps) {

@@ -1,11 +1,12 @@
+import { type DeleteLogwolfEventDTO } from '@jpricardo/logwolf-client-js';
 import { Plus } from 'lucide-react';
 import { Link } from 'react-router';
 import type { Route } from './+types';
 
-import { DeleteEventDTOSchema, EventsApi, type DeleteEventDTO } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
+import { logwolf } from '~/lib/logwolf';
 
 import { EventsTable } from './components/events-table';
 
@@ -14,21 +15,15 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader() {
-	return await EventsApi.getAll();
+	return await logwolf.getAll();
 }
 
 export async function action({ request }: Route.ActionArgs) {
 	if (request.method === 'DELETE') {
 		const fd = await request.formData();
-		const data: Partial<DeleteEventDTO> = Object.fromEntries(fd.entries());
+		const data = Object.fromEntries(fd.entries()) as DeleteLogwolfEventDTO;
 
-		const dto = DeleteEventDTOSchema.safeParse(data);
-		if (dto.error) {
-			console.error('invalid data', data);
-			return;
-		}
-
-		return await EventsApi.delete(dto.data);
+		return await logwolf.delete(data);
 	}
 }
 

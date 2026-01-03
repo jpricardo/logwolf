@@ -1,7 +1,8 @@
-import type { CreateEventDTO } from '~/api/events';
+import type { CreateLogwolfEventDTO } from '@jpricardo/logwolf-client-js';
+
 import { JSONBlock } from '~/components/ui/json-block';
 
-function getData(formData: FormData): Partial<CreateEventDTO> {
+function getData(formData: FormData): Partial<CreateLogwolfEventDTO> {
 	return Object.fromEntries(formData.entries());
 }
 

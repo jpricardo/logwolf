@@ -1,25 +1,26 @@
+import { LogwolfEvent } from '@jpricardo/logwolf-client-js';
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
 import type { Route } from './+types/root';
 
-import { EventsApi, type CreateEventDTO } from './api/events';
+import { logwolf } from './lib/logwolf';
 
 import './app.css';
 
-// TODO - Register events via Logwolf Client lib
 const logMiddleware: Route.MiddlewareFunction = async function ({ request, params, context }, next) {
-	const start = performance.now();
-	await next();
-	const duration = performance.now() - start;
-
-	const event: CreateEventDTO = {
+	const event = new LogwolfEvent({
 		name: 'Navigation',
 		severity: 'info',
-		tags: ['test', 'logwolf_frontend', 'navigation', 'frontend'],
-		data: { context, params, request },
-		duration: Math.floor(duration),
-	};
+		tags: ['logwolf_frontend', 'navigation'],
+	});
 
-	EventsApi.create(event).catch((err) => console.error(err));
+	const response = await next();
+
+	event.set('context', context);
+	event.set('params', params);
+	event.set('request', request);
+	event.set('response', response);
+
+	logwolf.create(event).catch((err) => console.error(err));
 };
 
 export const middleware: Route.MiddlewareFunction[] = [logMiddleware];

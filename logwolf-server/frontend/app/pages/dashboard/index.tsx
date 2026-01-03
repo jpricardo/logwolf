@@ -1,10 +1,11 @@
 import { Link } from 'react-router';
 import type { Route } from './+types';
 
-import { EventsApi } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
+import { logwolf } from '~/lib/logwolf';
+
 import { AverageDuration } from './components/average-duration';
 import { ErrorRate } from './components/error-rate';
 import { EventRate } from './components/event-rate';
@@ -17,7 +18,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader() {
-	return await EventsApi.getAll();
+	return await logwolf.getAll();
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {

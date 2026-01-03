@@ -2,14 +2,14 @@ import { Suspense } from 'react';
 import { redirect } from 'react-router';
 import type { Route } from './+types';
 
-import { EventsApi } from '~/api/events';
 import { Page } from '~/components/nav/page';
 import { Badge } from '~/components/ui/badge';
 import { Card, CardContent } from '~/components/ui/card';
 import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
-
 import { severityMap } from '~/lib/format';
+import { logwolf } from '~/lib/logwolf';
+
 import { InfoItem } from './components/info-item';
 import { RelatedEvents, RelatedEventsSkeleton } from './components/related-events';
 
@@ -18,12 +18,12 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
-	const log = await EventsApi.getOne(params.id);
+	const log = await logwolf.getOne(params.id);
 	if (!log) throw redirect('/events');
 
 	return {
 		...log,
-		related: EventsApi.getRelated(log.id, 10),
+		related: logwolf.getRelated(log.id, 10),
 	};
 }
 
