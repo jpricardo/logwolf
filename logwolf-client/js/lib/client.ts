@@ -42,13 +42,13 @@ export class Logwolf {
 			return r.find((i) => i.id === id);
 		});
 
-		return LogwolfEventSchema.parse(res);
+		return res;
 	}
 
 	public async getRelated(id: string, amt: number) {
 		// TODO - "relatedness" algorithm
 		const res = this.getAll().then((r) => r.filter((i) => i.id !== id).slice(0, amt));
-		return z.array(LogwolfEventSchema).parse(res);
+		return res;
 	}
 
 	public async delete(dto: DeleteLogwolfEventDTO) {
