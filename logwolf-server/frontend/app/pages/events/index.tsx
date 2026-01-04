@@ -19,8 +19,8 @@ export async function loader({ context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	const res = await logwolf.getAll();
-	event?.set('loaderData', []);
+	const res = await logwolf.getAll({ page: 1, pageSize: 20 });
+	event?.set('loaderData', ['too much data']);
 
 	return res;
 }

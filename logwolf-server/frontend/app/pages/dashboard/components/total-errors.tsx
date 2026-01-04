@@ -4,10 +4,8 @@ import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/comp
 import { formatPercent } from '~/lib/format';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { events: LogwolfEventData[] };
-export function TotalErrors({ className = '', events, ...props }: Props) {
-	const errors = events.filter((l) => l.severity === 'error' || l.severity === 'critical');
-
+type Props = React.ComponentProps<typeof Card> & { totalEvents: number; errors: LogwolfEventData[] };
+export function TotalErrors({ className = '', totalEvents, errors, ...props }: Props) {
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
@@ -17,7 +15,7 @@ export function TotalErrors({ className = '', events, ...props }: Props) {
 
 			<CardFooter>
 				<span className='text-muted-foreground'>
-					~{formatPercent(errors.length / events.length)} of captured events are errors!
+					~{formatPercent(errors.length / totalEvents)} of captured events are errors!
 				</span>
 			</CardFooter>
 		</Card>

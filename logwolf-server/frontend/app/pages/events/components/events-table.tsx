@@ -84,12 +84,9 @@ export function EventRow({ data }: EventRowProps) {
 
 type Props = { events: LogwolfEventData[] };
 export function EventsTable({ events }: Props) {
-	const maxAmt = 20;
-	const data = events.slice(0, maxAmt);
-
 	return (
 		<Table>
-			<TableCaption>Last {data.length} events</TableCaption>
+			<TableCaption>Last {events.length} events</TableCaption>
 
 			<TableHeader>
 				<TableRow>
@@ -103,7 +100,7 @@ export function EventsTable({ events }: Props) {
 			</TableHeader>
 
 			<TableBody>
-				{data.map((l) => (
+				{events.map((l) => (
 					<EventRow key={l.id} data={l} />
 				))}
 			</TableBody>

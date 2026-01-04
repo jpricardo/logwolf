@@ -25,8 +25,8 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 	const log = await logwolf.getOne(params.id);
 	if (!log) throw redirect('/events');
 
-	const res = { ...log, related: logwolf.getRelated(log.id, 10) };
-	event?.set('loaderData', res);
+	const res = { ...log, related: logwolf.getRelated(log.id, { page: 1, pageSize: 10 }) };
+	event?.set('loaderData', ['too much data']);
 
 	return res;
 }
