@@ -36,6 +36,15 @@ type LogEntryFilter struct {
 	Tags     []string `bson:"tags,omitempty" json:"tags,omitempty"`
 }
 
+type PaginationParams struct {
+	Page     int64
+	PageSize int64
+}
+
+type QueryParams struct {
+	Pagination PaginationParams
+}
+
 func New(mongo *mongo.Client) Models {
 	client = mongo
 
@@ -64,13 +73,13 @@ func (l *LogEntry) Insert(entry LogEntry) error {
 	return nil
 }
 
-func (l *LogEntry) All() ([]*LogEntry, error) {
+func (l *LogEntry) All(p QueryParams) ([]*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	collection := client.Database("logs").Collection("logs")
 	opts := options.Find()
-	opts.SetSort(bson.D{{Key: "created_at", Value: -1}})
+	opts.SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(p.Pagination.PageSize).SetSkip(p.Pagination.PageSize * (p.Pagination.Page - 1))
 
 	cursor, err := collection.Find(context.TODO(), bson.D{}, opts)
 	if err != nil {

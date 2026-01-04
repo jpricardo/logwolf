@@ -9,7 +9,7 @@ import (
 type RPCServer struct{}
 
 func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
-	log.Printf("Logging info: %+v", p)
+	log.Printf("Logging info: %s", p.Name)
 
 	app := Config{
 		Models: data.New(client),
@@ -31,14 +31,14 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	return nil
 }
 
-func (r *RPCServer) GetLogs(_ struct{}, resp *[]data.LogEntry) error {
-	log.Println("Getting logs...")
+func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
+	log.Printf("Getting logs with params %+v...\n", p)
 
 	app := Config{
 		Models: data.New(client),
 	}
 
-	result, err := app.Models.LogEntry.All()
+	result, err := app.Models.LogEntry.All(p)
 	if err != nil {
 		log.Println("Error getting logs:", err)
 		return err

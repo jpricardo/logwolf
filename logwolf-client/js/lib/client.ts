@@ -5,10 +5,12 @@ import {
 	DeleteLogwolfEventDTOSchema,
 	LogwolfConfigSchema,
 	LogwolfEventSchema,
+	PaginationSchema,
 	type DeleteLogwolfEventDTO,
 	type LogwolfApiResponse,
 	type LogwolfConfig,
 	type LogwolfEventData,
+	type Pagination,
 } from './schema';
 
 export class Logwolf {
@@ -56,8 +58,9 @@ export class Logwolf {
 		return await this.create(p);
 	}
 
-	public async getAll(): Promise<LogwolfEventData[]> {
-		const url = new URL('/logs', this.config.url);
+	public async getAll(p?: Pagination): Promise<LogwolfEventData[]> {
+		const params = p ? PaginationSchema.encode(p) : '';
+		const url = new URL('/logs?' + params, this.config.url);
 		const res = await fetch(url, { method: 'GET' })
 			.then<LogwolfApiResponse<Event[]>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
@@ -73,9 +76,9 @@ export class Logwolf {
 		return res;
 	}
 
-	public async getRelated(id: string, amt: number): Promise<LogwolfEventData[]> {
+	public async getRelated(id: string, p?: Pagination): Promise<LogwolfEventData[]> {
 		// TODO - "relatedness" algorithm
-		const res = this.getAll().then((r) => r.filter((i) => i.id !== id).slice(0, amt));
+		const res = this.getAll(p).then((r) => r.filter((i) => i.id !== id).slice(0, p?.pageSize));
 		return res;
 	}
 

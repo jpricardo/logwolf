@@ -7,9 +7,10 @@ import (
 	"logwolf-toolbox/event"
 	"net/http"
 	"net/rpc"
+	"strconv"
 )
 
-func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
+func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
 	var payload data.JSONLogPayload
 
 	err := app.readJSON(w, r, &payload)
@@ -49,8 +50,22 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	qp := r.URL.Query()
+	page, err := strconv.ParseInt(qp.Get("page"), 10, 0)
+	if err != nil {
+		page = 0
+	}
+
+	pageSize, err := strconv.ParseInt(qp.Get("pageSize"), 10, 0)
+	if err != nil {
+		pageSize = 0
+	}
+
 	var result []data.LogEntry
-	err = client.Call("RPCServer.GetLogs", struct{}{}, &result) // TODO - Filters
+	err = client.Call("RPCServer.GetLogs", data.QueryParams{
+		// TODO - Filters
+		Pagination: data.PaginationParams{Page: page, PageSize: pageSize},
+	}, &result)
 	if err != nil {
 		app.errorJSON(w, err)
 		return

@@ -40,7 +40,7 @@ describe('Logwolf', () => {
 		await client.getAll();
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
-		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), { method: 'GET' });
+		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs?', testConfig.url), { method: 'GET' });
 	});
 
 	it('should delete events correctly', async () => {

@@ -69,3 +69,24 @@ export const LogwolfEventDTOSchema = LogwolfEventSchema.pick({
 	data: true,
 });
 export type LogwolfEventDTO = z.infer<typeof LogwolfEventDTOSchema>;
+
+export const PaginationSchema = z.codec(
+	z.instanceof(URLSearchParams),
+	z.object({
+		page: z.number().positive(),
+		pageSize: z.number().positive(),
+	}),
+	{
+		encode: (v) => {
+			return new URLSearchParams({ page: '' + v.page, pageSize: '' + v.pageSize });
+		},
+		decode: (v) => {
+			const page = v.get('page') ?? '0';
+			const pageSize = v.get('pageSize') ?? '0';
+
+			return { page: parseInt(page), pageSize: parseInt(pageSize) };
+		},
+	},
+);
+
+export type Pagination = z.infer<typeof PaginationSchema>;
