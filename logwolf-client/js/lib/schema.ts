@@ -36,6 +36,8 @@ export const LogwolfEventSchema = z.object({
 	updated_at: LogwolfDatetimeSchema,
 });
 
+export type LogwolfEventData = z.infer<typeof LogwolfEventSchema>;
+
 export const CreateLogwolfEventDTOSchema = LogwolfEventSchema.pick({
 	name: true,
 	severity: true,

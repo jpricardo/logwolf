@@ -8,6 +8,7 @@ import {
 	type DeleteLogwolfEventDTO,
 	type LogwolfApiResponse,
 	type LogwolfConfig,
+	type LogwolfEventData,
 } from './schema';
 
 export class Logwolf {
@@ -37,7 +38,7 @@ export class Logwolf {
 	/**
 	 * This bypasses `sampleRate` and `errorSampleRate`, every created event is sent to the server!
 	 */
-	public async create(p: LogwolfEvent) {
+	public async create(p: LogwolfEvent): Promise<void> {
 		const url = new URL('/logs', this.config.url);
 		const res = await fetch(url, { method: 'POST', body: p.toJson() })
 			.then<LogwolfApiResponse<void>>((r) => r.json())
@@ -49,13 +50,13 @@ export class Logwolf {
 	/**
 	 * A captured event is subject to `sampleRate` and `errorSampleRate`, not all captured events are sent to the server!
 	 */
-	public async capture(p: LogwolfEvent) {
+	public async capture(p: LogwolfEvent): Promise<void> {
 		if (!this.shouldCapture(p)) return;
 
 		return await this.create(p);
 	}
 
-	public async getAll() {
+	public async getAll(): Promise<LogwolfEventData[]> {
 		const url = new URL('/logs', this.config.url);
 		const res = await fetch(url, { method: 'GET' })
 			.then<LogwolfApiResponse<Event[]>>((r) => r.json())
@@ -64,7 +65,7 @@ export class Logwolf {
 		return z.array(LogwolfEventSchema).parse(res);
 	}
 
-	public async getOne(id: string) {
+	public async getOne(id: string): Promise<LogwolfEventData | undefined> {
 		const res = this.getAll().then((r) => {
 			return r.find((i) => i.id === id);
 		});
@@ -72,13 +73,13 @@ export class Logwolf {
 		return res;
 	}
 
-	public async getRelated(id: string, amt: number) {
+	public async getRelated(id: string, amt: number): Promise<LogwolfEventData[]> {
 		// TODO - "relatedness" algorithm
 		const res = this.getAll().then((r) => r.filter((i) => i.id !== id).slice(0, amt));
 		return res;
 	}
 
-	public async delete(dto: DeleteLogwolfEventDTO) {
+	public async delete(dto: DeleteLogwolfEventDTO): Promise<void> {
 		const url = new URL('/logs', this.config.url);
 		const res = await fetch(url, { method: 'DELETE', body: JSON.stringify(DeleteLogwolfEventDTOSchema.parse(dto)) })
 			.then<LogwolfApiResponse<void>>((r) => r.json())

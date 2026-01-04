@@ -1,4 +1,4 @@
-import { CreateLogwolfEventDTOSchema, type LogwolfEventDTO } from './schema';
+import { CreateLogwolfEventDTOSchema, type LogwolfEventDTO, type Severity } from './schema';
 
 export class LogwolfEvent {
 	public readonly random = Math.random();
@@ -17,6 +17,14 @@ export class LogwolfEvent {
 		if (props.data) {
 			this.data = props.data;
 		}
+	}
+
+	public setName(n: string) {
+		this.name = n;
+	}
+
+	public setSeverity(s: Severity) {
+		this.severity = s;
 	}
 
 	public set(key: string, value: unknown) {
@@ -38,7 +46,7 @@ export class LogwolfEvent {
 		const encoded = CreateLogwolfEventDTOSchema.encode({
 			name: this.name,
 			severity: this.severity,
-			tags: this.tags,
+			tags: Array.from(new Set(this.tags)),
 			data: this.data,
 			duration: duration,
 		});
