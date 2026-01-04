@@ -7,7 +7,7 @@ import { Badge } from '~/components/ui/badge';
 import { Card, CardContent } from '~/components/ui/card';
 import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
-import { severityMap } from '~/lib/format';
+import { SeverityBadge } from '~/components/ui/severity-badge';
 import { logwolf } from '~/lib/logwolf';
 
 import { InfoItem } from './components/info-item';
@@ -58,7 +58,11 @@ export default function Details({ params, loaderData }: Route.ComponentProps) {
 
 							<Card className='flex-1 shadow-none'>
 								<CardContent className='flex flex-col gap-0'>
-									<InfoItem label='Severity' value={severityMap[loaderData.severity]} className='border-b pb-2' />
+									<InfoItem
+										label='Severity'
+										value={<SeverityBadge variant={loaderData.severity} />}
+										className='border-b pb-2'
+									/>
 									<InfoItem
 										label='Tags'
 										value={

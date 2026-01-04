@@ -14,9 +14,9 @@ import {
 	DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { Input } from '~/components/ui/input';
+import { SeverityBadge } from '~/components/ui/severity-badge';
 import { Spinner } from '~/components/ui/spinner';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
-import { formatSeverity } from '~/lib/format';
 
 type EventRowProps = { data: Event };
 export function EventRow({ data }: EventRowProps) {
@@ -30,7 +30,9 @@ export function EventRow({ data }: EventRowProps) {
 			<TableCell>
 				<Link to={data.id}>{data.name}</Link>
 			</TableCell>
-			<TableCell>{formatSeverity(data.severity)}</TableCell>
+			<TableCell>
+				<SeverityBadge variant={data.severity} />
+			</TableCell>
 			<TableCell>{data.created_at.toLocaleString()}</TableCell>
 			<TableCell>{data.duration ? `${data.duration}ms` : '-'}</TableCell>
 

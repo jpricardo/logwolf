@@ -11,6 +11,7 @@ export const severityMap: Record<Severity, string> = {
 	error: 'ERROR',
 	critical: 'CRITICAL',
 } as const;
+
 export function formatSeverity(s: Severity) {
 	return severityMap[s];
 }
