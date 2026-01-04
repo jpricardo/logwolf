@@ -1,12 +1,12 @@
+import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
 import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 
-import type { Event } from '~/api/events';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '~/components/ui/chart';
 
 const maxBarAmt = 5;
 
-type Props = { events: Event[] };
+type Props = { events: LogwolfEventData[] };
 export function TagsBarChart({ events }: Props) {
 	const tags = Array.from(new Set(events.flatMap((l) => l.tags)));
 

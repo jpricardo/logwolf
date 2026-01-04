@@ -23,7 +23,7 @@
 		"typecheck": "react-router typegen && tsc"
 	},
 	"dependencies": {
-		"@jpricardo/logwolf-client-js": "^1.0.4",
+		"@jpricardo/logwolf-client-js": "^1.0.5",
 		"@radix-ui/react-dialog": "^1.1.15",
 		"@radix-ui/react-dropdown-menu": "^2.1.16",
 		"@radix-ui/react-label": "^2.1.8",

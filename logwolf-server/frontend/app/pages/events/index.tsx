@@ -6,6 +6,7 @@ import type { Route } from './+types';
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
+import { eventContext } from '~/context';
 import { logwolf } from '~/lib/logwolf';
 
 import { EventsTable } from './components/events-table';
@@ -14,16 +15,27 @@ export function meta({}: Route.MetaArgs) {
 	return [{ title: 'Events - Logwolf' }, { name: 'description', content: 'Logwolf events!' }];
 }
 
-export async function loader() {
-	return await logwolf.getAll();
+export async function loader({ context }: Route.LoaderArgs) {
+	const event = context.get(eventContext);
+	event?.addTag('loader');
+
+	const res = await logwolf.getAll();
+	event?.set('loaderData', []);
+
+	return res;
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request, context }: Route.ActionArgs) {
+	const event = context.get(eventContext);
+	event?.addTag('action');
+
 	if (request.method === 'DELETE') {
 		const fd = await request.formData();
 		const data = Object.fromEntries(fd.entries()) as DeleteLogwolfEventDTO;
+		const res = await logwolf.delete(data);
+		event?.set('actionData', res);
 
-		return await logwolf.delete(data);
+		return res;
 	}
 }
 

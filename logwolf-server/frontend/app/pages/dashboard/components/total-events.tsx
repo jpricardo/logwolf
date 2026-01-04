@@ -1,8 +1,9 @@
-import type { Event } from '~/api/events';
+import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
+
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { events: Event[] };
+type Props = React.ComponentProps<typeof Card> & { events: LogwolfEventData[] };
 export function TotalEvents({ className = '', events, ...props }: Props) {
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>

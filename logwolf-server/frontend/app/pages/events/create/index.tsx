@@ -2,7 +2,7 @@ import { CreateLogwolfEventDTOSchema, LogwolfEvent, type Severity } from '@jpric
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { redirect, useFetcher } from 'react-router';
-import z from 'zod';
+import z, { ZodError } from 'zod';
 import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
@@ -23,6 +23,7 @@ import {
 } from '~/components/ui/select';
 import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
+import { eventContext } from '~/context';
 import { formatSeverity, severityMap } from '~/lib/format';
 import { logwolf } from '~/lib/logwolf';
 
@@ -43,14 +44,28 @@ const FormDataSchema = CreateLogwolfEventDTOSchema.pick({ name: true, severity: 
 
 type CreateEventFormData = z.input<typeof FormDataSchema>;
 
-export async function action({ request }: Route.ActionArgs) {
-	const fd = await request.formData();
-	const d = FormDataSchema.safeDecode(Object.fromEntries(fd.entries()) as CreateEventFormData);
-	if (d.error) return { error: z.flattenError(d.error) };
+export async function action({ request, context }: Route.ActionArgs) {
+	const event = context.get(eventContext);
+	event?.addTag('action');
 
-	const event = new LogwolfEvent(d.data);
+	try {
+		const fd = await request.formData();
+		const d = FormDataSchema.decode(Object.fromEntries(fd.entries()) as CreateEventFormData);
+		const res = await logwolf.create(new LogwolfEvent(d)).then(() => redirect('/events'));
+		event?.set('actionData', res);
 
-	return await logwolf.create(event).then(() => redirect('/events'));
+		return res;
+	} catch (err) {
+		event?.setSeverity('error');
+		event?.set('actionError', err);
+
+		if (err instanceof ZodError) {
+			const flat = z.flattenError(err as z.ZodError<z.infer<typeof FormDataSchema>>);
+			event?.set('actionError', flat);
+
+			return { error: flat };
+		}
+	}
 }
 
 export default function Create({}: Route.ComponentProps) {

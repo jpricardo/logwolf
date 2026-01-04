@@ -8,6 +8,7 @@ import { Card, CardContent } from '~/components/ui/card';
 import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
 import { SeverityBadge } from '~/components/ui/severity-badge';
+import { eventContext } from '~/context';
 import { logwolf } from '~/lib/logwolf';
 
 import { InfoItem } from './components/info-item';
@@ -17,14 +18,17 @@ export function meta({ loaderData }: Route.MetaArgs) {
 	return [{ title: loaderData.name + ' - Logwolf' }, { name: 'description', content: 'Logwolf event details!' }];
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, context }: Route.LoaderArgs) {
+	const event = context.get(eventContext);
+	event?.addTag('loader');
+
 	const log = await logwolf.getOne(params.id);
 	if (!log) throw redirect('/events');
 
-	return {
-		...log,
-		related: logwolf.getRelated(log.id, 10),
-	};
+	const res = { ...log, related: logwolf.getRelated(log.id, 10) };
+	event?.set('loaderData', res);
+
+	return res;
 }
 
 export default function Details({ params, loaderData }: Route.ComponentProps) {
@@ -81,7 +85,7 @@ export default function Details({ params, loaderData }: Route.ComponentProps) {
 						</div>
 					</Section>
 					<Section title='Event data'>
-						<JSONBlock data={loaderData.data} />
+						<JSONBlock data={loaderData.data} className='max-h-150' />
 					</Section>
 				</div>
 

@@ -1,9 +1,10 @@
-import type { Event } from '~/api/events';
+import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
+
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
 import { formatPercent } from '~/lib/format';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { events: Event[] };
+type Props = React.ComponentProps<typeof Card> & { events: LogwolfEventData[] };
 export function TotalErrors({ className = '', events, ...props }: Props) {
 	const errors = events.filter((l) => l.severity === 'error' || l.severity === 'critical');
 

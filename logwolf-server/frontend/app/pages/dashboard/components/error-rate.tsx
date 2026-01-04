@@ -1,4 +1,5 @@
-import type { Event } from '~/api/events';
+import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
+
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
 import { locale } from '~/lib/locale';
 import { cn } from '~/lib/utils';
@@ -8,7 +9,7 @@ const minutes = hours * 60;
 const seconds = minutes * 60;
 const ms = seconds * 1000;
 
-type Props = React.ComponentProps<typeof Card> & { events: Event[] };
+type Props = React.ComponentProps<typeof Card> & { events: LogwolfEventData[] };
 export function ErrorRate({ className = '', events, ...props }: Props) {
 	const end = new Date().getTime();
 	const start = new Date().setTime(end - ms);

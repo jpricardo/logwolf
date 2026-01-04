@@ -1,10 +1,10 @@
+import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
 import { use } from 'react';
 import { Link } from 'react-router';
 
-import type { Event } from '~/api/events';
 import { Card, CardContent } from '~/components/ui/card';
 
-type Props = { p: Promise<Event[]> };
+type Props = { p: Promise<LogwolfEventData[]> };
 
 export function RelatedEvents({ p }: Props) {
 	const events = use(p);

@@ -1,8 +1,8 @@
+import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
 import { MoreHorizontal } from 'lucide-react';
 import { useRef } from 'react';
 import { Link, useFetcher } from 'react-router';
 
-import type { Event } from '~/api/events';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import {
@@ -18,7 +18,7 @@ import { SeverityBadge } from '~/components/ui/severity-badge';
 import { Spinner } from '~/components/ui/spinner';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
 
-type EventRowProps = { data: Event };
+type EventRowProps = { data: LogwolfEventData };
 export function EventRow({ data }: EventRowProps) {
 	const formRef = useRef(null);
 	const fetcher = useFetcher();
@@ -82,7 +82,7 @@ export function EventRow({ data }: EventRowProps) {
 	);
 }
 
-type Props = { events: Event[] };
+type Props = { events: LogwolfEventData[] };
 export function EventsTable({ events }: Props) {
 	const maxAmt = 20;
 	const data = events.slice(0, maxAmt);
