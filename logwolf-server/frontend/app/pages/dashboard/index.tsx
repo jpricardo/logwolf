@@ -63,36 +63,36 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 						</Button>
 					}
 				>
-					<div className='flex flex-row gap-4'>
-						<div className='flex flex-col gap-4 flex-1 justify-stretch'>
-							<div className='flex flex-row gap-4 flex-1'>
-								<Suspense fallback={<TotalEventsSkeleton className='flex-1' />}>
-									<TotalEvents className='flex-1' p={events} />
+					<div className='flex flex-row flex-wrap gap-4'>
+						<div className='flex flex-col flex-wrap gap-4 flex-3 justify-stretch'>
+							<div className='flex flex-row flex-wrap gap-4 flex-1'>
+								<Suspense fallback={<TotalEventsSkeleton className='flex-1 min-w-xs' />}>
+									<TotalEvents className='flex-1 min-w-xs' p={events} />
 								</Suspense>
 
-								<Suspense fallback={<TotalErrorsSkeleton className='flex-1' />}>
-									<TotalErrors className='flex-1' p={errors} />
+								<Suspense fallback={<TotalErrorsSkeleton className='flex-1 min-w-xs' />}>
+									<TotalErrors className='flex-1 min-w-xs' p={errors} />
 								</Suspense>
 
-								<Suspense fallback={<AverageDurationSkeleton className='flex-1' />}>
-									<AverageDuration className='flex-1' p={events} />
+								<Suspense fallback={<AverageDurationSkeleton className='flex-1 min-w-xs' />}>
+									<AverageDuration className='flex-1 min-w-xs' p={events} />
 								</Suspense>
 							</div>
 
-							<div className='flex flex-row gap-4 flex-1'>
-								<Suspense fallback={<EventRateSkeleton className='flex-1' />}>
-									<EventRate className='flex-1' timespan={timespan} p={recentEvents} />
+							<div className='flex flex-row flex-wrap gap-4 flex-1'>
+								<Suspense fallback={<EventRateSkeleton className='flex-1 min-w-xs' />}>
+									<EventRate className='flex-1 min-w-xs' timespan={timespan} p={recentEvents} />
 								</Suspense>
 
-								<Suspense fallback={<ErrorRateSkeleton className='flex-1' />}>
-									<ErrorRate className='flex-1' timespan={timespan} p={recentErrors} />
+								<Suspense fallback={<ErrorRateSkeleton className='flex-1 min-w-xs' />}>
+									<ErrorRate className='flex-1 min-w-xs' timespan={timespan} p={recentErrors} />
 								</Suspense>
 							</div>
 						</div>
 
-						<div className='flex flex-col flex-1'>
-							<Suspense fallback={<TagsBarChartSkeleton />}>
-								<TagsBarChart p={events} />
+						<div className='flex flex-col flex-wrap flex-2'>
+							<Suspense fallback={<TagsBarChartSkeleton className='flex-1 min-w-xs min-h-100' />}>
+								<TagsBarChart className='flex-1 min-w-xs min-h-100' p={events} />
 							</Suspense>
 						</div>
 					</div>

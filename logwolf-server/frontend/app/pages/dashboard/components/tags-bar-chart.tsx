@@ -4,11 +4,12 @@ import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '~/components/ui/chart';
+import { cn } from '~/lib/utils';
 
 const maxBarAmt = 5;
 
-type Props = { p: Promise<LogwolfEventData[]> };
-export function TagsBarChart({ p }: Props) {
+type Props = React.ComponentProps<typeof Card> & { p: Promise<LogwolfEventData[]> };
+export function TagsBarChart({ className, p, ...props }: Props) {
 	const events = use(p);
 
 	const tags = Array.from(new Set(events.flatMap((l) => l.tags)));
@@ -22,7 +23,7 @@ export function TagsBarChart({ p }: Props) {
 		.slice(0, maxBarAmt);
 
 	return (
-		<Card className='shadow-none h-full'>
+		<Card className={cn('shadow-none h-full', className)} {...props}>
 			<CardHeader>
 				<CardDescription>Tags</CardDescription>
 				<CardTitle>Most frequent tags</CardTitle>
@@ -44,15 +45,14 @@ export function TagsBarChart({ p }: Props) {
 	);
 }
 
-export function TagsBarChartSkeleton() {
+type SkeletonProps = React.ComponentProps<typeof Card>;
+export function TagsBarChartSkeleton({ className, ...props }: SkeletonProps) {
 	return (
-		<Card className='shadow-none h-full'>
+		<Card className={cn('shadow-none h-full', className)} {...props}>
 			<CardHeader>
 				<CardDescription>Tags</CardDescription>
 				<CardTitle>Most frequent tags</CardTitle>
-				<CardContent className='flex-1 pb-0'>
-					<div className='min-h-100' />
-				</CardContent>
+				<CardContent className='flex-1 pb-0'></CardContent>
 			</CardHeader>
 		</Card>
 	);
