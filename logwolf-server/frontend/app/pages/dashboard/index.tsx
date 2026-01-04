@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { Link } from 'react-router';
 import type { Route } from './+types';
 
@@ -7,12 +8,12 @@ import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { logwolf } from '~/lib/logwolf';
 
-import { AverageDuration } from './components/average-duration';
-import { ErrorRate } from './components/error-rate';
-import { EventRate } from './components/event-rate';
-import { TagsBarChart } from './components/tags-bar-chart';
-import { TotalErrors } from './components/total-errors';
-import { TotalEvents } from './components/total-events';
+import { AverageDuration, AverageDurationSkeleton } from './components/average-duration';
+import { ErrorRate, ErrorRateSkeleton } from './components/error-rate';
+import { EventRate, EventRateSkeleton } from './components/event-rate';
+import { TagsBarChart, TagsBarChartSkeleton } from './components/tags-bar-chart';
+import { TotalErrors, TotalErrorsSkeleton } from './components/total-errors';
+import { TotalEvents, TotalEventsSkeleton } from './components/total-events';
 
 export function meta({}: Route.MetaArgs) {
 	return [{ title: 'Dashboard - Logwolf' }, { name: 'description', content: 'Logwolf dashboard!' }];
@@ -25,22 +26,27 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 	const event = context.get(eventContext);
 	event?.addTag('loader');
-	const res = await logwolf.getAll();
+	const res = logwolf.getAll();
+
+	const errors = res.then((r) => r.filter((e) => e.severity === 'critical' || e.severity === 'error'));
+
+	const recentEvents = res.then((r) =>
+		r.filter((l) => {
+			const time = l.created_at.getTime();
+			return time >= start && time <= end;
+		}),
+	);
+
+	const recentErrors = recentEvents.then((r) =>
+		r.filter((l) => {
+			const time = l.created_at.getTime();
+			return time >= start && time <= end;
+		}),
+	);
+
+	const data = { timespan: ms, events: res, errors, recentEvents, recentErrors };
 	event?.set('loaderData', ['too much data']);
-
-	const errors = res.filter((e) => e.severity === 'critical' || e.severity === 'error');
-
-	const recentEvents = res.filter((l) => {
-		const time = l.created_at.getTime();
-		return time >= start && time <= end;
-	});
-
-	const recentErrors = recentEvents.filter((l) => {
-		const time = l.created_at.getTime();
-		return time >= start && time <= end;
-	});
-
-	return { timespan: ms, events: res, errors, recentEvents, recentErrors };
+	return data;
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
@@ -60,19 +66,34 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 					<div className='flex flex-row gap-4'>
 						<div className='flex flex-col gap-4 flex-1 justify-stretch'>
 							<div className='flex flex-row gap-4 flex-1'>
-								<TotalEvents className='flex-1' events={events} />
-								<TotalErrors className='flex-1' totalEvents={events.length} errors={errors} />
-								<AverageDuration className='flex-1' events={events} />
+								<Suspense fallback={<TotalEventsSkeleton className='flex-1' />}>
+									<TotalEvents className='flex-1' p={events} />
+								</Suspense>
+
+								<Suspense fallback={<TotalErrorsSkeleton className='flex-1' />}>
+									<TotalErrors className='flex-1' p={errors} />
+								</Suspense>
+
+								<Suspense fallback={<AverageDurationSkeleton className='flex-1' />}>
+									<AverageDuration className='flex-1' p={events} />
+								</Suspense>
 							</div>
 
 							<div className='flex flex-row gap-4 flex-1'>
-								<EventRate className='flex-1' timespan={timespan} events={recentEvents} />
-								<ErrorRate className='flex-1' timespan={timespan} events={recentErrors} />
+								<Suspense fallback={<EventRateSkeleton className='flex-1' />}>
+									<EventRate className='flex-1' timespan={timespan} p={recentEvents} />
+								</Suspense>
+
+								<Suspense fallback={<ErrorRateSkeleton className='flex-1' />}>
+									<ErrorRate className='flex-1' timespan={timespan} p={recentErrors} />
+								</Suspense>
 							</div>
 						</div>
 
 						<div className='flex flex-col flex-1'>
-							<TagsBarChart events={events} />
+							<Suspense fallback={<TagsBarChartSkeleton />}>
+								<TagsBarChart p={events} />
+							</Suspense>
 						</div>
 					</div>
 				</Section>

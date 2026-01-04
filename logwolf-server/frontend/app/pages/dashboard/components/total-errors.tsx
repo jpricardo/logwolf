@@ -1,11 +1,15 @@
 import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
+import { use } from 'react';
 
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
-import { formatPercent } from '~/lib/format';
+import { Skeleton } from '~/components/ui/skeleton';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { totalEvents: number; errors: LogwolfEventData[] };
-export function TotalErrors({ className = '', totalEvents, errors, ...props }: Props) {
+type Props = React.ComponentProps<typeof Card> & { p: Promise<LogwolfEventData[]> };
+export function TotalErrors({ className = '', p, ...props }: Props) {
+	const errors = use(p);
+	const critical = errors.filter((e) => e.severity === 'critical');
+
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
@@ -15,9 +19,23 @@ export function TotalErrors({ className = '', totalEvents, errors, ...props }: P
 
 			<CardFooter>
 				<span className='text-muted-foreground'>
-					~{formatPercent(errors.length / totalEvents)} of captured events are errors!
+					Including <span className='font-bold'>{critical.length}</span> critical events!
 				</span>
 			</CardFooter>
+		</Card>
+	);
+}
+
+type SkeletonProps = React.ComponentProps<typeof Card>;
+export function TotalErrorsSkeleton({ className, ...props }: SkeletonProps) {
+	return (
+		<Card className={cn('shadow-none', className)} {...props}>
+			<CardHeader>
+				<CardDescription>Error events</CardDescription>
+				<CardTitle>
+					<Skeleton className='h-10 w-full' />
+				</CardTitle>
+			</CardHeader>
 		</Card>
 	);
 }
