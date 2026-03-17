@@ -22,9 +22,13 @@ func (app *Config) routes() http.Handler {
 
 	mux.Use(middleware.Heartbeat("/ping"))
 
-	mux.Post("/logs", app.CreateLog)
-	mux.Get("/logs", app.GetLogs)
-	mux.Delete("/logs", app.DeleteLog)
+	// Protected routes
+	mux.Group(func(r chi.Router) {
+		r.Use(app.requireAPIKey)
+		r.Post("/logs", app.CreateLog)
+		r.Get("/logs", app.GetLogs)
+		r.Delete("/logs", app.DeleteLog)
+	})
 
 	return mux
 }

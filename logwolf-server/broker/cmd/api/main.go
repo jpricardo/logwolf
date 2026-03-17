@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"logwolf-toolbox/data"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
@@ -21,6 +24,10 @@ type Config struct {
 }
 
 func main() {
+	mongoClient, err := connectToMongo()
+	if err != nil {
+		log.Panic(err)
+	}
 
 	// RabbitMQ
 	conn, err := connectToRabbitMQ()
@@ -31,6 +38,7 @@ func main() {
 
 	app := Config{
 		Rabbit: conn,
+		Models: data.New(mongoClient),
 	}
 
 	log.Printf("Starting server on port %s\n", port)
@@ -74,4 +82,10 @@ func connectToRabbitMQ() (*amqp.Connection, error) {
 	}
 
 	return connection, nil
+}
+
+func connectToMongo() (*mongo.Client, error) {
+	clientOptions := options.Client().ApplyURI("mongodb://mongo:27017")
+	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
+	return mongo.Connect(context.TODO(), clientOptions)
 }

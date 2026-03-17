@@ -14,6 +14,7 @@ import (
 type Models struct {
 	client   *mongo.Client
 	LogEntry LogEntry
+	APIKey   APIKey
 }
 
 type LogEntry struct {
@@ -48,6 +49,7 @@ func New(mongo *mongo.Client) Models {
 	return Models{
 		client:   mongo,
 		LogEntry: LogEntry{},
+		APIKey:   APIKey{},
 	}
 }
 
