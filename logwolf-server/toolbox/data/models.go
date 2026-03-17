@@ -11,9 +11,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var client *mongo.Client
-
 type Models struct {
+	client   *mongo.Client
 	LogEntry LogEntry
 }
 
@@ -46,16 +45,14 @@ type QueryParams struct {
 }
 
 func New(mongo *mongo.Client) Models {
-	client = mongo
-
 	return Models{
+		client:   mongo,
 		LogEntry: LogEntry{},
 	}
 }
 
-func (l *LogEntry) Insert(entry LogEntry) error {
-	collection := client.Database("logs").Collection("logs")
-
+func (m *Models) Insert(entry LogEntry) error {
+	collection := m.client.Database("logs").Collection("logs")
 	_, err := collection.InsertOne(context.TODO(), LogEntry{
 		Name:      entry.Name,
 		Data:      entry.Data,
@@ -73,11 +70,11 @@ func (l *LogEntry) Insert(entry LogEntry) error {
 	return nil
 }
 
-func (l *LogEntry) All(p QueryParams) ([]*LogEntry, error) {
+func (m *Models) AllLogs(p QueryParams) ([]*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	collection := client.Database("logs").Collection("logs")
+	collection := m.client.Database("logs").Collection("logs")
 	opts := options.Find()
 	opts.SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(p.Pagination.PageSize).SetSkip(p.Pagination.PageSize * (p.Pagination.Page - 1))
 
@@ -105,11 +102,11 @@ func (l *LogEntry) All(p QueryParams) ([]*LogEntry, error) {
 	return logs, nil
 }
 
-func (l *LogEntry) GetOne(id string) (*LogEntry, error) {
+func (m *Models) GetLog(id string) (*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	collection := client.Database("logs").Collection("logs")
+	collection := m.client.Database("logs").Collection("logs")
 
 	docID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -125,11 +122,11 @@ func (l *LogEntry) GetOne(id string) (*LogEntry, error) {
 	return &entry, nil
 }
 
-func (l *LogEntry) DropCollection() error {
+func (m *Models) DropLogsCollection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	collection := client.Database("logs").Collection("logs")
+	collection := m.client.Database("logs").Collection("logs")
 
 	if err := collection.Drop(ctx); err != nil {
 		return err
@@ -138,13 +135,13 @@ func (l *LogEntry) DropCollection() error {
 	return nil
 }
 
-func (l *LogEntry) Update() (*mongo.UpdateResult, error) {
+func (m *Models) UpdateLog() (*mongo.UpdateResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	collection := client.Database("logs").Collection("logs")
+	collection := m.client.Database("logs").Collection("logs")
 
-	docID, err := primitive.ObjectIDFromHex(l.ID)
+	docID, err := primitive.ObjectIDFromHex(m.LogEntry.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +151,8 @@ func (l *LogEntry) Update() (*mongo.UpdateResult, error) {
 		bson.M{"_id": docID},
 		bson.D{
 			{Key: "$set", Value: bson.D{
-				{Key: "name", Value: l.Name},
-				{Key: "data", Value: l.Data},
+				{Key: "name", Value: m.LogEntry.Name},
+				{Key: "data", Value: m.LogEntry.Data},
 				{Key: "updated_at", Value: time.Now()},
 			}},
 		},
@@ -167,11 +164,11 @@ func (l *LogEntry) Update() (*mongo.UpdateResult, error) {
 	return result, nil
 }
 
-func (l *LogEntry) DeleteOne(id string) (*mongo.DeleteResult, error) {
+func (m *Models) DeleteLog(id string) (*mongo.DeleteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	collection := client.Database("logs").Collection("logs")
+	collection := m.client.Database("logs").Collection("logs")
 
 	docID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {

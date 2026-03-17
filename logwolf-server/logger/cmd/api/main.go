@@ -52,7 +52,7 @@ func main() {
 }
 
 func (app *Config) serve() {
-	err := rpc.Register(new(RPCServer))
+	err := rpc.Register(&RPCServer{models: app.Models})
 	if err != nil {
 		log.Panic(err)
 	}

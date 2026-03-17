@@ -6,7 +6,9 @@ import (
 	"logwolf-toolbox/data"
 )
 
-type RPCServer struct{}
+type RPCServer struct {
+	models data.Models
+}
 
 func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	log.Printf("Logging info: %s", p.Name)
@@ -15,7 +17,7 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 		Models: data.New(client),
 	}
 
-	err := app.Models.LogEntry.Insert(data.LogEntry{
+	err := app.Models.Insert(data.LogEntry{
 		Name:     p.Name,
 		Data:     p.Data,
 		Severity: p.Severity,
@@ -34,11 +36,7 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
 	log.Printf("Getting logs with params %+v...\n", p)
 
-	app := Config{
-		Models: data.New(client),
-	}
-
-	result, err := app.Models.LogEntry.All(p)
+	result, err := r.models.AllLogs(p)
 	if err != nil {
 		log.Println("Error getting logs:", err)
 		return err
@@ -55,11 +53,7 @@ func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
 func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 	log.Printf("Deleting log %+v...\n", f)
 
-	app := Config{
-		Models: data.New(client),
-	}
-
-	result, err := app.Models.LogEntry.DeleteOne(f.ID)
+	result, err := r.models.DeleteLog(f.ID)
 	if err != nil {
 		log.Println("Error deleting document:", err)
 		return err
