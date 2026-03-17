@@ -1,7 +1,7 @@
 import { CreateLogwolfEventDTOSchema, LogwolfEvent, type Severity } from '@jpricardo/logwolf-client-js';
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { redirect, useFetcher } from 'react-router';
+import { redirect, useFetcher, useRouteLoaderData } from 'react-router';
 import z, { ZodError } from 'zod';
 import type { Route } from './+types';
 
@@ -24,8 +24,11 @@ import {
 import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
 import { eventContext } from '~/context';
+import { validateCsrfToken } from '~/lib/csrf.server';
 import { formatSeverity, severityMap } from '~/lib/format';
 import { logwolf } from '~/lib/logwolf';
+
+import type { loader as layoutLoader } from '../../layout';
 
 import { Preview } from './components/preview';
 
@@ -50,6 +53,9 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 	try {
 		const fd = await request.formData();
+
+		await validateCsrfToken(request, fd);
+
 		const d = FormDataSchema.decode(Object.fromEntries(fd.entries()) as CreateEventFormData);
 		const res = await logwolf.create(new LogwolfEvent(d)).then(() => redirect('/events'));
 		event?.set('actionData', res);
@@ -72,6 +78,8 @@ export default function Create({}: Route.ComponentProps) {
 	const fetcher = useFetcher<Route.ComponentProps['actionData']>();
 	const loading = fetcher.state !== 'idle';
 	const fetcherError = fetcher.data?.error;
+	const layoutData = useRouteLoaderData<typeof layoutLoader>('pages/layout');
+	const csrfToken = layoutData?.csrfToken ?? '';
 
 	// Preview
 	const ref = useRef<HTMLFormElement>(null);
@@ -98,6 +106,8 @@ export default function Create({}: Route.ComponentProps) {
 								onChange={() => setData(new FormData(ref.current!))}
 								className='flex flex-col gap-8'
 							>
+								<input type='hidden' name='_csrf' value={csrfToken} />
+
 								{!!fetcherError?.formErrors.length && (
 									<Alert variant='destructive'>
 										<AlertTitle>Validation error!</AlertTitle>

@@ -6,6 +6,7 @@ type SessionData = {
 		name: string;
 		avatarUrl: string;
 	};
+	csrfToken: string;
 };
 
 export const sessionStorage = createCookieSessionStorage<SessionData>({

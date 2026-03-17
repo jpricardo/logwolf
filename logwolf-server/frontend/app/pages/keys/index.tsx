@@ -1,4 +1,4 @@
-import { useFetcher } from 'react-router';
+import { useFetcher, useRouteLoaderData } from 'react-router';
 import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
@@ -8,6 +8,9 @@ import { Card, CardContent } from '~/components/ui/card';
 import { Section } from '~/components/ui/section';
 import { Api } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
+import { validateCsrfToken } from '~/lib/csrf.server';
+
+import type { loader as layoutLoader } from '../layout';
 
 const API_URL = process.env.API_URL ?? 'http://broker:80/';
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET ?? '';
@@ -22,6 +25,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
 	await requireAuth(request);
 	const fd = await request.formData();
+
+	await validateCsrfToken(request, fd);
+
 	const intent = fd.get('intent');
 
 	if (intent === 'create') {
@@ -47,6 +53,10 @@ type FetcherData = Awaited<ReturnType<typeof action>>;
 export default function Keys({ loaderData }: Route.ComponentProps) {
 	const fetcher = useFetcher<FetcherData>();
 	const actionData = fetcher.data;
+	const layoutData = useRouteLoaderData<typeof layoutLoader>('pages/layout');
+	const csrfToken = layoutData?.csrfToken ?? '';
+
+	console.log({ csrfToken });
 
 	return (
 		<Page title='API Keys'>
@@ -71,6 +81,7 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 					title='API Keys'
 					addon={
 						<fetcher.Form method='post'>
+							<input type='hidden' name='_csrf' value={csrfToken} />
 							<input type='hidden' name='intent' value='create' />
 							<Button type='submit' disabled={fetcher.state !== 'idle'}>
 								Generate new key
@@ -92,6 +103,7 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 									</div>
 									{key.active && (
 										<fetcher.Form method='post'>
+											<input type='hidden' name='_csrf' value={csrfToken} />
 											<input type='hidden' name='intent' value='revoke' />
 											<input type='hidden' name='id' value={key.id} />
 											<Button type='submit' variant='destructive' size='sm'>

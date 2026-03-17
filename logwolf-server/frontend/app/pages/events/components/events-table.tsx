@@ -18,8 +18,8 @@ import { SeverityBadge } from '~/components/ui/severity-badge';
 import { Spinner } from '~/components/ui/spinner';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
 
-type EventRowProps = { data: LogwolfEventData };
-export function EventRow({ data }: EventRowProps) {
+type EventRowProps = { data: LogwolfEventData; csrfToken: string };
+export function EventRow({ data, csrfToken }: EventRowProps) {
 	const formRef = useRef(null);
 	const fetcher = useFetcher();
 
@@ -71,6 +71,7 @@ export function EventRow({ data }: EventRowProps) {
 									<fetcher.Form method='DELETE' ref={formRef}>
 										Delete Event
 										<Input type='hidden' name='id' value={data.id} />
+										<Input type='hidden' name='_csrf' value={csrfToken} />
 									</fetcher.Form>
 								</DropdownMenuItem>
 							</DropdownMenuGroup>
@@ -82,8 +83,8 @@ export function EventRow({ data }: EventRowProps) {
 	);
 }
 
-type Props = { events: LogwolfEventData[] };
-export function EventsTable({ events }: Props) {
+type Props = { events: LogwolfEventData[]; csrfToken: string };
+export function EventsTable({ events, csrfToken }: Props) {
 	return (
 		<Table>
 			<TableCaption>Last {events.length} events</TableCaption>
@@ -101,7 +102,7 @@ export function EventsTable({ events }: Props) {
 
 			<TableBody>
 				{events.map((l) => (
-					<EventRow key={l.id} data={l} />
+					<EventRow key={l.id} data={l} csrfToken={csrfToken} />
 				))}
 			</TableBody>
 		</Table>
