@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"log"
 	"logwolf-toolbox/data"
-	"math"
+	"logwolf-toolbox/rabbitmq"
 	"net/http"
-	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -30,7 +29,7 @@ func main() {
 	}
 
 	// RabbitMQ
-	conn, err := connectToRabbitMQ()
+	conn, err := rabbitmq.ConnectToRabbitMQ("amqp://guest:guest@rabbitmq")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -52,36 +51,6 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-}
-
-func connectToRabbitMQ() (*amqp.Connection, error) {
-	var count int64
-	var limit int64 = 5
-	var backoff = 1 * time.Second
-	var connection *amqp.Connection
-
-	for {
-		c, err := amqp.Dial("amqp://guest:guest@rabbitmq")
-		if err != nil {
-			fmt.Println("RabbitMQ is not ready...")
-			count++
-		} else {
-			log.Println("Connected to RabbitMQ!")
-			connection = c
-			break
-		}
-
-		if count > limit {
-			fmt.Println(err)
-			return nil, err
-		}
-
-		backoff = time.Duration(math.Pow(float64(count), 2)) * time.Second
-		log.Printf("Backing off for %d seconds", int64(backoff.Seconds()))
-		time.Sleep(backoff)
-	}
-
-	return connection, nil
 }
 
 func connectToMongo() (*mongo.Client, error) {
