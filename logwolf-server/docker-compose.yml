@@ -22,8 +22,6 @@ services:
       context: .
       dockerfile: ./broker/broker.dockerfile
     restart: always
-    ports:
-      - '8080:80'
     deploy:
       mode: replicated
       replicas: 1
@@ -75,6 +73,19 @@ services:
       - ./db-data/rabbitmq/:/var/lib/rabbitmq/
     networks:
       - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./db-data/caddy/data:/data
+      - ./db-data/caddy/config:/config
+    networks:
+      - public
 
 networks:
   public:

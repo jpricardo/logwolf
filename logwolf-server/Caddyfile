@@ -1,0 +1,8 @@
+{
+    local_certs
+}
+
+localhost {
+    reverse_proxy broker:80
+    tls internal
+}
