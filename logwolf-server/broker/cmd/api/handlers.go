@@ -67,6 +67,10 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 		pageSize = 0
 	}
 
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
 	var result []data.LogEntry
 	err = client.Call("RPCServer.GetLogs", data.QueryParams{
 		// TODO - Filters
