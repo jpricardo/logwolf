@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -22,10 +24,91 @@ var (
 	cacheTTL   = 60 * time.Second
 )
 
+func hashKey(plaintext string) string {
+	sum := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(sum[:])
+}
+
+// --- IP rate limiter ---
+// Sliding-window counter: tracks failed auth attempts per remote IP.
+// After maxFailures within the window, requests are rejected with 429.
+
+const (
+	rateLimitWindow = 1 * time.Minute
+	maxFailures     = 10
+)
+
+type ipEntry struct {
+	failures  int
+	windowEnd time.Time
+}
+
+var (
+	ipLimiter   = make(map[string]*ipEntry)
+	ipLimiterMu sync.Mutex
+)
+
+// recordFailure increments the failure counter for addr and returns true if
+// the IP is now rate-limited (i.e. failures >= maxFailures within the window).
+func recordFailure(addr string) bool {
+	ipLimiterMu.Lock()
+	defer ipLimiterMu.Unlock()
+
+	now := time.Now()
+	entry, ok := ipLimiter[addr]
+	if !ok || now.After(entry.windowEnd) {
+		// First failure in this window (or previous window expired).
+		ipLimiter[addr] = &ipEntry{failures: 1, windowEnd: now.Add(rateLimitWindow)}
+		return false
+	}
+
+	entry.failures++
+	return entry.failures >= maxFailures
+}
+
+// isRateLimited checks whether addr has already hit the limit, without
+// incrementing the counter.
+func isRateLimited(addr string) bool {
+	ipLimiterMu.Lock()
+	defer ipLimiterMu.Unlock()
+
+	entry, ok := ipLimiter[addr]
+	if !ok {
+		return false
+	}
+	if time.Now().After(entry.windowEnd) {
+		delete(ipLimiter, addr)
+		return false
+	}
+	return entry.failures >= maxFailures
+}
+
+// remoteIP extracts the IP portion of an addr:port string. Falls back to the
+// full string if it cannot be parsed cleanly.
+func remoteIP(remoteAddr string) string {
+	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
+		return remoteAddr[:idx]
+	}
+	return remoteAddr
+}
+
+// --- Middleware ---
+
 func (app *Config) requireAPIKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := remoteIP(r.RemoteAddr)
+
+		// Pre-check: reject immediately if this IP is already rate-limited.
+		if isRateLimited(ip) {
+			log.Printf(`{"event":"auth","outcome":"deny","reason":"rate_limited","method":"%s","path":"%s","remote_addr":"%s"}`,
+				r.Method, r.URL.Path, r.RemoteAddr)
+			app.errorJSON(w, fmt.Errorf("too many failed attempts"), http.StatusTooManyRequests)
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
+			recordFailure(ip)
 			log.Printf(`{"event":"auth","outcome":"deny","reason":"missing_or_malformed_header","method":"%s","path":"%s","remote_addr":"%s"}`,
 				r.Method, r.URL.Path, r.RemoteAddr)
 			app.errorJSON(w, fmt.Errorf("missing or malformed Authorization header"), http.StatusUnauthorized)
@@ -34,16 +117,18 @@ func (app *Config) requireAPIKey(next http.Handler) http.Handler {
 
 		plaintext := strings.TrimPrefix(authHeader, "Bearer ")
 		keyPrefix := safePrefix(plaintext)
+		cacheKey := hashKey(plaintext)
 
-		// Check cache first
+		// Check cache first (keyed on hash, not plaintext).
 		keyCacheMu.RLock()
-		entry, cached := keyCache[plaintext]
+		entry, cached := keyCache[cacheKey]
 		keyCacheMu.RUnlock()
 
 		if cached && time.Now().Before(entry.expiresAt) {
 			if !entry.valid {
-				log.Printf(`{"event":"auth","outcome":"deny","reason":"invalid_key","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"cache"}`,
-					keyPrefix, r.Method, r.URL.Path, r.RemoteAddr)
+				limited := recordFailure(ip)
+				log.Printf(`{"event":"auth","outcome":"deny","reason":"invalid_key","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"cache","rate_limited":%v}`,
+					keyPrefix, r.Method, r.URL.Path, r.RemoteAddr, limited)
 				app.errorJSON(w, fmt.Errorf("invalid API key"), http.StatusUnauthorized)
 				return
 			}
@@ -62,14 +147,15 @@ func (app *Config) requireAPIKey(next http.Handler) http.Handler {
 			return
 		}
 
-		// Write result to cache
+		// Write result to cache (keyed on hash).
 		keyCacheMu.Lock()
-		keyCache[plaintext] = cacheEntry{valid: valid, expiresAt: time.Now().Add(cacheTTL)}
+		keyCache[cacheKey] = cacheEntry{valid: valid, expiresAt: time.Now().Add(cacheTTL)}
 		keyCacheMu.Unlock()
 
 		if !valid {
-			log.Printf(`{"event":"auth","outcome":"deny","reason":"invalid_key","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"db"}`,
-				keyPrefix, r.Method, r.URL.Path, r.RemoteAddr)
+			limited := recordFailure(ip)
+			log.Printf(`{"event":"auth","outcome":"deny","reason":"invalid_key","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"db","rate_limited":%v}`,
+				keyPrefix, r.Method, r.URL.Path, r.RemoteAddr, limited)
 			app.errorJSON(w, fmt.Errorf("invalid API key"), http.StatusUnauthorized)
 			return
 		}
