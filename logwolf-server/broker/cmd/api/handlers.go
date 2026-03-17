@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/rpc"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
@@ -100,4 +102,50 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!", Data: fmt.Sprintf("Deleted entries: %d", result)})
+}
+
+func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := app.Models.ListAPIKeys()
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: keys})
+}
+
+func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := app.readJSON(w, r, &body); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	plaintext, key, err := data.GenerateAPIKey(body.ProjectID)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if err := app.Models.SaveAPIKey(key); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	// Return plaintext only once — it is never stored and cannot be recovered
+	app.writeJSON(w, http.StatusCreated, jsonResponse{
+		Error:   false,
+		Message: "API key created. Copy it now — it will not be shown again.",
+		Data:    map[string]string{"key": plaintext, "prefix": key.Prefix, "id": key.ID.Hex()},
+	})
+}
+
+func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := app.Models.RevokeAPIKey(id); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Key revoked."})
 }

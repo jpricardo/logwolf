@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -85,4 +87,16 @@ func safePrefix(key string) string {
 		return key[:10]
 	}
 	return "[invalid]"
+}
+
+func (app *Config) requireInternalSecret(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secret := os.Getenv("INTERNAL_API_SECRET")
+		header := r.Header.Get("X-Internal-Secret")
+		if secret == "" || (subtle.ConstantTimeCompare([]byte(header), []byte(secret)) == 0) {
+			app.errorJSON(w, fmt.Errorf("unauthorized"), http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

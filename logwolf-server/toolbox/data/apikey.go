@@ -10,6 +10,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -97,4 +98,37 @@ func (m *Models) RevokeAPIKey(id string) error {
 		bson.M{"$set": bson.M{"active": false, "revoked_at": now}},
 	)
 	return err
+}
+
+func (m *Models) ListAPIKeys() ([]APIKey, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := m.client.Database("logs").Collection("api_keys")
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	cursor, err := collection.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var keys []APIKey
+	if err := cursor.All(ctx, &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+func (m *Models) SaveAPIKey(key APIKey) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	collection := m.client.Database("logs").Collection("api_keys")
+	result, err := collection.InsertOne(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	key.ID = result.InsertedID.(primitive.ObjectID)
+	return nil
 }
