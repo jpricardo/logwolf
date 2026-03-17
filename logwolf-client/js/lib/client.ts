@@ -21,6 +21,14 @@ export class Logwolf {
 		this.config = config;
 	}
 
+	private getHeaders(): HeadersInit {
+		const headers: HeadersInit = { 'Content-Type': 'application/json' };
+		if (this.config.apiKey) {
+			headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+		}
+		return headers;
+	}
+
 	private handleResponse<T>(r: LogwolfApiResponse<T>): T {
 		if (r.error) throw new Error(r.message);
 		return r.data;
@@ -42,7 +50,7 @@ export class Logwolf {
 	 */
 	public async create(p: LogwolfEvent): Promise<void> {
 		const url = new URL('/logs', this.config.url);
-		const res = await fetch(url, { method: 'POST', body: p.toJson() })
+		const res = await fetch(url, { method: 'POST', headers: this.getHeaders(), body: p.toJson() })
 			.then<LogwolfApiResponse<void>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
 
@@ -61,7 +69,7 @@ export class Logwolf {
 	public async getAll(p?: Pagination): Promise<LogwolfEventData[]> {
 		const params = p ? PaginationSchema.encode(p) : '';
 		const url = new URL('/logs?' + params, this.config.url);
-		const res = await fetch(url, { method: 'GET' })
+		const res = await fetch(url, { method: 'GET', headers: this.getHeaders() })
 			.then<LogwolfApiResponse<Event[]>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
 
@@ -84,7 +92,11 @@ export class Logwolf {
 
 	public async delete(dto: DeleteLogwolfEventDTO): Promise<void> {
 		const url = new URL('/logs', this.config.url);
-		const res = await fetch(url, { method: 'DELETE', body: JSON.stringify(DeleteLogwolfEventDTOSchema.parse(dto)) })
+		const res = await fetch(url, {
+			method: 'DELETE',
+			headers: this.getHeaders(),
+			body: JSON.stringify(DeleteLogwolfEventDTOSchema.parse(dto)),
+		})
 			.then<LogwolfApiResponse<void>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
 

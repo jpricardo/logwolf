@@ -7,6 +7,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 const testConfig = {
 	url: 'http://test.url',
+	apiKey: 'lw_testkey123456789',
 	sampleRate: 0.5, // tests will fail if this number is too low
 	errorSampleRate: 1, // tests will fail if this number is too low
 } satisfies LogwolfConfig;
@@ -30,8 +31,11 @@ describe('Logwolf', () => {
 
 		await client.create(ev);
 
-		expect(mockFetch).toHaveBeenCalledTimes(1);
-		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), { method: 'POST', body: ev.toJson() });
+		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
+			body: ev.toJson(),
+		});
 	});
 
 	it('should get events correctly', async () => {
@@ -40,7 +44,10 @@ describe('Logwolf', () => {
 		await client.getAll();
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
-		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs?', testConfig.url), { method: 'GET' });
+		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs?', testConfig.url), {
+			method: 'GET',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
+		});
 	});
 
 	it('should delete events correctly', async () => {
@@ -51,6 +58,7 @@ describe('Logwolf', () => {
 		expect(mockFetch).toHaveBeenCalledTimes(1);
 		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
 			method: 'DELETE',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
 			body: JSON.stringify({ id: 'id' }),
 		});
 	});
@@ -62,7 +70,11 @@ describe('Logwolf', () => {
 		await client.capture(ev);
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
-		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), { method: 'POST', body: ev.toJson() });
+		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
+			body: ev.toJson(),
+		});
 	});
 
 	it("should eventually capture a [severity='info'] or [severity='warning'] event", async () => {
@@ -77,7 +89,11 @@ describe('Logwolf', () => {
 				await client.capture(ev);
 
 				expect(mockFetch).toHaveBeenCalledTimes(1);
-				expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), { method: 'POST', body: ev.toJson() });
+				expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
+					body: ev.toJson(),
+				});
 
 				passed = true;
 				break;
@@ -102,7 +118,11 @@ describe('Logwolf', () => {
 				await client.capture(ev);
 
 				expect(mockFetch).toHaveBeenCalledTimes(1);
-				expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), { method: 'POST', body: ev.toJson() });
+				expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
+					body: ev.toJson(),
+				});
 
 				passed = true;
 				break;

@@ -54,6 +54,7 @@ export type LogwolfApiResponse<T> = { message: string } & ({ error: true } | { e
 
 export const LogwolfConfigSchema = z.object({
 	url: z.url(),
+	apiKey: z.string().startsWith('lw_'),
 	sampleRate: z.number().positive().lte(1).optional(),
 	errorSampleRate: z.number().positive().lte(1).optional(),
 });
