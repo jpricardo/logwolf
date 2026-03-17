@@ -1,4 +1,4 @@
-import { LayoutDashboard, ScrollText } from 'lucide-react';
+import { KeyRound, LayoutDashboard, ScrollText } from 'lucide-react';
 import type { Route } from '../../+types/root';
 import {
 	Sidebar,
@@ -24,6 +24,12 @@ const items = [
 		title: 'Events',
 		url: '/events',
 		icon: ScrollText,
+	},
+
+	{
+		title: 'Keys',
+		url: '/keys',
+		icon: KeyRound,
 	},
 ] as const;
 
