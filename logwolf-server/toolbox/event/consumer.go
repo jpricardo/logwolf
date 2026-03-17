@@ -10,6 +10,8 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+const queueName = "logwolf_logs"
+
 type Consumer struct {
 	conn      *amqp.Connection
 	queueName string
@@ -37,8 +39,8 @@ func (c *Consumer) setup() error {
 	channel, err := c.conn.Channel()
 	if err != nil {
 		return err
-
 	}
+	defer channel.Close()
 
 	return declareExchange(channel)
 }
@@ -50,7 +52,7 @@ func (c *Consumer) Listen(topics []string) error {
 	}
 	defer ch.Close()
 
-	q, err := declareRandomQueue(ch)
+	q, err := declareQueue(ch, queueName)
 	if err != nil {
 		return err
 	}
@@ -67,7 +69,7 @@ func (c *Consumer) Listen(topics []string) error {
 		return err
 	}
 
-	channel := make(chan bool)
+	done := make(chan bool)
 	go func() {
 		for d := range messages {
 			log.Println("Message received!")
@@ -81,7 +83,7 @@ func (c *Consumer) Listen(topics []string) error {
 
 	fmt.Printf("Waiting for messages on [Exchange, Queue] [logs_topic, %s]\n", q.Name)
 
-	<-channel
+	<-done
 
 	return nil
 }
