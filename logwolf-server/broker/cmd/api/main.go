@@ -7,6 +7,9 @@ import (
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/rabbitmq"
 	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -14,7 +17,8 @@ import (
 )
 
 const (
-	port = "80"
+	port            = "80"
+	shutdownTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -40,17 +44,35 @@ func main() {
 		Models: data.New(mongoClient),
 	}
 
-	log.Printf("Starting server on port %s\n", port)
-
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", port),
 		Handler: app.routes(),
 	}
 
-	err = srv.ListenAndServe()
-	if err != nil {
-		log.Panic(err)
+	// Listen for SIGTERM/SIGINT in the background. When received, gracefully
+	// drain in-flight HTTP requests before closing the RabbitMQ connection.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	go func() {
+		log.Printf("Starting server on port %s\n", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Panicf("ListenAndServe: %v", err)
+		}
+	}()
+
+	// Block until a signal is received.
+	<-ctx.Done()
+	log.Println("Shutdown signal received — draining in-flight requests...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP shutdown error: %v", err)
 	}
+
+	log.Println("Shutdown complete.")
 }
 
 func connectToMongo() (*mongo.Client, error) {
