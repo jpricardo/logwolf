@@ -3,6 +3,12 @@
 }
 
 localhost {
-    reverse_proxy broker:80
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy broker:80
+    }
+    handle {
+        reverse_proxy frontend:3000
+    }
     tls internal
 }

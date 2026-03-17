@@ -6,13 +6,16 @@ services:
       context: ./frontend
       dockerfile: ./frontend.dockerfile
     restart: always
-    ports:
-      - '3000:3000'
     deploy:
       mode: replicated
       replicas: 1
     environment:
       API_URL: http://broker:80/
+      SESSION_SECRET: changeme-use-a-real-secret-in-production
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      LOGWOLF_ALLOWED_GITHUB_USERS: ${LOGWOLF_ALLOWED_GITHUB_USERS:-}
+      LOGWOLF_ALLOWED_GITHUB_ORGS: ${LOGWOLF_ALLOWED_GITHUB_ORGS:-}
     networks:
       - public
       - internal
@@ -77,6 +80,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: always
+    depends_on:
+      - frontend
+      - broker
     ports:
       - '80:80'
       - '443:443'
