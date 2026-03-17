@@ -58,6 +58,10 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 		page = 0
 	}
 
+	if page < 1 {
+		page = 1
+	}
+
 	pageSize, err := strconv.ParseInt(qp.Get("pageSize"), 10, 0)
 	if err != nil {
 		pageSize = 0
