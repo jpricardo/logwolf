@@ -1,4 +1,5 @@
-import type { Severity } from '~/api/events';
+import type { Severity } from '@jpricardo/logwolf-client-js';
+
 import { locale } from './locale';
 
 export function formatPercent(n: number) {
