@@ -1,6 +1,7 @@
 package event
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -45,7 +46,9 @@ func (c *Consumer) setup() error {
 	return declareExchange(channel)
 }
 
-func (c *Consumer) Listen(topics []string) error {
+// Listen consumes messages until ctx is cancelled, then stops the consumer
+// and waits for the current message goroutine to drain before returning.
+func (c *Consumer) Listen(ctx context.Context, topics []string) error {
 	ch, err := c.conn.Channel()
 	if err != nil {
 		return err
@@ -58,34 +61,45 @@ func (c *Consumer) Listen(topics []string) error {
 	}
 
 	for _, t := range topics {
-		err := ch.QueueBind(q.Name, t, "logs_topic", false, nil)
-		if err != nil {
+		if err := ch.QueueBind(q.Name, t, "logs_topic", false, nil); err != nil {
 			return err
 		}
 	}
 
-	messages, err := ch.Consume(q.Name, "", true, false, false, false, nil)
+	// Cancel the consumer tag to stop delivery when we're shutting down.
+	const consumerTag = "logwolf_listener"
+	messages, err := ch.Consume(q.Name, consumerTag, true, false, false, false, nil)
 	if err != nil {
 		return err
 	}
 
-	done := make(chan bool)
-	go func() {
-		for d := range messages {
-			log.Println("Message received!")
-
-			var payload Payload
-			_ = json.Unmarshal(d.Body, &payload)
-
-			go handlePayload(payload)
-		}
-	}()
-
 	fmt.Printf("Waiting for messages on [Exchange, Queue] [logs_topic, %s]\n", q.Name)
 
-	<-done
+	for {
+		select {
+		case d, ok := <-messages:
+			if !ok {
+				// Channel closed by RabbitMQ — connection dropped.
+				return fmt.Errorf("message channel closed unexpectedly")
+			}
+			log.Println("Message received!")
+			var payload Payload
+			_ = json.Unmarshal(d.Body, &payload)
+			// handlePayload is called synchronously so we finish the current
+			// message before checking ctx again on the next loop iteration.
+			handlePayload(payload)
 
-	return nil
+		case <-ctx.Done():
+			log.Println("Shutdown signal received — stopping consumer...")
+			// Cancel stops RabbitMQ from delivering new messages.
+			// Any message already in handlePayload above will have finished
+			// because we process synchronously.
+			if err := ch.Cancel(consumerTag, false); err != nil {
+				log.Printf("Consumer cancel error: %v", err)
+			}
+			return nil
+		}
+	}
 }
 
 func handlePayload(p Payload) {
