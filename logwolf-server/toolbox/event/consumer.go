@@ -97,7 +97,7 @@ func handlePayload(p Payload) {
 		}
 
 	default:
-		log.Panic("Invalid action:", p.Action)
+		log.Printf(`{"event":"listener","outcome":"skip","reason":"unknown_action","action":"%s"}`, p.Action)
 	}
 }
 
