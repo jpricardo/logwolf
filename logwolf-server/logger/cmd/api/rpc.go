@@ -13,11 +13,7 @@ type RPCServer struct {
 func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	log.Printf("Logging info: %s", p.Name)
 
-	app := Config{
-		Models: data.New(client),
-	}
-
-	err := app.Models.Insert(data.LogEntry{
+	err := r.models.Insert(data.LogEntry{
 		Name:     p.Name,
 		Data:     p.Data,
 		Severity: p.Severity,
