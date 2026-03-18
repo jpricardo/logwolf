@@ -1,16 +1,16 @@
 import { type DeleteLogwolfEventDTO } from '@jpricardo/logwolf-client-js';
 import { Plus } from 'lucide-react';
-import { Link, useRouteLoaderData } from 'react-router';
+import { Link } from 'react-router';
 import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
+import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { validateCsrfToken } from '~/lib/csrf.server';
 import { logwolf } from '~/lib/logwolf';
 
-import type { loader as layoutLoader } from '../layout';
 import { EventsTable } from './components/events-table';
 
 export function meta({}: Route.MetaArgs) {
@@ -45,8 +45,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function Events({ loaderData }: Route.ComponentProps) {
-	const layoutData = useRouteLoaderData<typeof layoutLoader>('pages/layout');
-	const csrfToken = layoutData?.csrfToken ?? '';
+	const csrfToken = useCsrfToken();
 
 	return (
 		<Page title='Events'>

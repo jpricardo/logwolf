@@ -1,4 +1,4 @@
-import { useFetcher, useRouteLoaderData } from 'react-router';
+import { useFetcher } from 'react-router';
 import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
@@ -6,42 +6,55 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent } from '~/components/ui/card';
 import { Section } from '~/components/ui/section';
-import { Api } from '~/lib/api';
+import { eventContext } from '~/context';
+import { useCsrfToken } from '~/hooks/use-csrf-token';
+import { api } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
 
-import type { loader as layoutLoader } from '../layout';
+export async function loader({ request, context }: Route.LoaderArgs) {
+	const event = context.get(eventContext);
+	event?.addTag('loader');
 
-const API_URL = process.env.API_URL ?? 'http://broker:80/';
-const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET ?? '';
-const api = new Api(API_URL, INTERNAL_SECRET);
-
-export async function loader({ request }: Route.LoaderArgs) {
 	await requireAuth(request);
 	const res = await api.getKeys();
+	event?.set('loaderData', res);
+
 	return { keys: res };
 }
 
-export async function action({ request }: Route.ActionArgs) {
-	await requireAuth(request);
-	const fd = await request.formData();
+export async function action({ request, context }: Route.ActionArgs) {
+	const event = context.get(eventContext);
+	event?.addTag('action');
 
-	await validateCsrfToken(request, fd);
+	try {
+		await requireAuth(request);
+		const fd = await request.formData();
 
-	const intent = fd.get('intent');
+		await validateCsrfToken(request, fd);
 
-	if (intent === 'create') {
-		const res = await api.createKey('default');
-		return { data: res };
+		const intent = fd.get('intent');
+		event?.set('intent', intent);
+
+		if (intent === 'create') {
+			const res = await api.createKey('default');
+			event?.set('actionData', { ...res, key: '-' });
+			return { data: res };
+		}
+
+		if (intent === 'revoke') {
+			const id = fd.get('id')?.toString() ?? '';
+			await api.deleteKey(id);
+			event?.set('actionData', null);
+			return { revoked: true };
+		}
+
+		return null;
+	} catch (err) {
+		event?.setSeverity('error');
+		event?.set('actionError', err);
+		return { error: err as Error };
 	}
-
-	if (intent === 'revoke') {
-		const id = fd.get('id')?.toString() ?? '';
-		await api.deleteKey(id);
-		return { revoked: true };
-	}
-
-	return null;
 }
 
 export function meta() {
@@ -53,10 +66,7 @@ type FetcherData = Awaited<ReturnType<typeof action>>;
 export default function Keys({ loaderData }: Route.ComponentProps) {
 	const fetcher = useFetcher<FetcherData>();
 	const actionData = fetcher.data;
-	const layoutData = useRouteLoaderData<typeof layoutLoader>('pages/layout');
-	const csrfToken = layoutData?.csrfToken ?? '';
-
-	console.log({ csrfToken });
+	const csrfToken = useCsrfToken();
 
 	return (
 		<Page title='API Keys'>

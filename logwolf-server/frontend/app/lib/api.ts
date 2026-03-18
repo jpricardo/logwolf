@@ -9,10 +9,14 @@ type ApiKey = {
 	revoked_at: string;
 };
 
+export type RetentionDays = 0 | 30 | 60 | 90 | 180 | 365;
+
 export interface IApi {
 	getKeys(): Promise<ApiKey[]>;
 	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
 	deleteKey(id: string): Promise<void>;
+	getRetention(): Promise<{ days: RetentionDays }>;
+	updateRetention(days: number): Promise<{ days: RetentionDays }>;
 }
 
 export class Api implements IApi {
@@ -53,4 +57,29 @@ export class Api implements IApi {
 		if (json.error) throw new Error(json.message);
 		return json.data;
 	}
+
+	public async getRetention(): Promise<{ days: RetentionDays }> {
+		const res = await fetch(`${this.baseUrl}settings/retention`, {
+			method: 'GET',
+			headers: { 'X-Internal-Secret': this.secret },
+		});
+		const json = (await res.json()) as ApiResponse<{ days: RetentionDays }>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
+
+	public async updateRetention(days: number): Promise<{ days: RetentionDays }> {
+		const res = await fetch(`${this.baseUrl}settings/retention`, {
+			method: 'PATCH',
+			headers: { 'X-Internal-Secret': this.secret },
+			body: JSON.stringify({ days }),
+		});
+		const json = (await res.json()) as ApiResponse<{ days: RetentionDays }>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
 }
+
+export const api = new Api(process.env.API_URL!, process.env.INTERNAL_API_SECRET!);

@@ -1,5 +1,6 @@
-import { KeyRound, LayoutDashboard, ScrollText } from 'lucide-react';
+import { KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
 import type { Route } from '../../+types/root';
+
 import {
 	Sidebar,
 	SidebarContent,
@@ -30,6 +31,12 @@ const items = [
 		title: 'Keys',
 		url: '/keys',
 		icon: KeyRound,
+	},
+
+	{
+		title: 'Settings',
+		url: '/settings',
+		icon: Settings,
 	},
 ] as const;
 

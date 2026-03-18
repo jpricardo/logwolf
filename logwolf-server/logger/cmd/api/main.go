@@ -48,6 +48,15 @@ func main() {
 		Models: data.New(client),
 	}
 
+	retentionDays, err := app.Models.Settings.GetRetentionDays()
+	if err != nil {
+		log.Printf("Warning: could not read retention setting, using default: %v", err)
+		retentionDays = 90
+	}
+	if err := app.Models.Settings.EnsureTTLIndex(retentionDays); err != nil {
+		log.Printf("Warning: could not ensure TTL index: %v", err)
+	}
+
 	app.serve()
 }
 

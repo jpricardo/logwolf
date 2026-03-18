@@ -10,5 +10,6 @@ export default [
 		route('events/:id', 'pages/events/details/index.tsx'),
 		route('events/new', 'pages/events/create/index.tsx'),
 		route('keys', 'pages/keys/index.tsx'),
+		route('settings', 'pages/settings/index.tsx'),
 	]),
 ] satisfies RouteConfig;

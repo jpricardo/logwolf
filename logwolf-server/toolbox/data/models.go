@@ -15,6 +15,7 @@ type Models struct {
 	client   *mongo.Client
 	LogEntry LogEntry
 	APIKey   APIKey
+	Settings Settings
 }
 
 type LogEntry struct {
@@ -50,6 +51,7 @@ func New(mongo *mongo.Client) Models {
 		client:   mongo,
 		LogEntry: LogEntry{},
 		APIKey:   APIKey{},
+		Settings: Settings{client: mongo},
 	}
 }
 

@@ -60,3 +60,23 @@ func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 
 	return nil
 }
+
+func (r *RPCServer) GetRetention(args *string, reply *int) error {
+	days, err := r.models.Settings.GetRetentionDays()
+	if err != nil {
+		return err
+	}
+	*reply = days
+	return nil
+}
+
+func (r *RPCServer) UpdateRetention(days *int, reply *string) error {
+	if err := r.models.Settings.SetRetentionDays(*days); err != nil {
+		return err
+	}
+	if err := r.models.Settings.EnsureTTLIndex(*days); err != nil {
+		return err
+	}
+	*reply = "ok"
+	return nil
+}
