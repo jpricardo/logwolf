@@ -84,12 +84,6 @@ export class Logwolf {
 		return res;
 	}
 
-	public async getRelated(id: string, p?: Pagination): Promise<LogwolfEventData[]> {
-		// TODO - "relatedness" algorithm
-		const res = this.getAll(p).then((r) => r.filter((i) => i.id !== id).slice(0, p?.pageSize));
-		return res;
-	}
-
 	public async delete(dto: DeleteLogwolfEventDTO): Promise<void> {
 		const url = new URL('/logs', this.config.url);
 		const res = await fetch(url, {
