@@ -80,3 +80,12 @@ func (r *RPCServer) UpdateRetention(days *int, reply *string) error {
 	*reply = "ok"
 	return nil
 }
+
+func (r *RPCServer) GetMetrics(args *string, reply *data.Metrics) error {
+	metrics, err := r.models.GetMetrics()
+	if err != nil {
+		return err
+	}
+	*reply = *metrics
+	return nil
+}

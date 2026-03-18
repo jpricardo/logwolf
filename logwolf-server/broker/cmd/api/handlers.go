@@ -205,3 +205,19 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Data: retentionResponse{Days: payload.Days}})
 }
+
+func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	client, err := rpc.Dial("tcp", "logger:5001")
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	var result data.Metrics
+	if err := client.Call("RPCServer.GetMetrics", "", &result); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
+}

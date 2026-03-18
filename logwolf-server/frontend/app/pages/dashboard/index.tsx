@@ -6,7 +6,7 @@ import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
-import { logwolf } from '~/lib/logwolf';
+import { api } from '~/lib/api';
 
 import { AverageDuration, AverageDurationSkeleton } from './components/average-duration';
 import { ErrorRate, ErrorRateSkeleton } from './components/error-rate';
@@ -20,37 +20,18 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader({ context }: Route.LoaderArgs) {
-	const ms = 1000 * 60 * 60 * 24;
-	const end = new Date().getTime();
-	const start = new Date().setTime(end - ms);
-
 	const event = context.get(eventContext);
 	event?.addTag('loader');
-	const res = logwolf.getAll();
 
-	const errors = res.then((r) => r.filter((e) => e.severity === 'critical' || e.severity === 'error'));
+	const metrics = api.getMetrics();
+	event?.set('loaderData', 'async data');
 
-	const recentEvents = res.then((r) =>
-		r.filter((l) => {
-			const time = l.created_at.getTime();
-			return time >= start && time <= end;
-		}),
-	);
-
-	const recentErrors = recentEvents.then((r) =>
-		r.filter((l) => {
-			const time = l.created_at.getTime();
-			return time >= start && time <= end;
-		}),
-	);
-
-	const data = { timespan: ms, events: res, errors, recentEvents, recentErrors };
-	event?.set('loaderData', ['too much data']);
-	return data;
+	return { metrics };
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
-	const { events, errors, recentEvents, recentErrors, timespan } = loaderData;
+	const { metrics } = loaderData;
+
 	return (
 		<Page title='Dashboard'>
 			<div className='flex flex-col gap-8'>
@@ -67,32 +48,32 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 						<div className='flex flex-col flex-wrap gap-4 flex-3 justify-stretch'>
 							<div className='flex flex-row flex-wrap gap-4 flex-1'>
 								<Suspense fallback={<TotalEventsSkeleton className='flex-1 min-w-xs' />}>
-									<TotalEvents className='flex-1 min-w-xs' p={events} />
+									<TotalEvents className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 
 								<Suspense fallback={<TotalErrorsSkeleton className='flex-1 min-w-xs' />}>
-									<TotalErrors className='flex-1 min-w-xs' p={errors} />
+									<TotalErrors className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 
 								<Suspense fallback={<AverageDurationSkeleton className='flex-1 min-w-xs' />}>
-									<AverageDuration className='flex-1 min-w-xs' p={events} />
+									<AverageDuration className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 							</div>
 
 							<div className='flex flex-row flex-wrap gap-4 flex-1'>
 								<Suspense fallback={<EventRateSkeleton className='flex-1 min-w-xs' />}>
-									<EventRate className='flex-1 min-w-xs' timespan={timespan} p={recentEvents} />
+									<EventRate className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 
 								<Suspense fallback={<ErrorRateSkeleton className='flex-1 min-w-xs' />}>
-									<ErrorRate className='flex-1 min-w-xs' timespan={timespan} p={recentErrors} />
+									<ErrorRate className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 							</div>
 						</div>
 
 						<div className='flex flex-col flex-wrap flex-2'>
 							<Suspense fallback={<TagsBarChartSkeleton className='flex-1 min-w-xs min-h-100' />}>
-								<TagsBarChart className='flex-1 min-w-xs min-h-100' p={events} />
+								<TagsBarChart className='flex-1 min-w-xs min-h-100' p={metrics} />
 							</Suspense>
 						</div>
 					</div>

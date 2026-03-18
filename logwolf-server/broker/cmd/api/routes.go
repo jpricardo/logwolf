@@ -30,6 +30,7 @@ func (app *Config) routes() http.Handler {
 		r.Delete("/keys/{id}", app.RevokeAPIKey)
 		r.Get("/settings/retention", app.GetRetention)
 		r.Patch("/settings/retention", app.UpdateRetention)
+		r.Get("/metrics", app.GetMetrics)
 	})
 
 	// Protected routes

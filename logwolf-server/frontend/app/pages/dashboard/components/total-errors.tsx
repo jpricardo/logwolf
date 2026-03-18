@@ -1,25 +1,24 @@
-import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
 import { use } from 'react';
 
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
 import { Skeleton } from '~/components/ui/skeleton';
+import type { Metrics } from '~/lib/api';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { p: Promise<LogwolfEventData[]> };
+type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
 export function TotalErrors({ className = '', p, ...props }: Props) {
-	const errors = use(p);
-	const critical = errors.filter((e) => e.severity === 'critical');
+	const metrics = use(p);
 
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
 				<CardDescription>Error events</CardDescription>
-				<CardTitle className='text-3xl'>{errors.length}</CardTitle>
+				<CardTitle className='text-3xl'>{metrics.total_errors}</CardTitle>
 			</CardHeader>
 
 			<CardFooter>
 				<span className='text-muted-foreground'>
-					Including <span className='font-bold'>{critical.length}</span> critical events!
+					Including <span className='font-bold'>{metrics.total_critical}</span> critical events!
 				</span>
 			</CardFooter>
 		</Card>

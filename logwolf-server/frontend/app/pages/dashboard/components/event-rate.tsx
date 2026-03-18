@@ -1,29 +1,26 @@
-import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
 import { use } from 'react';
 
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
 import { Skeleton } from '~/components/ui/skeleton';
+import type { Metrics } from '~/lib/api';
 import { locale } from '~/lib/locale';
 import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { timespan: number; p: Promise<LogwolfEventData[]> };
-export function EventRate({ className = '', timespan, p, ...props }: Props) {
-	const events = use(p);
-
-	const minutes = timespan / (1000 * 60);
-	const hours = minutes / 60;
+type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
+export function EventRate({ className = '', p, ...props }: Props) {
+	const metrics = use(p);
 
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
 				<CardDescription>Event rate</CardDescription>
 				<CardTitle className='text-3xl'>
-					~{(events.length / minutes).toLocaleString(locale, { maximumFractionDigits: 2 })} TPM
+					~{metrics.events_last_24h.toLocaleString(locale, { maximumFractionDigits: 2 })} TPM
 				</CardTitle>
 			</CardHeader>
 
 			<CardFooter>
-				<span className='text-muted-foreground'>In the last {hours} hours</span>
+				<span className='text-muted-foreground'>In the last 24 hours</span>
 			</CardFooter>
 		</Card>
 	);

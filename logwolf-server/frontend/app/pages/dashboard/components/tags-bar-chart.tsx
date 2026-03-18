@@ -1,26 +1,17 @@
-import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
 import { use } from 'react';
 import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '~/components/ui/chart';
+import type { Metrics } from '~/lib/api';
 import { cn } from '~/lib/utils';
 
 const maxBarAmt = 5;
 
-type Props = React.ComponentProps<typeof Card> & { p: Promise<LogwolfEventData[]> };
+type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
 export function TagsBarChart({ className, p, ...props }: Props) {
-	const events = use(p);
-
-	const tags = Array.from(new Set(events.flatMap((l) => l.tags)));
-
-	const data = tags
-		.reduce<{ tag: string; ammount: number }[]>((acc, curr) => {
-			const amt = events.filter((l) => l.tags.includes(curr)).length;
-			return [...acc, { tag: curr, ammount: amt }];
-		}, [])
-		.toSorted((a, b) => b.ammount - a.ammount)
-		.slice(0, maxBarAmt);
+	const metrics = use(p);
+	const data = metrics.top_tags.toSorted((a, b) => b.count - a.count).slice(0, maxBarAmt);
 
 	return (
 		<Card className={cn('shadow-none h-full', className)} {...props}>
