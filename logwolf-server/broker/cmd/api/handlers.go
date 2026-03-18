@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
+	"net"
 	"net/http"
 	"net/rpc"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -220,4 +222,61 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
+}
+
+type serviceStatus struct {
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+type healthResponse struct {
+	Status   string                   `json:"status"`
+	Services map[string]serviceStatus `json:"services"`
+}
+
+func (app *Config) Health(w http.ResponseWriter, r *http.Request) {
+	rabbitmq := checkRabbitMQ(app)
+	logger := checkLogger()
+
+	overall := "healthy"
+	if rabbitmq.Status == "down" || logger.Status == "down" {
+		overall = "degraded"
+	}
+
+	status := http.StatusOK
+	if overall == "degraded" {
+		status = http.StatusServiceUnavailable
+	}
+
+	app.writeJSON(w, status, healthResponse{
+		Status: overall,
+		Services: map[string]serviceStatus{
+			"rabbitmq": rabbitmq,
+			"logger":   logger,
+		},
+	})
+}
+
+func checkRabbitMQ(app *Config) serviceStatus {
+	if app.Rabbit == nil || app.Rabbit.IsClosed() {
+		return serviceStatus{Status: "down", Error: "connection is closed"}
+	}
+
+	ch, err := app.Rabbit.Channel()
+	if err != nil {
+		return serviceStatus{Status: "down", Error: err.Error()}
+	}
+	ch.Close()
+
+	return serviceStatus{Status: "up"}
+}
+
+func checkLogger() serviceStatus {
+	conn, err := net.DialTimeout("tcp", "logger:5001", 2*time.Second)
+	if err != nil {
+		return serviceStatus{Status: "down", Error: err.Error()}
+	}
+	conn.Close()
+
+	return serviceStatus{Status: "up"}
 }

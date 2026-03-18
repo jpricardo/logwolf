@@ -22,6 +22,8 @@ func (app *Config) routes() http.Handler {
 
 	mux.Use(middleware.Heartbeat("/ping"))
 
+	mux.Get("/health", app.Health)
+
 	// Key management — dashboard only, no API key required
 	mux.Group(func(r chi.Router) {
 		r.Use(app.requireInternalSecret)
