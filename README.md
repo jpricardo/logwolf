@@ -26,7 +26,7 @@ docker compose up --build -d
 
 Open `https://localhost`, sign in with GitHub, generate an API key, and start sending events.
 
-Full instructions in the [getting started guide](https://logwolf-docs.vercel.app/getting-started).
+Full instructions in the [getting started guide](https://logwolf-docs.vercel.app/getting-started.html).
 
 ## JS SDK
 
@@ -56,7 +56,7 @@ event.set('amount', 9900);
 await logwolf.capture(event);
 ```
 
-Full SDK reference at [logwolf-docs.vercel.app/sdk/js](https://logwolf-docs.vercel.app/sdk/js).
+Full SDK reference at [logwolf-docs.vercel.app/sdk/js](https://logwolf-docs.vercel.app/sdk/js.html).
 
 ## Repository layout
 
@@ -78,10 +78,10 @@ logwolf/
 
 [logwolf-docs.vercel.app](https://logwolf-docs.vercel.app)
 
-- [Getting started](https://logwolf-docs.vercel.app/getting-started) — up and running in 5 minutes
-- [Self-hosting guide](https://logwolf-docs.vercel.app/self-hosting) — production config, TLS, persistence
-- [JS SDK reference](https://logwolf-docs.vercel.app/sdk/js) — full API
-- [Architecture overview](https://logwolf-docs.vercel.app/architecture) — how the pieces fit together
+- [Getting started](https://logwolf-docs.vercel.app/getting-started.html) — up and running in 5 minutes
+- [Self-hosting guide](https://logwolf-docs.vercel.app/self-hosting.html) — production config, TLS, persistence
+- [JS SDK reference](https://logwolf-docs.vercel.app/sdk/js.html) — full API
+- [Architecture overview](https://logwolf-docs.vercel.app/architecture.html) — how the pieces fit together
 
 ## Stack
 
