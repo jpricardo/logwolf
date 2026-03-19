@@ -10,12 +10,15 @@ type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
 export function EventRate({ className = '', p, ...props }: Props) {
 	const metrics = use(p);
 
+	const minutes = 24 * 60;
+	const perMinute = metrics.events_last_24h / minutes;
+
 	return (
 		<Card className={cn('shadow-none', className)} {...props}>
 			<CardHeader>
 				<CardDescription>Event rate</CardDescription>
 				<CardTitle className='text-3xl'>
-					~{metrics.events_last_24h.toLocaleString(locale, { maximumFractionDigits: 2 })} TPM
+					~{perMinute.toLocaleString(locale, { maximumFractionDigits: 2 })} TPM
 				</CardTitle>
 			</CardHeader>
 
