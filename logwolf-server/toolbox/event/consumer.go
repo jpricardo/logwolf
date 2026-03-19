@@ -7,6 +7,7 @@ import (
 	"log"
 	"logwolf-toolbox/data"
 	"net/rpc"
+	"os"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -118,7 +119,7 @@ func handlePayload(p Payload) {
 func logEvent(p data.JSONLogPayload) error {
 	log.Printf("Logging event %s via RPC", p.Name)
 
-	client, err := rpc.Dial("tcp", "logger:5001")
+	client, err := rpc.Dial("tcp", loggerAddress())
 	if err != nil {
 		return err
 	}
@@ -132,4 +133,11 @@ func logEvent(p data.JSONLogPayload) error {
 	}
 
 	return nil
+}
+
+func loggerAddress() string {
+	if a := os.Getenv("LOGGER_RPC_ADDR"); a != "" {
+		return a
+	}
+	return "logger:5001"
 }

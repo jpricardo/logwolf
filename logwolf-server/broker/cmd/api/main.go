@@ -7,6 +7,7 @@ import (
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/rabbitmq"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -17,7 +18,6 @@ import (
 )
 
 const (
-	port            = "80"
 	shutdownTimeout = 30 * time.Second
 )
 
@@ -33,7 +33,7 @@ func main() {
 	}
 
 	// RabbitMQ
-	conn, err := rabbitmq.ConnectToRabbitMQ("amqp://guest:guest@rabbitmq")
+	conn, err := rabbitmq.ConnectToRabbitMQ(rabbitConnectionString())
 	if err != nil {
 		log.Panic(err)
 	}
@@ -45,7 +45,7 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", port),
+		Addr:    fmt.Sprintf(":%s", httpPort()),
 		Handler: app.routes(),
 	}
 
@@ -55,7 +55,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("Starting server on port %s\n", port)
+		log.Printf("Starting server on port %s\n", httpPort())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Panicf("ListenAndServe: %v", err)
 		}
@@ -76,7 +76,28 @@ func main() {
 }
 
 func connectToMongo() (*mongo.Client, error) {
-	clientOptions := options.Client().ApplyURI("mongodb://mongo:27017")
+	clientOptions := options.Client().ApplyURI(mongoConnectionString())
 	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
 	return mongo.Connect(context.TODO(), clientOptions)
+}
+
+func mongoConnectionString() string {
+	if u := os.Getenv("MONGO_URL"); u != "" {
+		return u
+	}
+	return "mongodb://mongo:27017"
+}
+
+func rabbitConnectionString() string {
+	if u := os.Getenv("RABBITMQ_URL"); u != "" {
+		return u
+	}
+	return "amqp://guest:guest@rabbitmq"
+}
+
+func httpPort() string {
+	if u := os.Getenv("BROKER_PORT"); u != "" {
+		return u
+	}
+	return "80"
 }

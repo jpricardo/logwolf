@@ -5,12 +5,13 @@ import (
 	"log"
 	"logwolf-toolbox/event"
 	"logwolf-toolbox/rabbitmq"
+	"os"
 	"os/signal"
 	"syscall"
 )
 
 func main() {
-	conn, err := rabbitmq.ConnectToRabbitMQ("amqp://guest:guest@rabbitmq")
+	conn, err := rabbitmq.ConnectToRabbitMQ(rabbitConnectionString())
 	if err != nil {
 		log.Panic(err)
 	}
@@ -31,4 +32,11 @@ func main() {
 	}
 
 	log.Println("Shutdown complete.")
+}
+
+func rabbitConnectionString() string {
+	if u := os.Getenv("RABBITMQ_URL"); u != "" {
+		return u
+	}
+	return "amqp://guest:guest@rabbitmq"
 }

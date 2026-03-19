@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
+	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,10 +16,7 @@ import (
 )
 
 const (
-	port     = "80"
-	rpcPort  = "5001"
 	grpcPort = "50001"
-	mongoURL = "mongodb://mongo:27017"
 )
 
 var client *mongo.Client
@@ -75,11 +73,11 @@ func (app *Config) serve() {
 
 func (app *Config) httpListen() error {
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", port),
+		Addr:    fmt.Sprintf(":%s", httpPort()),
 		Handler: app.routes(),
 	}
 
-	log.Println("Starting HTTP server on port", port)
+	log.Println("Starting HTTP server on port", httpPort())
 	err := srv.ListenAndServe()
 	if err != nil {
 		return (err)
@@ -89,9 +87,9 @@ func (app *Config) httpListen() error {
 }
 
 func (app *Config) rpcListen() error {
-	log.Println("Starting RPC server on port", rpcPort)
+	log.Println("Starting RPC server on port", rpcPort())
 
-	listen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", rpcPort))
+	listen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", rpcPort()))
 	if err != nil {
 		return err
 	}
@@ -108,7 +106,7 @@ func (app *Config) rpcListen() error {
 }
 
 func connectToMongo() (*mongo.Client, error) {
-	clientOptions := options.Client().ApplyURI(mongoURL)
+	clientOptions := options.Client().ApplyURI(mongoConnectionString())
 	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
 
 	c, err := mongo.Connect(context.TODO(), clientOptions)
@@ -118,4 +116,25 @@ func connectToMongo() (*mongo.Client, error) {
 	}
 
 	return c, nil
+}
+
+func mongoConnectionString() string {
+	if u := os.Getenv("MONGO_URL"); u != "" {
+		return u
+	}
+	return "mongodb://mongo:27017"
+}
+
+func rpcPort() string {
+	if u := os.Getenv("LOGGER_RPC_PORT"); u != "" {
+		return u
+	}
+	return "5001"
+}
+
+func httpPort() string {
+	if p := os.Getenv("LOGGER_HTTP_PORT"); p != "" {
+		return p
+	}
+	return "80"
 }

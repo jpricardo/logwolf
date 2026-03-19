@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-go:
+    name: Go unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: logwolf-server/go.work
+
+      - name: Run broker unit tests
+        working-directory: logwolf-server/broker
+        run: go test ./cmd/api/... -v -count=1
+
+      - name: Run toolbox unit tests
+        working-directory: logwolf-server/toolbox
+        run: go test ./... -v -count=1
+
+  test-integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: logwolf-server/go.work
+
+      - name: Run integration tests
+        working-directory: logwolf-server/integration
+        run: go test -tags integration ./... -v -count=1 -timeout 5m
+
+  test-js-sdk:
+    name: JS SDK tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: logwolf-client/js
+        run: npm ci
+
+      - name: Run tests
+        working-directory: logwolf-client/js
+        run: npm test

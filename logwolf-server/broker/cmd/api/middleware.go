@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"logwolf-toolbox/data"
 	"net/http"
 	"os"
 	"strings"
@@ -94,7 +95,15 @@ func remoteIP(remoteAddr string) string {
 
 // --- Middleware ---
 
+type keyValidator interface {
+	ValidateAPIKey(plaintext string) (bool, *data.APIKey, error)
+}
+
 func (app *Config) requireAPIKey(next http.Handler) http.Handler {
+	return app.requireAPIKeyWith(&app.Models, next)
+}
+
+func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := remoteIP(r.RemoteAddr)
 
@@ -139,7 +148,7 @@ func (app *Config) requireAPIKey(next http.Handler) http.Handler {
 		}
 
 		// Cache miss — validate against DB via Logger RPC
-		valid, _, err := app.Models.ValidateAPIKey(plaintext)
+		valid, _, err := v.ValidateAPIKey(plaintext)
 		if err != nil {
 			log.Printf(`{"event":"auth","outcome":"error","reason":"db_error","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","error":"%s"}`,
 				keyPrefix, r.Method, r.URL.Path, r.RemoteAddr, err.Error())
