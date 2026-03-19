@@ -1,4 +1,4 @@
-import type { CreateLogwolfEventDTO } from '@jpricardo/logwolf-client-js';
+import type { CreateLogwolfEventDTO } from '@logwolf/client-js';
 
 import { JSONBlock } from '~/components/ui/json-block';
 

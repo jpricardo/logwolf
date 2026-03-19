@@ -1,4 +1,4 @@
-import Logwolf, { LogwolfEvent } from '@jpricardo/logwolf-client-js';
+import Logwolf, { LogwolfEvent } from '@logwolf/client-js';
 
 export const logwolf = new Logwolf({
 	apiKey: process.env.API_KEY!,

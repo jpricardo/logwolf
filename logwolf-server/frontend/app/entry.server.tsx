@@ -1,6 +1,6 @@
 import { PassThrough } from 'node:stream';
 
-import { LogwolfEvent } from '@jpricardo/logwolf-client-js';
+import { LogwolfEvent } from '@logwolf/client-js';
 import { createReadableStreamFromReadable } from '@react-router/node';
 import { isbot } from 'isbot';
 import type { RenderToPipeableStreamOptions } from 'react-dom/server';

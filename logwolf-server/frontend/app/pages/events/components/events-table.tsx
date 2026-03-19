@@ -1,4 +1,4 @@
-import type { LogwolfEventData } from '@jpricardo/logwolf-client-js';
+import type { LogwolfEventData } from '@logwolf/client-js';
 import { MoreHorizontal } from 'lucide-react';
 import { useRef } from 'react';
 import { Link, useFetcher } from 'react-router';

@@ -1,17 +1,17 @@
 # JS SDK reference
 
-The Logwolf JS SDK ships as `@jpricardo/logwolf-client-js` on npm. It handles event creation, sampling, and delivery to your Logwolf instance.
+The Logwolf JS SDK ships as `@logwolf/client-js` on npm. It handles event creation, sampling, and delivery to your Logwolf instance.
 
 ## Installation
 
 ```bash
-npm install @jpricardo/logwolf-client-js
+npm install @logwolf/client-js
 ```
 
 ## Initialisation
 
 ```ts
-import Logwolf from '@jpricardo/logwolf-client-js';
+import Logwolf from '@logwolf/client-js';
 
 const logwolf = new Logwolf({
 	url: 'https://logs.your-domain.com/api/',
@@ -37,7 +37,7 @@ Configuration is validated at construction time using Zod. If a required field i
 Events are created using the `LogwolfEvent` class. Instantiating a `LogwolfEvent` starts a stopwatch — the duration is automatically computed when the event is serialised.
 
 ```ts
-import { LogwolfEvent } from '@jpricardo/logwolf-client-js';
+import { LogwolfEvent } from '@logwolf/client-js';
 
 const event = new LogwolfEvent({
 	name: 'checkout.completed',
@@ -211,7 +211,7 @@ process.on('uncaughtException', async (err) => {
 ```ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import Logwolf, { LogwolfEvent } from '@jpricardo/logwolf-client-js';
+import Logwolf, { LogwolfEvent } from '@logwolf/client-js';
 
 const logwolf = new Logwolf({
 	url: process.env.LOGWOLF_URL!,
@@ -249,5 +249,5 @@ import type {
 	Severity, // 'info' | 'warning' | 'error' | 'critical'
 	Pagination, // { page: number; pageSize: number }
 	DeleteLogwolfEventDTO, // { id: string }
-} from '@jpricardo/logwolf-client-js';
+} from '@logwolf/client-js';
 ```

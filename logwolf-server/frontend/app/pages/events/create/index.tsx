@@ -1,4 +1,4 @@
-import { CreateLogwolfEventDTOSchema, LogwolfEvent, type Severity } from '@jpricardo/logwolf-client-js';
+import { CreateLogwolfEventDTOSchema, LogwolfEvent, type Severity } from '@logwolf/client-js';
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { redirect, useFetcher } from 'react-router';

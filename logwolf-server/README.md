@@ -90,13 +90,13 @@ Access to the dashboard is restricted to GitHub users or organizations listed in
 Install the SDK:
 
 ```bash
-npm install @jpricardo/logwolf-client-js
+npm install @logwolf/client-js
 ```
 
 Initialize with your API key:
 
 ```ts
-import Logwolf from '@jpricardo/logwolf-client-js';
+import Logwolf from '@logwolf/client-js';
 
 const logwolf = new Logwolf({
 	url: 'https://your-logwolf-instance/api/',

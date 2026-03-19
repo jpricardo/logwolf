@@ -1,4 +1,4 @@
-import { type DeleteLogwolfEventDTO } from '@jpricardo/logwolf-client-js';
+import { type DeleteLogwolfEventDTO } from '@logwolf/client-js';
 import { Plus } from 'lucide-react';
 import { Link } from 'react-router';
 import type { Route } from './+types';

@@ -15,7 +15,7 @@ Thanks for your interest in contributing. This document covers how to run the st
 logwolf/
 ├── docs/                       # Documentation site (VitePress)
 ├── logwolf-client/
-│   └── js/                     # JS SDK (@jpricardo/logwolf-client-js)
+│   └── js/                     # JS SDK (@logwolf/client-js)
 └── logwolf-server/
     ├── broker/                 # HTTP API gateway (Go + chi)
     ├── listener/               # RabbitMQ consumer (Go)

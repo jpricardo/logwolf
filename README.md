@@ -31,11 +31,11 @@ Full instructions in the [getting started guide](https://logwolf-docs.vercel.app
 ## JS SDK
 
 ```bash
-npm install @jpricardo/logwolf-client-js
+npm install @logwolf/client-js
 ```
 
 ```ts
-import Logwolf, { LogwolfEvent } from '@jpricardo/logwolf-client-js';
+import Logwolf, { LogwolfEvent } from '@logwolf/client-js';
 
 const logwolf = new Logwolf({
 	url: 'https://your-domain.com/api/',
@@ -64,7 +64,7 @@ Full SDK reference at [logwolf-docs.vercel.app/sdk/js](https://logwolf-docs.verc
 logwolf/
 ├── docs/                       # Documentation site (VitePress)
 ├── logwolf-client/
-│   └── js/                     # JS SDK (@jpricardo/logwolf-client-js)
+│   └── js/                     # JS SDK (@logwolf/client-js)
 └── logwolf-server/
     ├── broker/                 # HTTP API gateway (Go + chi)
     ├── listener/               # RabbitMQ consumer (Go)

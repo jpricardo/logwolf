@@ -84,13 +84,13 @@ lw_A3kB9mXq...
 Install the JS SDK:
 
 ```bash
-npm install @jpricardo/logwolf-client-js
+npm install @logwolf/client-js
 ```
 
 Then instrument your application:
 
 ```ts
-import Logwolf, { LogwolfEvent } from '@jpricardo/logwolf-client-js';
+import Logwolf, { LogwolfEvent } from '@logwolf/client-js';
 
 const logwolf = new Logwolf({
 	url: 'https://your-domain.com/api/',

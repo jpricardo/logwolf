@@ -1,4 +1,4 @@
-import type { Severity } from '@jpricardo/logwolf-client-js';
+import type { Severity } from '@logwolf/client-js';
 
 import { locale } from './locale';
 
