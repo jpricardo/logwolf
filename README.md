@@ -118,4 +118,4 @@ See [logwolf-server/README.md](./logwolf-server/README.md) for the full local de
 
 ## License
 
-Apache 2.0 — see [LICENSE](./LICENSE).
+GNU GPL v3 — see [LICENSE](./LICENSE).

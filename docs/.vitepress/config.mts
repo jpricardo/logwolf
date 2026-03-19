@@ -31,7 +31,7 @@ export default defineConfig({
 		socialLinks: [{ icon: 'github', link: 'https://github.com/jpricardo/logwolf' }],
 
 		footer: {
-			message: 'Released under the Apache 2.0 License.',
+			message: 'Released under the GNU GPL v3 License.',
 			copyright: 'Copyright © 2026 jpricardo',
 		},
 
