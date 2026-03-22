@@ -54,7 +54,7 @@ export class LogwolfEvent {
 		this.tags.push(t);
 	}
 
-	public toJson() {
+	public toObject() {
 		const duration = this._duration ?? Math.floor(performance.now() - this.start);
 
 		const encoded = CreateLogwolfEventDTOSchema.encode({
@@ -65,6 +65,6 @@ export class LogwolfEvent {
 			duration: duration,
 		});
 
-		return JSON.stringify(encoded);
+		return encoded;
 	}
 }

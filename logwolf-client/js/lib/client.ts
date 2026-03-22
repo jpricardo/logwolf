@@ -82,7 +82,7 @@ export class Logwolf {
 		const res = await fetch(url, {
 			method: 'POST',
 			headers: this.getHeaders(),
-			body: event.toJson(),
+			body: JSON.stringify(event.toObject()),
 		})
 			.then<LogwolfApiResponse<void>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
@@ -192,7 +192,7 @@ export class Logwolf {
 
 	private async sendBatchWithRetry(batch: LogwolfEvent[]): Promise<void> {
 		const url = new URL('/logs/batch', this.baseUrl);
-		const body = JSON.stringify(batch.map((ev) => JSON.parse(ev.toJson())));
+		const body = JSON.stringify(batch.map((ev) => ev.toObject()));
 
 		let lastError: unknown;
 
