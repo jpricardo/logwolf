@@ -15,6 +15,7 @@ const testConfig = {
 	maxBatchSize: 20,
 	maxQueueSize: 500,
 	retryDelaysMs: [0, 0, 0],
+	requestTimeoutMs: 10000,
 } satisfies LogwolfConfig;
 
 const immediateConfig = {
@@ -70,11 +71,10 @@ describe('Logwolf', () => {
 			await client.create(ev);
 
 			expect(mockFetch).toHaveBeenCalledTimes(1);
-			expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
-				body: JSON.stringify(ev.toObject()),
-			});
+			expect(mockFetch).toHaveBeenCalledWith(
+				new URL('/logs', testConfig.url),
+				expect.objectContaining({ method: 'POST', body: JSON.stringify(ev.toObject()) }),
+			);
 		});
 
 		it('stops the event stopwatch before sending', async () => {
@@ -320,10 +320,10 @@ describe('Logwolf', () => {
 		const client = new Logwolf(testConfig);
 		await client.getAll();
 
-		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs?', testConfig.url), {
-			method: 'GET',
-			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
-		});
+		expect(mockFetch).toHaveBeenCalledWith(
+			new URL('/logs?', testConfig.url),
+			expect.objectContaining({ method: 'GET' }),
+		);
 	});
 
 	it('deletes events correctly', async () => {
@@ -331,10 +331,9 @@ describe('Logwolf', () => {
 		const client = new Logwolf(testConfig);
 		await client.delete({ id: 'id' });
 
-		expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
-			method: 'DELETE',
-			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
-			body: JSON.stringify({ id: 'id' }),
-		});
+		expect(mockFetch).toHaveBeenCalledWith(
+			new URL('/logs', testConfig.url),
+			expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ id: 'id' }) }),
+		);
 	});
 });

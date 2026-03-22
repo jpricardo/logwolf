@@ -57,6 +57,12 @@ export class Logwolf {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
+	private async fetchWithTimeout(url: URL, init: RequestInit): Promise<Response> {
+		const controller = new AbortController();
+		const id = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
+		return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
+	}
+
 	// --- Public API ---
 
 	/**
@@ -79,7 +85,7 @@ export class Logwolf {
 	public async create(event: LogwolfEvent): Promise<void> {
 		event.stop();
 		const url = new URL('/logs', this.baseUrl);
-		const res = await fetch(url, {
+		const res = await this.fetchWithTimeout(url, {
 			method: 'POST',
 			headers: this.getHeaders(),
 			body: JSON.stringify(event.toObject()),
@@ -93,7 +99,7 @@ export class Logwolf {
 	public async getAll(p?: Pagination): Promise<LogwolfEventData[]> {
 		const params = p ? PaginationSchema.encode(p) : '';
 		const url = new URL('/logs?' + params, this.baseUrl);
-		const res = await fetch(url, { method: 'GET', headers: this.getHeaders() })
+		const res = await this.fetchWithTimeout(url, { method: 'GET', headers: this.getHeaders() })
 			.then<LogwolfApiResponse<Event[]>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
 
@@ -106,7 +112,7 @@ export class Logwolf {
 
 	public async delete(dto: DeleteLogwolfEventDTO): Promise<void> {
 		const url = new URL('/logs', this.baseUrl);
-		const res = await fetch(url, {
+		const res = await this.fetchWithTimeout(url, {
 			method: 'DELETE',
 			headers: this.getHeaders(),
 			body: JSON.stringify(DeleteLogwolfEventDTOSchema.parse(dto)),
@@ -198,7 +204,7 @@ export class Logwolf {
 
 		for (let attempt = 0; attempt <= this.config.retryDelaysMs.length; attempt++) {
 			try {
-				const response = await fetch(url, {
+				const response = await this.fetchWithTimeout(url, {
 					method: 'POST',
 					headers: this.getHeaders(),
 					body,
