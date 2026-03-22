@@ -47,6 +47,45 @@ func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
 }
 
+func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
+	var payloads []data.JSONLogPayload
+
+	err := app.readJSON(w, r, &payloads)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if len(payloads) == 0 {
+		app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+		return
+	}
+
+	emitter, err := event.NewEmitter(app.Rabbit)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	for _, payload := range payloads {
+		evp := event.Payload{Action: "log", Log: payload}
+
+		j, err := json.MarshalIndent(&evp, "", "\t")
+		if err != nil {
+			app.errorJSON(w, err)
+			return
+		}
+
+		err = emitter.Push(string(j), "log.INFO")
+		if err != nil {
+			app.errorJSON(w, err)
+			return
+		}
+	}
+
+	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+}
+
 func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 	client, err := rpc.Dial("tcp", "logger:5001")
 	if err != nil {
