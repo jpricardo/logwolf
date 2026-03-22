@@ -61,8 +61,9 @@ export const LogwolfConfigSchema = z.object({
 	flushIntervalMs: z.number().positive(),
 	maxBatchSize: z.number().positive(),
 	maxQueueSize: z.number().positive(),
-	onDropped: z.function({ input: [z.any().array(), z.string()] }).optional(),
 	retryDelaysMs: z.number().gte(0).array(),
+	requestTimeoutMs: z.number().positive(),
+	onDropped: z.function({ input: [z.any().array(), z.string()] }).optional(),
 });
 
 export type LogwolfConfig = z.infer<typeof LogwolfConfigSchema>;
