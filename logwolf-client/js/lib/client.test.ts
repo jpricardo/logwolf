@@ -73,7 +73,7 @@ describe('Logwolf', () => {
 			expect(mockFetch).toHaveBeenCalledWith(new URL('/logs', testConfig.url), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', Authorization: 'Bearer lw_testkey123456789' },
-				body: ev.toJson(),
+				body: JSON.stringify(ev.toObject()),
 			});
 		});
 
