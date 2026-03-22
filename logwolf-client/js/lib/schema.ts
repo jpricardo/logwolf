@@ -54,9 +54,16 @@ export type LogwolfApiResponse<T> = { message: string } & ({ error: true } | { e
 
 export const LogwolfConfigSchema = z.object({
 	url: z.url(),
-	apiKey: z.string().startsWith('lw_'),
+	apiKey: z.string().startsWith('lw_').min(10),
 	sampleRate: z.number().positive().lte(1).optional(),
 	errorSampleRate: z.number().positive().lte(1).optional(),
+	// Batching options
+	flushIntervalMs: z.number().positive(),
+	maxBatchSize: z.number().positive(),
+	maxQueueSize: z.number().positive(),
+	retryDelaysMs: z.number().gte(0).array(),
+	requestTimeoutMs: z.number().positive(),
+	onDropped: z.function({ input: [z.any().array(), z.string()] }).optional(),
 });
 
 export type LogwolfConfig = z.infer<typeof LogwolfConfigSchema>;
