@@ -6,7 +6,7 @@
 
 		// Environment Settings
 		// See also https://aka.ms/tsconfig/module
-		"module": "es2022",
+		"module": "esnext",
 		"target": "esnext",
 		"types": ["vitest/globals"],
 		// For nodejs:
@@ -39,6 +39,6 @@
 		"noUncheckedSideEffectImports": true,
 		"moduleDetection": "force",
 		"skipLibCheck": true,
-		"moduleResolution": "node"
+		"moduleResolution": "bundler"
 	}
 }
