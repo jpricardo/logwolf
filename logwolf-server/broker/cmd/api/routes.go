@@ -39,6 +39,7 @@ func (app *Config) routes() http.Handler {
 	mux.Group(func(r chi.Router) {
 		r.Use(app.requireAPIKey)
 		r.Post("/logs", app.CreateLog)
+		r.Post("/logs/batch", app.CreateLogBatch)
 		r.Get("/logs", app.GetLogs)
 		r.Delete("/logs", app.DeleteLog)
 	})
