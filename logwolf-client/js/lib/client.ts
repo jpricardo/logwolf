@@ -24,8 +24,9 @@ export class Logwolf {
 
 	constructor(config: LogwolfConfig) {
 		this.config = LogwolfConfigSchema.parse(config);
-		// Pre-compute base URL once to avoid repeated allocations per request.
-		this.baseUrl = new URL(this.config.url);
+		// Normalize to a trailing slash so relative paths append correctly.
+		const raw = this.config.url;
+		this.baseUrl = new URL(raw.endsWith('/') ? raw : raw + '/');
 	}
 
 	// --- Private: helpers ---
@@ -84,7 +85,7 @@ export class Logwolf {
 	 */
 	public async create(event: LogwolfEvent): Promise<void> {
 		event.stop();
-		const url = new URL('/logs', this.baseUrl);
+		const url = new URL('logs', this.baseUrl);
 		const res = await this.fetchWithTimeout(url, {
 			method: 'POST',
 			headers: this.getHeaders(),
@@ -98,7 +99,7 @@ export class Logwolf {
 
 	public async getAll(p?: Pagination): Promise<LogwolfEventData[]> {
 		const params = p ? PaginationSchema.encode(p) : '';
-		const url = new URL('/logs?' + params, this.baseUrl);
+		const url = new URL('logs?' + params, this.baseUrl);
 		const res = await this.fetchWithTimeout(url, { method: 'GET', headers: this.getHeaders() })
 			.then<LogwolfApiResponse<Event[]>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
@@ -111,7 +112,7 @@ export class Logwolf {
 	}
 
 	public async delete(dto: DeleteLogwolfEventDTO): Promise<void> {
-		const url = new URL('/logs', this.baseUrl);
+		const url = new URL('logs', this.baseUrl);
 		const res = await this.fetchWithTimeout(url, {
 			method: 'DELETE',
 			headers: this.getHeaders(),
@@ -200,7 +201,7 @@ export class Logwolf {
 	}
 
 	private async sendBatchWithRetry(batch: LogwolfEvent[]): Promise<void> {
-		const url = new URL('/logs/batch', this.baseUrl);
+		const url = new URL('logs/batch', this.baseUrl);
 		const body = JSON.stringify(batch.map((ev) => ev.toObject()));
 
 		let lastError: unknown;

@@ -32,7 +32,7 @@ Configuration is validated at construction time using Zod. If a required field i
 
 | Option             | Type       | Required | Description                                                                                                     |
 | ------------------ | ---------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `url`              | `string`   | ✅       | Base URL of your Logwolf instance, including `/api/`. Must be a valid URL.                                      |
+| `url`              | `string`   | ✅       | Base URL of your Logwolf instance, e.g. `https://your-domain.com/api`. Trailing slash is optional — the client normalises it internally. Must be a valid URL. |
 | `apiKey`           | `string`   | ✅       | API key generated from the dashboard. Must start with `lw_` and be at least 10 characters.                     |
 | `flushIntervalMs`  | `number`   | ✅       | How often (ms) the queue is flushed automatically.                                                              |
 | `maxBatchSize`     | `number`   | ✅       | Flush immediately when the queue reaches this many events, without waiting for the interval.                    |

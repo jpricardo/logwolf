@@ -72,7 +72,7 @@ describe('Logwolf', () => {
 
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch).toHaveBeenCalledWith(
-				new URL('/logs', testConfig.url),
+				new URL('http://test.url/logs'),
 				expect.objectContaining({ method: 'POST', body: JSON.stringify(ev.toObject()) }),
 			);
 		});
@@ -180,7 +180,7 @@ describe('Logwolf', () => {
 
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch).toHaveBeenCalledWith(
-				new URL('/logs/batch', testConfig.url),
+				new URL('http://test.url/logs/batch'),
 				expect.objectContaining({ method: 'POST' }),
 			);
 			const body = JSON.parse(mockFetch.mock.calls.at(0)?.at(1).body);
@@ -315,13 +315,21 @@ describe('Logwolf', () => {
 
 	// --- getAll / delete (unchanged) ---
 
+	it('resolves URLs correctly when base URL has a path prefix', async () => {
+		const client = new Logwolf({ ...testConfig, url: 'http://example.com/api' });
+		await client.create(makeEvent());
+
+		const calledUrl: URL = mockFetch.mock.calls.at(0)?.at(0);
+		expect(calledUrl.href).toBe('http://example.com/api/logs');
+	});
+
 	it('gets events correctly', async () => {
 		mockFetch.mockReturnValue(Promise.resolve({ json: vi.fn().mockResolvedValue({ error: false, data: [] }) }));
 		const client = new Logwolf(testConfig);
 		await client.getAll();
 
 		expect(mockFetch).toHaveBeenCalledWith(
-			new URL('/logs?', testConfig.url),
+			new URL('http://test.url/logs?'),
 			expect.objectContaining({ method: 'GET' }),
 		);
 	});
@@ -332,7 +340,7 @@ describe('Logwolf', () => {
 		await client.delete({ id: 'id' });
 
 		expect(mockFetch).toHaveBeenCalledWith(
-			new URL('/logs', testConfig.url),
+			new URL('http://test.url/logs'),
 			expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ id: 'id' }) }),
 		);
 	});
