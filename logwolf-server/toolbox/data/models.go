@@ -34,11 +34,12 @@ type LogEntry struct {
 }
 
 type LogEntryFilter struct {
-	ID       string   `bson:"_id,omitempty" json:"id,omitempty"`
-	Name     string   `bson:"name,omitempty" json:"name,omitempty"`
-	Data     string   `bson:"data,omitempty" json:"data,omitempty"`
-	Severity string   `bson:"severity,omitempty" json:"severity,omitempty"`
-	Tags     []string `bson:"tags,omitempty" json:"tags,omitempty"`
+	ID        string   `bson:"_id,omitempty" json:"id,omitempty"`
+	ProjectID string   `bson:"project_id,omitempty" json:"project_id,omitempty"`
+	Name      string   `bson:"name,omitempty" json:"name,omitempty"`
+	Data      string   `bson:"data,omitempty" json:"data,omitempty"`
+	Severity  string   `bson:"severity,omitempty" json:"severity,omitempty"`
+	Tags      []string `bson:"tags,omitempty" json:"tags,omitempty"`
 }
 
 type PaginationParams struct {
@@ -47,6 +48,7 @@ type PaginationParams struct {
 }
 
 type QueryParams struct {
+	ProjectID  string
 	Pagination PaginationParams
 }
 
@@ -87,7 +89,7 @@ func (m *Models) AllLogs(p QueryParams) ([]*LogEntry, error) {
 	opts := options.Find()
 	opts.SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(p.Pagination.PageSize).SetSkip(p.Pagination.PageSize * (p.Pagination.Page - 1))
 
-	cursor, err := collection.Find(context.TODO(), bson.D{}, opts)
+	cursor, err := collection.Find(context.TODO(), bson.M{"project_id": p.ProjectID}, opts)
 	if err != nil {
 		log.Println("Error finding docs")
 		return nil, err
@@ -111,7 +113,7 @@ func (m *Models) AllLogs(p QueryParams) ([]*LogEntry, error) {
 	return logs, nil
 }
 
-func (m *Models) GetLog(id string) (*LogEntry, error) {
+func (m *Models) GetLog(id, projectID string) (*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -123,7 +125,7 @@ func (m *Models) GetLog(id string) (*LogEntry, error) {
 	}
 
 	var entry LogEntry
-	err = collection.FindOne(ctx, bson.M{"_id": docID}).Decode(&entry)
+	err = collection.FindOne(ctx, bson.M{"_id": docID, "project_id": projectID}).Decode(&entry)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +192,7 @@ func (m *Models) UpdateLog() (*mongo.UpdateResult, error) {
 	return result, nil
 }
 
-func (m *Models) DeleteLog(id string) (*mongo.DeleteResult, error) {
+func (m *Models) DeleteLog(id, projectID string) (*mongo.DeleteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -201,7 +203,7 @@ func (m *Models) DeleteLog(id string) (*mongo.DeleteResult, error) {
 		return nil, err
 	}
 
-	result, err := collection.DeleteOne(ctx, bson.M{"_id": docID})
+	result, err := collection.DeleteOne(ctx, bson.M{"_id": docID, "project_id": projectID})
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +226,7 @@ type Metrics struct {
 	TopTags       []TagCount `bson:"top_tags" json:"top_tags"`
 }
 
-func (m *Models) GetMetrics() (*Metrics, error) {
+func (m *Models) GetMetrics(projectID string) (*Metrics, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -232,6 +234,7 @@ func (m *Models) GetMetrics() (*Metrics, error) {
 	since24h := time.Now().Add(-24 * time.Hour)
 
 	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"project_id": projectID}}},
 		{{Key: "$facet", Value: bson.D{
 			{Key: "total_events", Value: bson.A{
 				bson.D{{Key: "$count", Value: "count"}},
