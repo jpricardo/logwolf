@@ -5,6 +5,11 @@ export const logwolf = new Logwolf({
 	url: process.env.API_URL!,
 	sampleRate: 0.5,
 	errorSampleRate: 1,
+	flushIntervalMs: 10_000,
+	maxBatchSize: 100,
+	maxQueueSize: 1000,
+	requestTimeoutMs: 500,
+	retryDelaysMs: [1000, 2000, 5000],
 });
 
 export function injectRequest(ev: LogwolfEvent, request: Request) {
