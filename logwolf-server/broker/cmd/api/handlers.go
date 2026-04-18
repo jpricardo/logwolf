@@ -61,6 +61,11 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(payloads) > 1000 {
+		app.errorJSON(w, fmt.Errorf("batch size %d exceeds maximum of 1000", len(payloads)), http.StatusRequestEntityTooLarge)
+		return
+	}
+
 	// Pre-serialize all payloads before emitting any. This ensures a
 	// marshaling error doesn't cause a partial write to RabbitMQ.
 	messages := make([]string, len(payloads))
