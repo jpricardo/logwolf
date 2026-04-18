@@ -210,10 +210,6 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Key revoked."})
 }
 
-type retentionPayload struct {
-	Days int `json:"days"`
-}
-
 type retentionResponse struct {
 	Days int `json:"days"`
 }
@@ -227,7 +223,8 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := client.Call("RPCServer.GetRetention", "", &days); err != nil {
+	args := data.RetentionArgs{ProjectID: r.URL.Query().Get("project_id")}
+	if err := client.Call("RPCServer.GetRetention", &args, &days); err != nil {
 		app.errorJSON(w, err)
 		return
 	}
@@ -236,7 +233,10 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
-	var payload retentionPayload
+	var payload struct {
+		ProjectID string `json:"project_id"`
+		Days      int    `json:"days"`
+	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		app.errorJSON(w, err)
@@ -249,8 +249,9 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	args := data.RetentionArgs{ProjectID: payload.ProjectID, Days: payload.Days}
 	var reply string
-	if err := client.Call("RPCServer.UpdateRetention", &payload.Days, &reply); err != nil {
+	if err := client.Call("RPCServer.UpdateRetention", &args, &reply); err != nil {
 		app.errorJSON(w, err)
 		return
 	}

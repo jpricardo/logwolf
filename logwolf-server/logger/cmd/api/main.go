@@ -46,7 +46,14 @@ func main() {
 		Models: data.New(client),
 	}
 
-	retentionDays, err := app.Models.Settings.GetRetentionDays()
+	if err := app.Models.Settings.EnsureSettingsIndex(); err != nil {
+		log.Printf("Warning: could not ensure settings index: %v", err)
+	}
+	if err := app.Models.EnsureLogsIndexes(); err != nil {
+		log.Printf("Warning: could not ensure logs indexes: %v", err)
+	}
+
+	retentionDays, err := app.Models.Settings.GetRetentionDays("")
 	if err != nil {
 		log.Printf("Warning: could not read retention setting, using default: %v", err)
 		retentionDays = 90

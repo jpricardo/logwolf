@@ -23,6 +23,7 @@ type Models struct {
 
 type LogEntry struct {
 	ID        string    `bson:"_id,omitempty" json:"id,omitempty"`
+	ProjectID string    `bson:"project_id" json:"project_id"`
 	Name      string    `bson:"name" json:"name"`
 	Data      string    `bson:"data" json:"data"`
 	Severity  string    `bson:"severity" json:"severity"`
@@ -61,6 +62,7 @@ func New(mongo *mongo.Client) Models {
 func (m *Models) Insert(entry LogEntry) error {
 	collection := m.client.Database("logs").Collection("logs")
 	_, err := collection.InsertOne(context.TODO(), LogEntry{
+		ProjectID: entry.ProjectID,
 		Name:      entry.Name,
 		Data:      entry.Data,
 		Severity:  entry.Severity,
@@ -127,6 +129,23 @@ func (m *Models) GetLog(id string) (*LogEntry, error) {
 	}
 
 	return &entry, nil
+}
+
+// EnsureLogsIndexes creates indexes on the logs collection required for
+// project-scoped queries and efficient pagination.
+func (m *Models) EnsureLogsIndexes() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	coll := m.client.Database("logs").Collection("logs")
+	_, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "project_id", Value: 1}, {Key: "created_at", Value: -1}},
+		Options: options.Index().SetName("project_id_created_at"),
+	})
+	if err != nil {
+		return fmt.Errorf("EnsureLogsIndexes: %w", err)
+	}
+	return nil
 }
 
 func (m *Models) DropLogsCollection() error {

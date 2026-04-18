@@ -14,11 +14,12 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	log.Printf("Logging info: %s", p.Name)
 
 	err := r.models.Insert(data.LogEntry{
-		Name:     p.Name,
-		Data:     p.Data,
-		Severity: p.Severity,
-		Tags:     p.Tags,
-		Duration: p.Duration,
+		ProjectID: p.ProjectID,
+		Name:      p.Name,
+		Data:      p.Data,
+		Severity:  p.Severity,
+		Tags:      p.Tags,
+		Duration:  p.Duration,
 	})
 	if err != nil {
 		log.Println("Error inserting into logs:", err)
@@ -61,8 +62,8 @@ func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 	return nil
 }
 
-func (r *RPCServer) GetRetention(args *string, reply *int) error {
-	days, err := r.models.Settings.GetRetentionDays()
+func (r *RPCServer) GetRetention(args *data.RetentionArgs, reply *int) error {
+	days, err := r.models.Settings.GetRetentionDays(args.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -70,11 +71,11 @@ func (r *RPCServer) GetRetention(args *string, reply *int) error {
 	return nil
 }
 
-func (r *RPCServer) UpdateRetention(days *int, reply *string) error {
-	if err := r.models.Settings.SetRetentionDays(*days); err != nil {
+func (r *RPCServer) UpdateRetention(args *data.RetentionArgs, reply *string) error {
+	if err := r.models.Settings.SetRetentionDays(args.ProjectID, args.Days); err != nil {
 		return err
 	}
-	if err := r.models.Settings.EnsureTTLIndex(*days); err != nil {
+	if err := r.models.Settings.EnsureTTLIndex(args.Days); err != nil {
 		return err
 	}
 	*reply = "ok"

@@ -23,20 +23,27 @@ type Settings struct {
 }
 
 type settingsDoc struct {
-	Key   string `bson:"key"`
-	Value int    `bson:"value"`
+	ProjectID string `bson:"project_id"`
+	Key       string `bson:"key"`
+	Value     int    `bson:"value"`
+}
+
+// RetentionArgs is the RPC argument for GetRetention and UpdateRetention.
+type RetentionArgs struct {
+	ProjectID string
+	Days      int
 }
 
 func (s *Settings) collection() *mongo.Collection {
 	return s.client.Database("logs").Collection("settings")
 }
 
-func (s *Settings) GetRetentionDays() (int, error) {
+func (s *Settings) GetRetentionDays(projectID string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var doc settingsDoc
-	err := s.collection().FindOne(ctx, bson.M{"key": "retention_days"}).Decode(&doc)
+	err := s.collection().FindOne(ctx, bson.M{"project_id": projectID, "key": "retention_days"}).Decode(&doc)
 	if err == mongo.ErrNoDocuments {
 		return defaultRetentionDays, nil
 	}
@@ -46,7 +53,7 @@ func (s *Settings) GetRetentionDays() (int, error) {
 	return doc.Value, nil
 }
 
-func (s *Settings) SetRetentionDays(days int) error {
+func (s *Settings) SetRetentionDays(projectID string, days int) error {
 	if !ValidRetentionDays[days] {
 		return fmt.Errorf("SetRetentionDays: %d is not a valid retention value", days)
 	}
@@ -56,12 +63,27 @@ func (s *Settings) SetRetentionDays(days int) error {
 
 	_, err := s.collection().UpdateOne(
 		ctx,
-		bson.M{"key": "retention_days"},
-		bson.M{"$set": bson.M{"key": "retention_days", "value": days}},
+		bson.M{"project_id": projectID, "key": "retention_days"},
+		bson.M{"$set": bson.M{"project_id": projectID, "key": "retention_days", "value": days}},
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
 		return fmt.Errorf("SetRetentionDays: %w", err)
+	}
+	return nil
+}
+
+// EnsureSettingsIndex creates a compound unique index on (project_id, key).
+func (s *Settings) EnsureSettingsIndex() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	_, err := s.collection().Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "project_id", Value: 1}, {Key: "key", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("unique_project_key"),
+	})
+	if err != nil {
+		return fmt.Errorf("EnsureSettingsIndex: %w", err)
 	}
 	return nil
 }
