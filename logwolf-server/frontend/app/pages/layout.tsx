@@ -1,5 +1,4 @@
 import { data, Outlet, redirect } from 'react-router';
-import type { Route } from '../+types/root';
 
 import { AppSidebar } from '~/components/nav/app-sidebar';
 import { SidebarProvider } from '~/components/ui/sidebar';
@@ -7,6 +6,8 @@ import { Toaster } from '~/components/ui/sonner';
 import { getOrCreateCsrfToken } from '~/lib/csrf.server';
 import { commitSession, getSession } from '~/lib/session.server';
 import { ThemeProvider } from '~/store/theme-provider';
+
+import type { Route } from '../+types/root';
 
 export async function loader({ request }: Route.LoaderArgs) {
 	const session = await getSession(request.headers.get('Cookie'));

@@ -1,5 +1,4 @@
 import { redirect } from 'react-router';
-import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Badge } from '~/components/ui/badge';
@@ -10,6 +9,7 @@ import { SeverityBadge } from '~/components/ui/severity-badge';
 import { eventContext } from '~/context';
 import { logwolf } from '~/lib/logwolf';
 
+import type { Route } from './+types';
 import { InfoItem } from './components/info-item';
 
 export function meta({ loaderData }: Route.MetaArgs) {

@@ -1,6 +1,5 @@
 import { Suspense } from 'react';
 import { Link } from 'react-router';
-import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
@@ -8,6 +7,7 @@ import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { api } from '~/lib/api';
 
+import type { Route } from './+types';
 import { AverageDuration, AverageDurationSkeleton } from './components/average-duration';
 import { ErrorRate, ErrorRateSkeleton } from './components/error-rate';
 import { EventRate, EventRateSkeleton } from './components/event-rate';
@@ -15,7 +15,7 @@ import { TagsBarChart, TagsBarChartSkeleton } from './components/tags-bar-chart'
 import { TotalErrors, TotalErrorsSkeleton } from './components/total-errors';
 import { TotalEvents, TotalEventsSkeleton } from './components/total-events';
 
-export function meta({}: Route.MetaArgs) {
+export function meta() {
 	return [{ title: 'Dashboard - Logwolf' }, { name: 'description', content: 'Logwolf dashboard!' }];
 }
 

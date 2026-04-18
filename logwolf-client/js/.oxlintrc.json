@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "promise", "vitest"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "unicorn/filename-case": ["warn", { "case": "kebabCase" }],
+    "unicorn/prefer-node-protocol": "warn",
+    "unicorn/prefer-global-this": "warn",
+    "unicorn/no-zero-fractions": "warn",
+    "unicorn/no-array-for-each": "warn",
+    "unicorn/numeric-separators-style": "warn",
+    "unicorn/no-useless-undefined": "warn",
+    "unicorn/no-negated-condition": "warn",
+    "unicorn/prefer-string-replace-all": "warn",
+    "unicorn/require-module-specifiers": "warn",
+    "unicorn/prefer-math-min-max": "warn",
+    "unicorn/prefer-number-properties": "warn",
+    "unicorn/prefer-logical-operator-over-ternary": "warn",
+    "unicorn/prefer-string-slice": "warn",
+    "unicorn/prefer-set-has": "warn",
+    "unicorn/prefer-negative-index": "warn",
+    "unicorn/prefer-native-coercion-functions": "warn",
+    "unicorn/prefer-array-find": "warn",
+    "unicorn/prefer-date-now": "warn",
+    "unicorn/prefer-ternary": "warn",
+    "unicorn/no-static-only-class": "warn",
+    "unicorn/prefer-code-point": "warn",
+    "unicorn/no-object-as-default-parameter": "warn",
+    "vitest/require-mock-type-parameters": "warn"
+  },
+
+  "env": {
+    "builtin": true
+  }
+}

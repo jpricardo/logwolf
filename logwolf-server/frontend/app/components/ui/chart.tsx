@@ -40,7 +40,7 @@ function ChartContainer({
 	children: React.ComponentProps<typeof ResponsiveContainer>['children'];
 }) {
 	const uniqueId = useId();
-	const chartId = `chart-${id || uniqueId.replace(/:/g, '')}`;
+	const chartId = `chart-${id || uniqueId.replaceAll(/:/g, '')}`;
 
 	return (
 		<ChartContext.Provider value={{ config }}>
@@ -270,7 +270,7 @@ function ChartLegendContent({
 // Helper to extract item config from a payload.
 function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key: string) {
 	if (typeof payload !== 'object' || payload === null) {
-		return undefined;
+		return;
 	}
 
 	const payloadPayload =

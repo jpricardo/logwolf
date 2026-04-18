@@ -1,0 +1,22 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"ignorePatterns": [],
+	"tabWidth": 2,
+	"useTabs": true,
+	"singleQuote": true,
+	"jsxSingleQuote": true,
+	"printWidth": 120,
+	"sortImports": {
+		"groups": [
+			["external", "builtin"],
+			{ "newlinesBetween": true },
+			"internal",
+			{ "newlinesBetween": true },
+			["index", "sibling", "parent"],
+			{ "newlinesBetween": true },
+			"style",
+			{ "newlinesBetween": true },
+			"unknown"
+		]
+	}
+}
