@@ -23,6 +23,8 @@ func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	payload.ProjectID = projectIDFromContext(r)
+
 	// Push to queue
 	evp := event.Payload{Action: "log", Log: data.JSONLogPayload(payload)}
 
@@ -64,6 +66,11 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 	if len(payloads) > 1000 {
 		app.errorJSON(w, fmt.Errorf("batch size %d exceeds maximum of 1000", len(payloads)), http.StatusRequestEntityTooLarge)
 		return
+	}
+
+	projectID := projectIDFromContext(r)
+	for i := range payloads {
+		payloads[i].ProjectID = projectID
 	}
 
 	// Pre-serialize all payloads before emitting any. This ensures a
@@ -125,7 +132,7 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 	var result []data.LogEntry
 	err = client.Call("RPCServer.GetLogs", data.QueryParams{
-		// TODO - Filters
+		ProjectID:  projectIDFromContext(r),
 		Pagination: data.PaginationParams{Page: page, PageSize: pageSize},
 	}, &result)
 	if err != nil {
@@ -148,6 +155,8 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	requestBody.ProjectID = projectIDFromContext(r)
+
 	client, err := rpc.Dial("tcp", "logger:5001")
 	if err != nil {
 		app.errorJSON(w, err)
@@ -155,7 +164,7 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var result int64
-	err = client.Call("RPCServer.DeleteLog", requestBody, &result)
+	err = client.Call("RPCServer.DeleteLog", data.RPCLogEntryFilter(requestBody), &result)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -266,8 +275,9 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	args := data.RetentionArgs{ProjectID: r.URL.Query().Get("project_id")}
 	var result data.Metrics
-	if err := client.Call("RPCServer.GetMetrics", "", &result); err != nil {
+	if err := client.Call("RPCServer.GetMetrics", &args, &result); err != nil {
 		app.errorJSON(w, err)
 		return
 	}

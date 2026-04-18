@@ -50,7 +50,7 @@ func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
 func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 	log.Printf("Deleting log %+v...\n", f)
 
-	result, err := r.models.DeleteLog(f.ID)
+	result, err := r.models.DeleteLog(f.ID, f.ProjectID)
 	if err != nil {
 		log.Println("Error deleting document:", err)
 		return err
@@ -75,15 +75,12 @@ func (r *RPCServer) UpdateRetention(args *data.RetentionArgs, reply *string) err
 	if err := r.models.Settings.SetRetentionDays(args.ProjectID, args.Days); err != nil {
 		return err
 	}
-	if err := r.models.Settings.EnsureTTLIndex(args.Days); err != nil {
-		return err
-	}
 	*reply = "ok"
 	return nil
 }
 
-func (r *RPCServer) GetMetrics(args *string, reply *data.Metrics) error {
-	metrics, err := r.models.GetMetrics()
+func (r *RPCServer) GetMetrics(args *data.RetentionArgs, reply *data.Metrics) error {
+	metrics, err := r.models.GetMetrics(args.ProjectID)
 	if err != nil {
 		return err
 	}

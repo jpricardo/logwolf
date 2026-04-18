@@ -53,15 +53,6 @@ func main() {
 		log.Printf("Warning: could not ensure logs indexes: %v", err)
 	}
 
-	retentionDays, err := app.Models.Settings.GetRetentionDays("")
-	if err != nil {
-		log.Printf("Warning: could not read retention setting, using default: %v", err)
-		retentionDays = 90
-	}
-	if err := app.Models.Settings.EnsureTTLIndex(retentionDays); err != nil {
-		log.Printf("Warning: could not ensure TTL index: %v", err)
-	}
-
 	app.serve()
 }
 

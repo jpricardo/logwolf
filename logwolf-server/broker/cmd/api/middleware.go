@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -14,8 +15,20 @@ import (
 	"time"
 )
 
+type contextKey string
+
+const projectIDKey contextKey = "projectID"
+
+func projectIDFromContext(r *http.Request) string {
+	if v, ok := r.Context().Value(projectIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 type cacheEntry struct {
 	valid     bool
+	projectID string
 	expiresAt time.Time
 }
 
@@ -143,12 +156,13 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 			}
 			log.Printf(`{"event":"auth","outcome":"allow","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"cache"}`,
 				keyPrefix, r.Method, r.URL.Path, r.RemoteAddr)
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), projectIDKey, entry.projectID)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
 		// Cache miss — validate against DB via Logger RPC
-		valid, _, err := v.ValidateAPIKey(plaintext)
+		valid, key, err := v.ValidateAPIKey(plaintext)
 		if err != nil {
 			log.Printf(`{"event":"auth","outcome":"error","reason":"db_error","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","error":"%s"}`,
 				keyPrefix, r.Method, r.URL.Path, r.RemoteAddr, err.Error())
@@ -156,9 +170,14 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 			return
 		}
 
+		projectID := ""
+		if key != nil {
+			projectID = key.ProjectID
+		}
+
 		// Write result to cache (keyed on hash).
 		keyCacheMu.Lock()
-		keyCache[cacheKey] = cacheEntry{valid: valid, expiresAt: time.Now().Add(cacheTTL)}
+		keyCache[cacheKey] = cacheEntry{valid: valid, projectID: projectID, expiresAt: time.Now().Add(cacheTTL)}
 		keyCacheMu.Unlock()
 
 		if !valid {
@@ -171,7 +190,8 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 
 		log.Printf(`{"event":"auth","outcome":"allow","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"db"}`,
 			keyPrefix, r.Method, r.URL.Path, r.RemoteAddr)
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), projectIDKey, projectID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
