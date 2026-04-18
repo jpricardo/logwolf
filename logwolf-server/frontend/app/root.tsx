@@ -23,7 +23,7 @@ const logMiddleware: Route.MiddlewareFunction = async function ({ request, param
 	const response = await next();
 
 	injectResponse(event, response);
-	logwolf.capture(event).catch((err) => console.error(err));
+	logwolf.capture(event);
 };
 
 export const middleware: Route.MiddlewareFunction[] = [logMiddleware];
