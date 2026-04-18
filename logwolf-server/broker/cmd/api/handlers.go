@@ -210,10 +210,6 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Key revoked."})
 }
 
-type retentionPayload struct {
-	Days int `json:"days"`
-}
-
 type retentionResponse struct {
 	Days int `json:"days"`
 }

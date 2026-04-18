@@ -49,6 +49,9 @@ func main() {
 	if err := app.Models.Settings.EnsureSettingsIndex(); err != nil {
 		log.Printf("Warning: could not ensure settings index: %v", err)
 	}
+	if err := app.Models.EnsureLogsIndexes(); err != nil {
+		log.Printf("Warning: could not ensure logs indexes: %v", err)
+	}
 
 	retentionDays, err := app.Models.Settings.GetRetentionDays("")
 	if err != nil {

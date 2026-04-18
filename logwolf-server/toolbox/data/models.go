@@ -131,6 +131,23 @@ func (m *Models) GetLog(id string) (*LogEntry, error) {
 	return &entry, nil
 }
 
+// EnsureLogsIndexes creates indexes on the logs collection required for
+// project-scoped queries and efficient pagination.
+func (m *Models) EnsureLogsIndexes() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	coll := m.client.Database("logs").Collection("logs")
+	_, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "project_id", Value: 1}, {Key: "created_at", Value: -1}},
+		Options: options.Index().SetName("project_id_created_at"),
+	})
+	if err != nil {
+		return fmt.Errorf("EnsureLogsIndexes: %w", err)
+	}
+	return nil
+}
+
 func (m *Models) DropLogsCollection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
