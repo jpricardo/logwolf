@@ -24,8 +24,9 @@ export class Logwolf {
 
 	constructor(config: LogwolfConfig) {
 		this.config = LogwolfConfigSchema.parse(config);
-		// Pre-compute base URL once to avoid repeated allocations per request.
-		this.baseUrl = new URL(this.config.url);
+		// Normalize to a trailing slash so relative paths append correctly.
+		const raw = this.config.url;
+		this.baseUrl = new URL(raw.endsWith('/') ? raw : raw + '/');
 	}
 
 	// --- Private: helpers ---

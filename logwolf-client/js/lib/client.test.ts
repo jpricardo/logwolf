@@ -315,6 +315,14 @@ describe('Logwolf', () => {
 
 	// --- getAll / delete (unchanged) ---
 
+	it('resolves URLs correctly when base URL has a path prefix', async () => {
+		const client = new Logwolf({ ...testConfig, url: 'http://example.com/api' });
+		await client.create(makeEvent());
+
+		const calledUrl: URL = mockFetch.mock.calls.at(0)?.at(0);
+		expect(calledUrl.href).toBe('http://example.com/api/logs');
+	});
+
 	it('gets events correctly', async () => {
 		mockFetch.mockReturnValue(Promise.resolve({ json: vi.fn().mockResolvedValue({ error: false, data: [] }) }));
 		const client = new Logwolf(testConfig);
