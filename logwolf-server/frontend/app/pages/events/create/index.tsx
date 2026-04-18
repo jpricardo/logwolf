@@ -3,7 +3,6 @@ import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { redirect, useFetcher } from 'react-router';
 import z, { ZodError } from 'zod';
-import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
@@ -29,9 +28,10 @@ import { validateCsrfToken } from '~/lib/csrf.server';
 import { formatSeverity, severityMap } from '~/lib/format';
 import { logwolf } from '~/lib/logwolf';
 
+import type { Route } from './+types';
 import { Preview } from './components/preview';
 
-export function meta({}: Route.MetaArgs) {
+export function meta() {
 	return [{ title: 'New Event - Logwolf' }];
 }
 
@@ -73,7 +73,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 	}
 }
 
-export default function Create({}: Route.ComponentProps) {
+export default function Create() {
 	const fetcher = useFetcher<Route.ComponentProps['actionData']>();
 	const loading = fetcher.state !== 'idle';
 	const fetcherError = fetcher.data?.error;
@@ -86,7 +86,7 @@ export default function Create({}: Route.ComponentProps) {
 	useEffect(() => {
 		if (!ref.current) return;
 		setData(new FormData(ref.current));
-	}, [ref.current]);
+	}, []);
 
 	return (
 		<Page title='New Event'>

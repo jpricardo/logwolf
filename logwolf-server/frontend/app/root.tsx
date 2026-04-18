@@ -1,7 +1,7 @@
 import { LogwolfEvent } from '@logwolf/client-js';
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
-import type { Route } from './+types/root';
 
+import type { Route } from './+types/root';
 import { eventContext } from './context';
 import { injectRequest, injectResponse, logwolf } from './lib/logwolf';
 

@@ -1,15 +1,15 @@
-import { PassThrough } from 'node:stream';
-
 import { LogwolfEvent } from '@logwolf/client-js';
 import { createReadableStreamFromReadable } from '@react-router/node';
 import { isbot } from 'isbot';
+import { PassThrough } from 'node:stream';
 import type { RenderToPipeableStreamOptions } from 'react-dom/server';
 import { renderToPipeableStream } from 'react-dom/server';
-import type { AppLoadContext, EntryContext, HandleErrorFunction } from 'react-router';
+import type { EntryContext, HandleErrorFunction } from 'react-router';
 import { ServerRouter } from 'react-router';
+
 import { injectRequest, logwolf } from './lib/logwolf';
 
-export const streamTimeout = 5_000;
+export const streamTimeout = 5000;
 
 export const handleError: HandleErrorFunction = function (error, { request, context, params }) {
 	if (request.signal.aborted) return;
@@ -27,7 +27,7 @@ export default function handleRequest(
 	responseStatusCode: number,
 	responseHeaders: Headers,
 	routerContext: EntryContext,
-	loadContext: AppLoadContext,
+	// loadContext: AppLoadContext,
 	// If you have middleware enabled:
 	// loadContext: RouterContextProvider
 ) {

@@ -1,7 +1,8 @@
 import { redirect } from 'react-router';
-import type { Route } from './+types';
 
 import { getGitHubAuthURL, handleGitHubCallback } from '~/lib/auth.server';
+
+import type { Route } from './+types';
 
 export function meta() {
 	return [{ title: 'Sign in - Logwolf' }];
