@@ -1,5 +1,4 @@
 import { useFetcher } from 'react-router';
-import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Badge } from '~/components/ui/badge';
@@ -11,6 +10,8 @@ import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { api } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
+
+import type { Route } from './+types';
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);

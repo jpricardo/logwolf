@@ -1,7 +1,6 @@
 import { Check } from 'lucide-react';
 import { useFetcher } from 'react-router';
 import { toast } from 'sonner';
-import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Alert, AlertTitle } from '~/components/ui/alert';
@@ -23,6 +22,8 @@ import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { api, type RetentionDays } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
+
+import type { Route } from './+types';
 
 type RetentionDaysMap<T extends number> = {
 	[P in T as `${P}`]: string;

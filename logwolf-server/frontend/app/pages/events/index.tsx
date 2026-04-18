@@ -1,7 +1,6 @@
 import { type DeleteLogwolfEventDTO } from '@logwolf/client-js';
 import { Plus } from 'lucide-react';
 import { Link } from 'react-router';
-import type { Route } from './+types';
 
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
@@ -11,9 +10,10 @@ import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { validateCsrfToken } from '~/lib/csrf.server';
 import { logwolf } from '~/lib/logwolf';
 
+import type { Route } from './+types';
 import { EventsTable } from './components/events-table';
 
-export function meta({}: Route.MetaArgs) {
+export function meta() {
 	return [{ title: 'Events - Logwolf' }, { name: 'description', content: 'Logwolf events!' }];
 }
 

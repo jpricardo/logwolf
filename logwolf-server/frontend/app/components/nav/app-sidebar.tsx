@@ -1,6 +1,6 @@
 import { KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
-import type { Route } from '../../+types/root';
 
+import type { Route } from '../../+types/root';
 import {
 	Sidebar,
 	SidebarContent,
