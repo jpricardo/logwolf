@@ -38,7 +38,7 @@ Logger ────────────────────────�
 
 **Caddy** is the only service that faces the internet. It terminates TLS and routes traffic: `/api/*` goes to the Broker, everything else goes to the Frontend. Nothing else is exposed on the host.
 
-**Broker** is the HTTP API gateway, written in Go using the `chi` router. All SDK traffic enters here. It validates API keys, pushes log events to RabbitMQ asynchronously, and proxies read requests to the Logger via RPC. The Broker responds `202 Accepted` to write requests immediately — before the event hits the database.
+**Broker** is the HTTP API gateway, written in Go using the `chi` router. All SDK traffic enters here. It validates API keys, pushes log events to RabbitMQ asynchronously, and proxies read requests to the Logger via RPC. The Broker responds `202 Accepted` to write requests immediately — before the event hits the database. It exposes two write endpoints: `POST /logs` for single events and `POST /logs/batch` for batched delivery (max 1000 events per request).
 
 **RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`). If the Listener restarts, in-flight messages are not lost.
 
@@ -54,13 +54,16 @@ Logger ────────────────────────�
 
 When your application calls `logwolf.capture(event)`:
 
-1. The SDK sends a `POST /api/logs` request with a `Authorization: Bearer lw_...` header.
-2. Caddy forwards the request to the Broker.
-3. The Broker validates the API key — checking an in-memory 60-second cache first, then MongoDB on a miss.
-4. The Broker publishes the event to RabbitMQ and returns `202 Accepted`.
-5. The Listener picks up the message from the durable queue.
-6. The Listener calls `RPCServer.LogInfo` on the Logger over TCP.
-7. The Logger writes the event to MongoDB.
+1. The SDK enqueues the event in memory and returns immediately.
+2. When the queue reaches `maxBatchSize` or `flushIntervalMs` elapses, the SDK sends a `POST /api/logs/batch` request with an `Authorization: Bearer lw_...` header. Failed sends are retried according to `retryDelaysMs`.
+3. Caddy forwards the request to the Broker.
+4. The Broker validates the API key — checking an in-memory 60-second cache first, then MongoDB on a miss.
+5. The Broker publishes each event in the batch to RabbitMQ and returns `202 Accepted`.
+6. The Listener picks up the messages from the durable queue.
+7. The Listener calls `RPCServer.LogInfo` on the Logger over TCP.
+8. The Logger writes each event to MongoDB.
+
+When `logwolf.create(event)` is used instead, step 1–2 are skipped — the event is sent immediately via `POST /api/logs` and the call awaits the server response.
 
 The HTTP response comes back before the database write completes. This keeps ingestion latency low and protects your application from any slowness in the persistence layer.
 

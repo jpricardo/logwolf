@@ -11,7 +11,9 @@ No vendor lock-in. No per-seat pricing. One `docker-compose up` and you're loggi
 Logwolf is a lightweight alternative to Sentry and Datadog for developers who want to own their data. Applications instrument themselves via the JS SDK, which ships structured events to a Go backend pipeline. Events are stored in MongoDB and surfaced through a React dashboard.
 
 - **Capture events** with severity levels, tags, and arbitrary key/value payloads
-- **Track durations** automatically — `LogwolfEvent` acts as a stopwatch
+- **Batched delivery** — events are buffered in memory and flushed in configurable batches, keeping your application's hot path free
+- **Retry with backoff** — failed sends are retried automatically; auth errors are not
+- **Track durations** automatically — `LogwolfEvent` acts as a stopwatch, frozen at enqueue time
 - **Sample intelligently** — configurable rates for info, warning, and error events; critical always sends
 - **See everything** in a dashboard with metrics, event rate, error rate, and tag breakdowns
 
@@ -42,6 +44,11 @@ const logwolf = new Logwolf({
 	apiKey: process.env.LOGWOLF_API_KEY,
 	sampleRate: 0.5,
 	errorSampleRate: 1,
+	flushIntervalMs: 5000,
+	maxBatchSize: 20,
+	maxQueueSize: 500,
+	retryDelaysMs: [1000, 3000, 10000],
+	requestTimeoutMs: 10000,
 });
 
 const event = new LogwolfEvent({
@@ -53,7 +60,7 @@ const event = new LogwolfEvent({
 event.set('userId', '123');
 event.set('amount', 9900);
 
-await logwolf.capture(event);
+logwolf.capture(event); // enqueues and returns immediately
 ```
 
 Full SDK reference at [logwolf-docs.vercel.app/sdk/js](https://logwolf-docs.vercel.app/sdk/js.html).
