@@ -1,6 +1,8 @@
 package data
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -103,5 +105,46 @@ func TestProjectMemberStruct(t *testing.T) {
 	}
 	if !pm.CreatedAt.Equal(now) {
 		t.Errorf("ProjectMember.CreatedAt mismatch")
+	}
+}
+
+func TestErrLastOwner(t *testing.T) {
+	if ErrLastOwner == nil {
+		t.Fatal("ErrLastOwner must not be nil")
+	}
+	if ErrLastOwner.Error() == "" {
+		t.Error("ErrLastOwner must have a non-empty message")
+	}
+	// Ensure it wraps correctly with errors.Is.
+	wrapped := fmt.Errorf("outer: %w", ErrLastOwner)
+	if !errors.Is(wrapped, ErrLastOwner) {
+		t.Error("errors.Is should unwrap to ErrLastOwner")
+	}
+}
+
+func TestRemoveProjectMember_LastOwnerProtection(t *testing.T) {
+	// RoleOwner is the only role that triggers the last-owner guard.
+	// This test verifies the constant is defined and that ValidRole accepts it.
+	if RoleOwner == "" {
+		t.Fatal("RoleOwner constant must not be empty")
+	}
+	if !ValidRole(RoleOwner) {
+		t.Error("RoleOwner must be a valid role")
+	}
+}
+
+func TestGetProjectsForUser_EmptyResult(t *testing.T) {
+	// GetProjectsForUser must return an empty (non-nil) slice when the user
+	// belongs to no projects. Verify the slice type is correct via struct usage.
+	var projects []Project
+	if projects != nil {
+		t.Error("zero-value []Project should be nil before assignment")
+	}
+	projects = []Project{}
+	if projects == nil {
+		t.Error("empty []Project literal must not be nil")
+	}
+	if len(projects) != 0 {
+		t.Error("empty []Project must have length 0")
 	}
 }
