@@ -105,7 +105,7 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
-	client, err := rpc.Dial("tcp", "logger:5001")
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -157,7 +157,7 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 
 	requestBody.ProjectID = projectIDFromContext(r)
 
-	client, err := rpc.Dial("tcp", "logger:5001")
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -226,7 +226,7 @@ type retentionResponse struct {
 func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 	var days int
 
-	client, err := rpc.Dial("tcp", "logger:5001")
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -252,7 +252,7 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", "logger:5001")
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -269,7 +269,7 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
-	client, err := rpc.Dial("tcp", "logger:5001")
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -333,7 +333,7 @@ func checkRabbitMQ(app *Config) serviceStatus {
 }
 
 func checkLogger() serviceStatus {
-	conn, err := net.DialTimeout("tcp", "logger:5001", 2*time.Second)
+	conn, err := net.DialTimeout("tcp", loggerRPCAddr(), 2*time.Second)
 	if err != nil {
 		return serviceStatus{Status: "down", Error: err.Error()}
 	}
