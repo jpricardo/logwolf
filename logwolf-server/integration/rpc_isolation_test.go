@@ -271,6 +271,66 @@ func TestProjectIsolation_DeleteLog(t *testing.T) {
 	}
 }
 
+// TestProjectIsolation_CrossDelete verifies that project A cannot delete a log
+// that belongs to project B, even when supplying project B's log ID directly.
+// The broker sets project_id from the authenticated key, so the DB filter
+// (id=B_id AND project_id=A) matches nothing and returns 0 deleted.
+func TestProjectIsolation_CrossDelete(t *testing.T) {
+	ctx := context.Background()
+
+	mongoC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "mongo:4.2.16-bionic",
+			ExposedPorts: []string{"27017/tcp"},
+			Env: map[string]string{
+				"MONGO_INITDB_ROOT_USERNAME": "admin",
+				"MONGO_INITDB_ROOT_PASSWORD": "password",
+			},
+			WaitingFor: wait.ForLog("waiting for connections on port 27017"),
+		},
+		Started: true,
+	})
+	if err != nil {
+		t.Fatalf("mongo container: %v", err)
+	}
+	defer mongoC.Terminate(ctx)
+
+	mongoHost, _ := mongoC.Host(ctx)
+	mongoPort, _ := mongoC.MappedPort(ctx, "27017")
+	mongoURI := fmt.Sprintf("mongodb://admin:password@%s:%s", mongoHost, mongoPort.Port())
+
+	rabbitC, err := rabbitmq.Run(ctx, "rabbitmq:3.9-alpine")
+	if err != nil {
+		t.Fatalf("rabbitmq container: %v", err)
+	}
+	defer rabbitC.Terminate(ctx)
+
+	rabbitURI, _ := rabbitC.AmqpURL(ctx)
+
+	brokerURL := startStack(t, mongoURI, rabbitURI)
+
+	keyA := seedAPIKey(t, mongoURI, "xdel-alpha", "lw_xdelattempt000001")
+	keyB := seedAPIKey(t, mongoURI, "xdel-beta0", "lw_xdelvictim000001")
+
+	postLog(t, brokerURL, keyB, "xdel-victim-event")
+	waitForLog(t, mongoURI, "xdel-victim-event")
+
+	logIDB := fetchLogID(t, mongoURI, "xdel-victim-event")
+
+	// Project A attempts to delete project B's log ID. The broker will scope
+	// the filter to project A, so the document is never matched.
+	n := deleteLogCount(t, brokerURL, keyA, logIDB)
+	if n != 0 {
+		t.Errorf("cross-project delete: expected 0 deleted, got %d", n)
+	}
+
+	// Project B's log must still be present.
+	logsB := getLogs(t, brokerURL, keyB)
+	if !containsName(logsB, "xdel-victim-event") {
+		t.Error("cross-project delete: victim log was removed but should not have been")
+	}
+}
+
 // --- helpers ---
 
 func containsName(names []string, target string) bool {
@@ -306,6 +366,38 @@ func fetchLogID(t *testing.T, mongoURI, name string) string {
 	}
 
 	return doc.ID.Hex()
+}
+
+// deleteLogCount sends DELETE /logs and returns the number of entries deleted,
+// as reported by the broker in the response body.
+func deleteLogCount(t *testing.T, brokerURL, apiKey, logID string) int {
+	t.Helper()
+
+	body, _ := json.Marshal(map[string]string{"id": logID})
+	req, _ := http.NewRequest(http.MethodDelete, brokerURL+"/logs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("deleteLogCount: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("deleteLogCount: expected 202, got %d: %s", resp.StatusCode, b)
+	}
+
+	var envelope struct {
+		Data string `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("deleteLogCount: decode: %v", err)
+	}
+
+	var n int
+	fmt.Sscanf(envelope.Data, "Deleted entries: %d", &n)
+	return n
 }
 
 // deleteLog sends DELETE /logs with the given log ID scoped to apiKey's project.
