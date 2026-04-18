@@ -28,3 +28,4 @@ profile.cov
 # .vscode/
 
 db-data
+.claude
