@@ -61,13 +61,10 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	emitter, err := event.NewEmitter(app.Rabbit)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	for _, payload := range payloads {
+	// Pre-serialize all payloads before emitting any. This ensures a
+	// marshaling error doesn't cause a partial write to RabbitMQ.
+	messages := make([]string, len(payloads))
+	for i, payload := range payloads {
 		evp := event.Payload{Action: "log", Log: payload}
 
 		j, err := json.MarshalIndent(&evp, "", "\t")
@@ -76,8 +73,17 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = emitter.Push(string(j), "log.INFO")
-		if err != nil {
+		messages[i] = string(j)
+	}
+
+	emitter, err := event.NewEmitter(app.Rabbit)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	for _, msg := range messages {
+		if err := emitter.Push(msg, "log.INFO"); err != nil {
 			app.errorJSON(w, err)
 			return
 		}
