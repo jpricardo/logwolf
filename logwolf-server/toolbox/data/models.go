@@ -113,7 +113,7 @@ func (m *Models) AllLogs(p QueryParams) ([]*LogEntry, error) {
 	return logs, nil
 }
 
-func (m *Models) GetLog(id string) (*LogEntry, error) {
+func (m *Models) GetLog(id, projectID string) (*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -125,7 +125,7 @@ func (m *Models) GetLog(id string) (*LogEntry, error) {
 	}
 
 	var entry LogEntry
-	err = collection.FindOne(ctx, bson.M{"_id": docID}).Decode(&entry)
+	err = collection.FindOne(ctx, bson.M{"_id": docID, "project_id": projectID}).Decode(&entry)
 	if err != nil {
 		return nil, err
 	}

@@ -79,7 +79,7 @@ func (r *RPCServer) UpdateRetention(args *data.RetentionArgs, reply *string) err
 	return nil
 }
 
-func (r *RPCServer) GetMetrics(args *data.RetentionArgs, reply *data.Metrics) error {
+func (r *RPCServer) GetMetrics(args *data.ProjectArgs, reply *data.Metrics) error {
 	metrics, err := r.models.GetMetrics(args.ProjectID)
 	if err != nil {
 		return err

@@ -27,6 +27,11 @@ type settingsDoc struct {
 	Value     int    `bson:"value"`
 }
 
+// ProjectArgs is the RPC argument for calls that need only a project scope.
+type ProjectArgs struct {
+	ProjectID string
+}
+
 // RetentionArgs is the RPC argument for GetRetention and UpdateRetention.
 type RetentionArgs struct {
 	ProjectID string

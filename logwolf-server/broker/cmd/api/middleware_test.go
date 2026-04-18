@@ -18,6 +18,12 @@ type alwaysInvalidKey struct{}
 
 func (a alwaysInvalidKey) ValidateAPIKey(string) (bool, *data.APIKey, error) { return false, nil, nil }
 
+type validKeyWithProject struct{ projectID string }
+
+func (v validKeyWithProject) ValidateAPIKey(string) (bool, *data.APIKey, error) {
+	return true, &data.APIKey{ProjectID: v.projectID}, nil
+}
+
 func okHandler(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
 
 func newApp() *Config { return &Config{} }
@@ -87,6 +93,37 @@ func TestRequireAPIKey_ExpiredCache(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 on expired cache, got %d", w.Code)
+	}
+}
+
+func TestRequireAPIKey_PropagatesProjectID(t *testing.T) {
+	const wantProjectID = "proj-abc123"
+	app := newApp()
+
+	var gotProjectID string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProjectID = projectIDFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := app.requireAPIKeyWith(validKeyWithProject{wantProjectID}, capture)
+
+	// First request: DB path
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, makeRequest("lw_projkey1234567"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotProjectID != wantProjectID {
+		t.Errorf("DB path: projectID in context = %q, want %q", gotProjectID, wantProjectID)
+	}
+
+	// Second request: cache path — projectID must still be propagated
+	gotProjectID = ""
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, makeRequest("lw_projkey1234567"))
+	if gotProjectID != wantProjectID {
+		t.Errorf("cache path: projectID in context = %q, want %q", gotProjectID, wantProjectID)
 	}
 }
 

@@ -275,7 +275,7 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := data.RetentionArgs{ProjectID: r.URL.Query().Get("project_id")}
+	args := data.ProjectArgs{ProjectID: r.URL.Query().Get("project_id")}
 	var result data.Metrics
 	if err := client.Call("RPCServer.GetMetrics", &args, &result); err != nil {
 		app.errorJSON(w, err)
