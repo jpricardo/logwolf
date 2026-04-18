@@ -141,6 +141,10 @@ func (m *Models) GetProjectMembers(projectID primitive.ObjectID) ([]ProjectMembe
 }
 
 func (m *Models) UpdateProject(id primitive.ObjectID, name, slug string) (*Project, error) {
+	if !ValidSlug(slug) {
+		return nil, fmt.Errorf("UpdateProject: invalid slug %q", slug)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

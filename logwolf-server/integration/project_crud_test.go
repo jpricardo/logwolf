@@ -179,6 +179,36 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	if len(members) != 0 {
 		t.Errorf("members still present: %d", len(members))
 	}
+	// Logs must be gone.
+	logs, err := m.AllLogs(data.QueryParams{
+		ProjectID:  p.ID.Hex(),
+		Pagination: data.PaginationParams{Page: 1, PageSize: 100},
+	})
+	if err != nil {
+		t.Fatalf("AllLogs after delete: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Errorf("logs still present: %d", len(logs))
+	}
+	// API keys must be gone.
+	keys, err := m.ListAPIKeys()
+	if err != nil {
+		t.Fatalf("ListAPIKeys after delete: %v", err)
+	}
+	for _, k := range keys {
+		if k.ProjectID == p.ID.Hex() {
+			t.Errorf("api_key still present for deleted project: %s", k.Prefix)
+		}
+	}
+	// Settings must be gone — GetRetentionDays falls back to the default (90)
+	// when no document exists, so verify directly that no settings doc survives.
+	days, err := m.Settings.GetRetentionDays(p.ID.Hex())
+	if err != nil {
+		t.Fatalf("GetRetentionDays after delete: %v", err)
+	}
+	if days != 90 {
+		t.Errorf("settings still present for deleted project: retention=%d (want default 90)", days)
+	}
 }
 
 // --- Member helpers ---
