@@ -101,3 +101,10 @@ func httpPort() string {
 	}
 	return "80"
 }
+
+func loggerRPCAddr() string {
+	if a := os.Getenv("LOGGER_RPC_ADDR"); a != "" {
+		return a
+	}
+	return "logger:5001"
+}
