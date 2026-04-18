@@ -72,7 +72,7 @@ describe('Logwolf', () => {
 
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch).toHaveBeenCalledWith(
-				new URL('/logs', testConfig.url),
+				new URL('http://test.url/logs'),
 				expect.objectContaining({ method: 'POST', body: JSON.stringify(ev.toObject()) }),
 			);
 		});
@@ -180,7 +180,7 @@ describe('Logwolf', () => {
 
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch).toHaveBeenCalledWith(
-				new URL('/logs/batch', testConfig.url),
+				new URL('http://test.url/logs/batch'),
 				expect.objectContaining({ method: 'POST' }),
 			);
 			const body = JSON.parse(mockFetch.mock.calls.at(0)?.at(1).body);
@@ -329,7 +329,7 @@ describe('Logwolf', () => {
 		await client.getAll();
 
 		expect(mockFetch).toHaveBeenCalledWith(
-			new URL('/logs?', testConfig.url),
+			new URL('http://test.url/logs?'),
 			expect.objectContaining({ method: 'GET' }),
 		);
 	});
@@ -340,7 +340,7 @@ describe('Logwolf', () => {
 		await client.delete({ id: 'id' });
 
 		expect(mockFetch).toHaveBeenCalledWith(
-			new URL('/logs', testConfig.url),
+			new URL('http://test.url/logs'),
 			expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ id: 'id' }) }),
 		);
 	});
