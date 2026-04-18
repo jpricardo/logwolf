@@ -13,10 +13,12 @@ import (
 )
 
 type Models struct {
-	client   *mongo.Client
-	LogEntry LogEntry
-	APIKey   APIKey
-	Settings Settings
+	client        *mongo.Client
+	LogEntry      LogEntry
+	APIKey        APIKey
+	Settings      Settings
+	Project       Project
+	ProjectMember ProjectMember
 }
 
 type LogEntry struct {
