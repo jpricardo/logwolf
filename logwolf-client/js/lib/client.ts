@@ -20,7 +20,7 @@ export class Logwolf {
 	// Queue holds stopped LogwolfEvent instances ready to be flushed.
 	private queue: LogwolfEvent[] = [];
 	private flushTimer: ReturnType<typeof setInterval> | null = null;
-	private isFlushing = false;
+	private flushPromise: Promise<void> | null = null;
 
 	constructor(config: LogwolfConfig) {
 		this.config = LogwolfConfigSchema.parse(config);
@@ -126,10 +126,13 @@ export class Logwolf {
 	/**
 	 * Flushes all queued events immediately. Call this before process exit
 	 * or page unload to avoid losing buffered events.
+	 *
+	 * If a background flush is already in progress, waits for it to complete
+	 * before flushing any remaining events — so all enqueued events are sent.
 	 */
 	public async flush(): Promise<void> {
-		if (this.isFlushing || this.queue.length === 0) return;
-		await this.flushQueue();
+		if (this.flushPromise) await this.flushPromise;
+		if (this.queue.length > 0) await this.flushQueue();
 	}
 
 	/**
@@ -177,23 +180,23 @@ export class Logwolf {
 		return true;
 	}
 
-	private async flushQueue(): Promise<void> {
-		if (this.isFlushing || this.queue.length === 0) return;
-
-		this.isFlushing = true;
+	private flushQueue(): Promise<void> {
+		if (this.flushPromise !== null || this.queue.length === 0) return Promise.resolve();
 
 		// Drain the queue into a local batch atomically. Any events captured
 		// during the flush go into the next batch.
 		const batch = this.queue.splice(0, this.queue.length);
 
-		try {
-			await this.sendBatchWithRetry(batch);
-		} catch {
-			// All retries exhausted — notify caller via onDropped.
-			this.config.onDropped?.(batch, 'send_failed');
-		} finally {
-			this.isFlushing = false;
-		}
+		this.flushPromise = this.sendBatchWithRetry(batch)
+			.catch(() => {
+				// All retries exhausted — notify caller via onDropped.
+				this.config.onDropped?.(batch, 'send_failed');
+			})
+			.finally(() => {
+				this.flushPromise = null;
+			});
+
+		return this.flushPromise;
 	}
 
 	private async sendBatchWithRetry(batch: LogwolfEvent[]): Promise<void> {
