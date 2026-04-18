@@ -10,12 +10,27 @@ export class LogwolfEvent {
 	public readonly tags: LogwolfEventDTO['tags'];
 	public readonly data: NonNullable<LogwolfEventDTO['data']> = {};
 
+	private _duration: number | null = null;
+
 	constructor(props: LogwolfEventDTO) {
 		this.name = props.name;
 		this.severity = props.severity;
 		this.tags = props.tags;
 		if (props.data) {
 			this.data = props.data;
+		}
+	}
+
+	/**
+	 * Stops the stopwatch. Duration is frozen from construction to this call.
+	 * Called automatically by `capture()` and `create()` — you only need to
+	 * call this manually if you want to stop the clock before those methods.
+	 *
+	 * Calling `stop()` more than once is a no-op; the first call wins.
+	 */
+	public stop(): void {
+		if (this._duration === null) {
+			this._duration = Math.floor(performance.now() - this.start);
 		}
 	}
 
@@ -39,9 +54,8 @@ export class LogwolfEvent {
 		this.tags.push(t);
 	}
 
-	public toJson() {
-		const now = performance.now();
-		const duration = Math.floor(now - this.start);
+	public toObject() {
+		const duration = this._duration ?? Math.floor(performance.now() - this.start);
 
 		const encoded = CreateLogwolfEventDTOSchema.encode({
 			name: this.name,
@@ -51,6 +65,6 @@ export class LogwolfEvent {
 			duration: duration,
 		});
 
-		return JSON.stringify(encoded);
+		return encoded;
 	}
 }

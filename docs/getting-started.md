@@ -97,6 +97,11 @@ const logwolf = new Logwolf({
 	apiKey: process.env.LOGWOLF_API_KEY,
 	sampleRate: 1,
 	errorSampleRate: 1,
+	flushIntervalMs: 5000,
+	maxBatchSize: 20,
+	maxQueueSize: 500,
+	retryDelaysMs: [1000, 3000, 10000],
+	requestTimeoutMs: 10000,
 });
 
 const event = new LogwolfEvent({
@@ -106,7 +111,7 @@ const event = new LogwolfEvent({
 });
 
 event.set('userId', '123');
-await logwolf.capture(event);
+logwolf.capture(event);
 ```
 
 Head to the **Dashboard** — your event should appear within a few seconds.

@@ -18,6 +18,11 @@ const logwolf = new Logwolf({
 	apiKey: process.env.LOGWOLF_API_KEY,
 	sampleRate: 0.5,
 	errorSampleRate: 1,
+	flushIntervalMs: 5000,
+	maxBatchSize: 20,
+	maxQueueSize: 500,
+	retryDelaysMs: [1000, 3000, 10000],
+	requestTimeoutMs: 10000,
 });
 ```
 
@@ -25,12 +30,18 @@ Configuration is validated at construction time using Zod. If a required field i
 
 ### Configuration options
 
-| Option            | Type     | Required | Description                                                                                                    |
-| ----------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| `url`             | `string` | ✅       | Base URL of your Logwolf instance, including `/api/`. Must be a valid URL.                                     |
-| `apiKey`          | `string` | ✅       | API key generated from the dashboard. Must start with `lw_`.                                                   |
-| `sampleRate`      | `number` | —        | Fraction of `info` and `warning` events to send. `1` = all, `0.5` = half, `0` = none. Defaults to sending all. |
-| `errorSampleRate` | `number` | —        | Fraction of `error` events to send. `critical` events always bypass sampling. Defaults to sending all.         |
+| Option             | Type       | Required | Description                                                                                                     |
+| ------------------ | ---------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `url`              | `string`   | ✅       | Base URL of your Logwolf instance, including `/api/`. Must be a valid URL.                                      |
+| `apiKey`           | `string`   | ✅       | API key generated from the dashboard. Must start with `lw_` and be at least 10 characters.                     |
+| `flushIntervalMs`  | `number`   | ✅       | How often (ms) the queue is flushed automatically.                                                              |
+| `maxBatchSize`     | `number`   | ✅       | Flush immediately when the queue reaches this many events, without waiting for the interval.                    |
+| `maxQueueSize`     | `number`   | ✅       | Maximum number of events to hold in memory. When exceeded, the oldest event is dropped.                         |
+| `retryDelaysMs`    | `number[]` | ✅       | Delays between retry attempts on failed sends. Length determines retry count. Use `[]` to disable retries.      |
+| `requestTimeoutMs` | `number`   | ✅       | Abort a fetch after this many milliseconds.                                                                     |
+| `sampleRate`       | `number`   | —        | Fraction of `info` and `warning` events to send. `1` = all, `0.5` = half, `0` = none. Defaults to sending all. |
+| `errorSampleRate`  | `number`   | —        | Fraction of `error` events to send. `critical` events always bypass sampling. Defaults to sending all.          |
+| `onDropped`        | `function` | —        | Called when events are dropped. Signature: `(events: LogwolfEvent[], reason: string) => void`.                  |
 
 ## Creating events
 
@@ -86,11 +97,13 @@ event.setSeverity('warning');
 
 ### `capture(event)`
 
-Sends an event subject to sampling. This is the method you'll use in most cases.
+Enqueues an event for batched delivery. This is the method you'll use in most cases.
 
 ```ts
-await logwolf.capture(event);
+logwolf.capture(event);
 ```
+
+`capture()` is **synchronous** — it enqueues the event and returns immediately. Delivery happens in the background. It returns `true` if the event was accepted into the queue, `false` if it was dropped by sampling or because the queue was full.
 
 Sampling behaviour:
 
@@ -98,17 +111,46 @@ Sampling behaviour:
 - `error` events are sampled at `errorSampleRate`
 - `critical` events always bypass sampling and are always sent
 
+Events are delivered to the server in batches, either when `maxBatchSize` is reached or when the flush interval fires.
+
 ### `create(event)`
 
-Sends an event unconditionally, bypassing `sampleRate` and `errorSampleRate`. Use this when you explicitly want every event to be recorded regardless of sampling configuration.
+Sends an event immediately, bypassing both sampling and the queue. Awaitable — resolves when the server has acknowledged the event.
 
 ```ts
 await logwolf.create(event);
 ```
 
+Use this when you need guaranteed, synchronous delivery — for example, in a process exit handler.
+
+### `flush()`
+
+Drains the queue immediately. If a background flush is already in progress, waits for it to complete before sending any remaining events.
+
+```ts
+await logwolf.flush();
+```
+
+Call this before process exit or page unload to avoid losing buffered events.
+
+### `destroy()`
+
+Stops the background flush interval. Call this for clean Node.js shutdown or in test teardown. Any events still in the queue will be lost — call `flush()` first if you need to drain them.
+
+```ts
+await logwolf.flush();
+logwolf.destroy();
+```
+
 ## Duration tracking
 
-`LogwolfEvent` acts as a stopwatch. The duration is measured from object instantiation to the moment `capture()` or `create()` is called.
+`LogwolfEvent` acts as a stopwatch. The duration is measured from object instantiation to the moment the event is stopped.
+
+- `capture()` stops the clock at **enqueue time** — before the event is sent to the server.
+- `create()` stops the clock immediately before sending.
+- You can also stop the clock manually by calling `event.stop()` before either method.
+
+`stop()` is idempotent — calling it more than once is a no-op; the first call wins.
 
 ```ts
 const event = new LogwolfEvent({
@@ -120,7 +162,7 @@ const event = new LogwolfEvent({
 const result = await db.query('SELECT ...');
 
 event.set('rows', result.length);
-await logwolf.capture(event); // duration = time since event was instantiated
+logwolf.capture(event); // duration = time since event was instantiated
 ```
 
 The `duration` field appears in milliseconds in the dashboard and in the event payload.
@@ -182,11 +224,11 @@ async function processOrder(orderId: string) {
 	try {
 		const result = await doWork(orderId);
 		event.set('result', result.status);
-		await logwolf.capture(event);
+		logwolf.capture(event);
 	} catch (err) {
 		event.setSeverity('error');
 		event.set('error', err instanceof Error ? err.message : String(err));
-		await logwolf.capture(event);
+		logwolf.capture(event);
 	}
 }
 ```
@@ -218,6 +260,11 @@ const logwolf = new Logwolf({
 	apiKey: process.env.LOGWOLF_API_KEY!,
 	sampleRate: 0.1,
 	errorSampleRate: 1,
+	flushIntervalMs: 5000,
+	maxBatchSize: 20,
+	maxQueueSize: 500,
+	retryDelaysMs: [1000, 3000, 10000],
+	requestTimeoutMs: 10000,
 });
 
 export function middleware(request: NextRequest) {
@@ -231,7 +278,7 @@ export function middleware(request: NextRequest) {
 		},
 	});
 
-	logwolf.capture(event).catch(() => {});
+	logwolf.capture(event);
 
 	return NextResponse.next();
 }
