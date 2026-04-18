@@ -23,6 +23,7 @@ type Models struct {
 
 type LogEntry struct {
 	ID        string    `bson:"_id,omitempty" json:"id,omitempty"`
+	ProjectID string    `bson:"project_id" json:"project_id"`
 	Name      string    `bson:"name" json:"name"`
 	Data      string    `bson:"data" json:"data"`
 	Severity  string    `bson:"severity" json:"severity"`
@@ -61,6 +62,7 @@ func New(mongo *mongo.Client) Models {
 func (m *Models) Insert(entry LogEntry) error {
 	collection := m.client.Database("logs").Collection("logs")
 	_, err := collection.InsertOne(context.TODO(), LogEntry{
+		ProjectID: entry.ProjectID,
 		Name:      entry.Name,
 		Data:      entry.Data,
 		Severity:  entry.Severity,
