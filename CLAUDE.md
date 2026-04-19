@@ -163,6 +163,7 @@ Per-service env vars:
 | `BROKER_PORT`         | broker           | `80`                          | HTTP listen port                         |
 | `LOGGER_RPC_PORT`     | logger           | `5001`                        | RPC listen port                          |
 | `LOGGER_HTTP_PORT`    | logger           | `80`                          | HTTP health check port                   |
+| `CLEANUP_INTERVAL`    | logger           | `1h`                          | Per-project retention cleanup frequency  |
 | `API_URL`             | frontend         | —                             | Broker base URL                          |
 | `INTERNAL_API_SECRET` | frontend         | —                             | Shared secret for internal Broker routes |
 | `SESSION_SECRET`      | frontend         | —                             | iron-session signing key                 |
