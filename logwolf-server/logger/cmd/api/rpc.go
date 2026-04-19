@@ -91,6 +91,9 @@ func (r *RPCServer) GetMetrics(args *data.ProjectArgs, reply *data.Metrics) erro
 }
 
 func (r *RPCServer) CreateProject(args *data.RPCCreateProjectArgs, reply *data.Project) error {
+	if !data.ValidSlug(args.Slug) {
+		return fmt.Errorf("CreateProject: invalid slug %q", args.Slug)
+	}
 	log.Printf("Creating project: %s (%s)", args.Name, args.Slug)
 	project, err := r.models.InsertProject(data.Project{Name: args.Name, Slug: args.Slug})
 	if err != nil {
@@ -157,6 +160,9 @@ func (r *RPCServer) ListUserProjects(args *data.RPCUserProjectsArgs, reply *[]da
 }
 
 func (r *RPCServer) AddMember(args *data.RPCAddMemberArgs, reply *string) error {
+	if !data.ValidRole(args.Role) {
+		return fmt.Errorf("AddMember: invalid role %q", args.Role)
+	}
 	log.Printf("Adding member %s to project %s", args.GithubLogin, args.ProjectID)
 	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)
 	if err != nil {
