@@ -255,6 +255,42 @@ func (m *Models) GetAllProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
+// RPCCreateProjectArgs is the RPC argument for CreateProject.
+type RPCCreateProjectArgs struct {
+	Name string
+	Slug string
+}
+
+// RPCProjectIDArgs is the RPC argument for calls that take only a project ID.
+type RPCProjectIDArgs struct {
+	ID string
+}
+
+// RPCUpdateProjectArgs is the RPC argument for UpdateProject.
+type RPCUpdateProjectArgs struct {
+	ID   string
+	Name string
+	Slug string
+}
+
+// RPCUserProjectsArgs is the RPC argument for ListUserProjects.
+type RPCUserProjectsArgs struct {
+	GithubLogin string
+}
+
+// RPCAddMemberArgs is the RPC argument for AddMember.
+type RPCAddMemberArgs struct {
+	ProjectID   string
+	GithubLogin string
+	Role        string
+}
+
+// RPCMemberArgs is the RPC argument for RemoveMember.
+type RPCMemberArgs struct {
+	ProjectID   string
+	GithubLogin string
+}
+
 func (m *Models) GetProjectsForUser(githubLogin string) ([]Project, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
