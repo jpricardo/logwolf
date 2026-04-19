@@ -14,7 +14,7 @@ func (app *Config) routes() http.Handler {
 	mux.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Internal-Secret", "X-User-Login"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -27,6 +27,7 @@ func (app *Config) routes() http.Handler {
 	// Key management — dashboard only, no API key required
 	mux.Group(func(r chi.Router) {
 		r.Use(app.requireInternalSecret)
+		r.Use(app.requireUserLogin)
 		r.Get("/keys", app.ListAPIKeys)
 		r.Post("/keys", app.CreateAPIKey)
 		r.Delete("/keys/{id}", app.RevokeAPIKey)

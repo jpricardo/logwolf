@@ -5,14 +5,19 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrKeyNotFound is returned when an API key is looked up by ID but does not exist.
+var ErrKeyNotFound = errors.New("api key not found")
 
 type APIKey struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
@@ -100,13 +105,33 @@ func (m *Models) RevokeAPIKey(id string) error {
 	return err
 }
 
-func (m *Models) ListAPIKeys() ([]APIKey, error) {
+func (m *Models) GetAPIKeyByID(id string) (*APIKey, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	docID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var key APIKey
+	err = m.client.Database("logs").Collection("api_keys").FindOne(ctx, bson.M{"_id": docID}).Decode(&key)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, ErrKeyNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &key, nil
+}
+
+func (m *Models) ListAPIKeysByProject(projectID string) ([]APIKey, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	collection := m.client.Database("logs").Collection("api_keys")
 	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
-	cursor, err := collection.Find(ctx, bson.M{}, opts)
+	cursor, err := collection.Find(ctx, bson.M{"project_id": projectID}, opts)
 	if err != nil {
 		return nil, err
 	}

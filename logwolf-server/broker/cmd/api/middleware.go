@@ -9,6 +9,7 @@ import (
 	"log"
 	"logwolf-toolbox/data"
 	"net/http"
+	"net/rpc"
 	"os"
 	"strings"
 	"sync"
@@ -18,9 +19,17 @@ import (
 type contextKey string
 
 const projectIDKey contextKey = "projectID"
+const userLoginKey contextKey = "userLogin"
 
 func projectIDFromContext(r *http.Request) string {
 	if v, ok := r.Context().Value(projectIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func userLoginFromContext(r *http.Request) string {
+	if v, ok := r.Context().Value(userLoginKey).(string); ok {
 		return v
 	}
 	return ""
@@ -202,6 +211,39 @@ func safePrefix(key string) string {
 		return key[:10]
 	}
 	return "[invalid]"
+}
+
+// requireUserLogin extracts the GitHub login from X-User-Login and stores it
+// in the request context for downstream handlers.
+//
+// X-User-Login is caller-supplied and trusted without further verification.
+// This middleware MUST run after requireInternalSecret; without that guard,
+// any client could impersonate any user by forging the header.
+func (app *Config) requireUserLogin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		login := r.Header.Get("X-User-Login")
+		if login == "" {
+			log.Printf(`{"event":"auth","outcome":"deny","reason":"missing_x_user_login","method":"%s","path":"%s","remote_addr":"%s"}`,
+				r.Method, r.URL.Path, r.RemoteAddr)
+			app.errorJSON(w, fmt.Errorf("missing X-User-Login header"), http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userLoginKey, login)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// checkProjectMembership reports whether userLogin is a member of projectID.
+// The caller is responsible for dialing the RPC client and closing it.
+// Accepting the client lets handlers that also need RPC for data reuse the
+// same connection instead of opening a second TCP dial.
+//
+// This is a package-level function (not a Config method) because it relies
+// only on the RPC client passed in and has no dependency on Config state.
+func checkProjectMembership(client *rpc.Client, projectID, userLogin string) (bool, error) {
+	args := data.RPCCheckMembershipArgs{ProjectID: projectID, GithubLogin: userLogin}
+	var isMember bool
+	return isMember, client.Call("RPCServer.CheckMembership", &args, &isMember)
 }
 
 func (app *Config) requireInternalSecret(next http.Handler) http.Handler {

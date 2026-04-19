@@ -7,7 +7,7 @@ import { Card, CardContent } from '~/components/ui/card';
 import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
-import { api } from '~/lib/api';
+import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
 
@@ -17,11 +17,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	await requireAuth(request);
-	const res = await api.getKeys();
+	const user = await requireAuth(request);
+	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
+
+	if (!projectId) {
+		return { keys: [], projectId: '', noProject: true };
+	}
+
+	const api = createApi(user.login);
+	const res = await api.getKeys(projectId);
 	event?.set('loaderData', res);
 
-	return { keys: res };
+	return { keys: res, projectId, noProject: false };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -29,7 +36,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 	event?.addTag('action');
 
 	try {
-		await requireAuth(request);
+		const user = await requireAuth(request);
 		const fd = await request.formData();
 
 		await validateCsrfToken(request, fd);
@@ -37,8 +44,11 @@ export async function action({ request, context }: Route.ActionArgs) {
 		const intent = fd.get('intent');
 		event?.set('intent', intent);
 
+		const api = createApi(user.login);
+
 		if (intent === 'create') {
-			const res = await api.createKey('default');
+			const projectId = fd.get('projectId')?.toString() ?? '';
+			const res = await api.createKey(projectId);
 			event?.set('actionData', { ...res, key: '-' });
 			return { data: res };
 		}
@@ -69,6 +79,14 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 	const actionData = fetcher.data;
 	const csrfToken = useCsrfToken();
 
+	if (loaderData.noProject) {
+		return (
+			<Page title='API Keys'>
+				<p className='text-sm text-muted-foreground'>Select a project to manage its API keys.</p>
+			</Page>
+		);
+	}
+
 	return (
 		<Page title='API Keys'>
 			<div className='flex flex-col gap-8'>
@@ -94,6 +112,7 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 						<fetcher.Form method='post'>
 							<input type='hidden' name='_csrf' value={csrfToken} />
 							<input type='hidden' name='intent' value='create' />
+							<input type='hidden' name='projectId' value={loaderData.projectId} />
 							<Button type='submit' disabled={fetcher.state !== 'idle'}>
 								Generate new key
 							</Button>

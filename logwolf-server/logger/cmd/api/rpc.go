@@ -204,6 +204,19 @@ func (r *RPCServer) RemoveMember(args *data.RPCRemoveMemberArgs, reply *string) 
 	return nil
 }
 
+func (r *RPCServer) CheckMembership(args *data.RPCCheckMembershipArgs, reply *bool) error {
+	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)
+	if err != nil {
+		return fmt.Errorf("CheckMembership: invalid project ID: %w", err)
+	}
+	isMember, err := r.models.IsMember(projectID, args.GithubLogin)
+	if err != nil {
+		return err
+	}
+	*reply = isMember
+	return nil
+}
+
 func (r *RPCServer) ListMembers(args *data.ProjectArgs, reply *[]data.ProjectMember) error {
 	log.Printf("Listing members for project: %s", args.ProjectID)
 	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)

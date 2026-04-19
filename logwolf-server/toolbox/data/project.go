@@ -76,6 +76,12 @@ type RPCRemoveMemberArgs struct {
 	GithubLogin string
 }
 
+// RPCCheckMembershipArgs is the RPC argument for CheckMembership.
+type RPCCheckMembershipArgs struct {
+	ProjectID   string
+	GithubLogin string
+}
+
 // ValidSlug reports whether s is a valid URL-safe slug.
 func ValidSlug(s string) bool {
 	return slugRe.MatchString(s)

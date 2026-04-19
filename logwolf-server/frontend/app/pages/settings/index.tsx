@@ -19,7 +19,7 @@ import {
 } from '~/components/ui/select';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
-import { api, type RetentionDays } from '~/lib/api';
+import { createApi, type RetentionDays } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
 
@@ -42,11 +42,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	await requireAuth(request);
-	const res = await api.getRetention();
+	const user = await requireAuth(request);
+	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
+
+	if (!projectId) {
+		return { days: 90 as RetentionDays, projectId: '', noProject: true };
+	}
+
+	const api = createApi(user.login);
+	const res = await api.getRetention(projectId);
 	event?.set('loaderData', res);
 
-	return res;
+	return { ...res, projectId, noProject: false };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -54,7 +61,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 	event?.addTag('action');
 
 	try {
-		await requireAuth(request);
+		const user = await requireAuth(request);
 		const fd = await request.formData();
 
 		await validateCsrfToken(request, fd);
@@ -64,7 +71,9 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 		if (intent === 'update') {
 			const days = fd.get('days');
-			const res = await api.updateRetention(+days!);
+			const projectId = fd.get('projectId')?.toString() ?? '';
+			const api = createApi(user.login);
+			const res = await api.updateRetention(projectId, +days!);
 			event?.set('actionData', res);
 			return { data: res };
 		}
@@ -90,6 +99,14 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
 
 	if (actionData?.data) toast('Updated retention days: ' + retentionDaysMap[actionData.data.days]);
 
+	if (loaderData.noProject) {
+		return (
+			<Page title='Settings'>
+				<p className='text-sm text-muted-foreground'>Select a project to manage its settings.</p>
+			</Page>
+		);
+	}
+
 	return (
 		<Page title='Settings'>
 			<div className='flex flex-col gap-8'>
@@ -107,6 +124,7 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
 
 										<input type='hidden' name='_csrf' value={csrfToken} />
 										<input type='hidden' name='intent' value='update' />
+										<input type='hidden' name='projectId' value={loaderData.projectId} />
 
 										<Field>
 											<FieldLabel>Retention time</FieldLabel>
