@@ -39,9 +39,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
-	const { metrics, noProject } = loaderData;
+	const { metrics } = loaderData;
 
-	if (noProject) {
+	if (!metrics) {
 		return (
 			<Page title='Dashboard'>
 				<p className='text-sm text-muted-foreground'>Select a project to view its dashboard.</p>
@@ -65,32 +65,32 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 						<div className='flex flex-col flex-wrap gap-4 flex-3 justify-stretch'>
 							<div className='flex flex-row flex-wrap gap-4 flex-1'>
 								<Suspense fallback={<TotalEventsSkeleton className='flex-1 min-w-xs' />}>
-									<TotalEvents className='flex-1 min-w-xs' p={metrics!} />
+									<TotalEvents className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 
 								<Suspense fallback={<TotalErrorsSkeleton className='flex-1 min-w-xs' />}>
-									<TotalErrors className='flex-1 min-w-xs' p={metrics!} />
+									<TotalErrors className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 
 								<Suspense fallback={<AverageDurationSkeleton className='flex-1 min-w-xs' />}>
-									<AverageDuration className='flex-1 min-w-xs' p={metrics!} />
+									<AverageDuration className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 							</div>
 
 							<div className='flex flex-row flex-wrap gap-4 flex-1'>
 								<Suspense fallback={<EventRateSkeleton className='flex-1 min-w-xs' />}>
-									<EventRate className='flex-1 min-w-xs' p={metrics!} />
+									<EventRate className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 
 								<Suspense fallback={<ErrorRateSkeleton className='flex-1 min-w-xs' />}>
-									<ErrorRate className='flex-1 min-w-xs' p={metrics!} />
+									<ErrorRate className='flex-1 min-w-xs' p={metrics} />
 								</Suspense>
 							</div>
 						</div>
 
 						<div className='flex flex-col flex-wrap flex-2'>
 							<Suspense fallback={<TagsBarChartSkeleton className='flex-1 min-w-xs min-h-100' />}>
-								<TagsBarChart className='flex-1 min-w-xs min-h-100' p={metrics!} />
+								<TagsBarChart className='flex-1 min-w-xs min-h-100' p={metrics} />
 							</Suspense>
 						</div>
 					</div>

@@ -213,6 +213,12 @@ func safePrefix(key string) string {
 	return "[invalid]"
 }
 
+// requireUserLogin extracts the GitHub login from X-User-Login and stores it
+// in the request context for downstream handlers.
+//
+// X-User-Login is caller-supplied and trusted without further verification.
+// This middleware MUST run after requireInternalSecret; without that guard,
+// any client could impersonate any user by forging the header.
 func (app *Config) requireUserLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		login := r.Header.Get("X-User-Login")
