@@ -40,7 +40,10 @@ func (app *Config) runCleanup(ctx context.Context) {
 }
 
 func (app *Config) cleanupExpiredLogs(ctx context.Context) {
-	projects, err := app.Models.GetAllProjects(ctx)
+	passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	projects, err := app.Models.GetAllProjects(passCtx)
 	if err != nil {
 		log.Printf("Retention cleanup: error fetching projects: %v", err)
 		return
@@ -60,7 +63,7 @@ func (app *Config) cleanupExpiredLogs(ctx context.Context) {
 		}
 
 		threshold := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
-		deleted, err := app.Models.DeleteExpiredLogs(ctx, projectID, threshold)
+		deleted, err := app.Models.DeleteExpiredLogs(passCtx, projectID, threshold)
 		if err != nil {
 			log.Printf("Retention cleanup: project %s: error deleting: %v", projectID, err)
 			continue
