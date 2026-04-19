@@ -132,24 +132,15 @@ func TestRetentionCleanup(t *testing.T) {
 
 	waitForTCP(t, loggerRPCAddr, 30*time.Second)
 
-	// Wait long enough for cleanup to trigger (interval=2s, give it 10s headroom).
-	time.Sleep(5 * time.Second)
-
 	// --- Assertions ---
 
 	coll := db.Collection("logs")
 
-	// The expired log must be gone.
-	n, err := coll.CountDocuments(ctx, bson.M{"name": expiredLogName})
-	if err != nil {
-		t.Fatalf("count expired log: %v", err)
-	}
-	if n != 0 {
-		t.Errorf("expected expired log %q to be deleted, but it still exists", expiredLogName)
-	}
+	// The cleanup runs immediately at startup; poll until the expired log disappears.
+	waitForLogGone(t, coll, expiredLogName, 10*time.Second)
 
 	// The fresh log must remain.
-	n, err = coll.CountDocuments(ctx, bson.M{"name": freshLogName})
+	n, err := coll.CountDocuments(ctx, bson.M{"name": freshLogName})
 	if err != nil {
 		t.Fatalf("count fresh log: %v", err)
 	}
@@ -165,4 +156,18 @@ func TestRetentionCleanup(t *testing.T) {
 	if n != 1 {
 		t.Errorf("expected infinite-retention log %q to be present, but it was deleted", oldLogName)
 	}
+}
+
+// waitForLogGone polls until no document with the given name exists, or the timeout elapses.
+func waitForLogGone(t *testing.T, coll *mongo.Collection, name string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		n, err := coll.CountDocuments(context.Background(), bson.M{"name": name})
+		if err == nil && n == 0 {
+			return
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Errorf("log %q still present after %s", name, timeout)
 }
