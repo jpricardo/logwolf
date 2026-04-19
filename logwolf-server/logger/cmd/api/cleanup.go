@@ -9,7 +9,10 @@ import (
 
 func cleanupInterval() time.Duration {
 	if s := os.Getenv("CLEANUP_INTERVAL"); s != "" {
-		if d, err := time.ParseDuration(s); err == nil {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			log.Printf("Warning: invalid CLEANUP_INTERVAL %q, using default 1h: %v", s, err)
+		} else {
 			return d
 		}
 	}
