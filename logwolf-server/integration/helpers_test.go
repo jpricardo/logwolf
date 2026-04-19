@@ -18,6 +18,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const testProjectID = "integration"
+
 // startStack launches Logger, Listener, and Broker as subprocesses pointed at
 // the test containers. It registers t.Cleanup to kill them on test exit.
 // Returns the Broker's base URL (e.g. "http://127.0.0.1:18080").
@@ -85,7 +87,7 @@ func testAPIKey(t *testing.T, mongoURI string) string {
 	}
 
 	_, err = client.Database("logs").Collection("api_keys").InsertOne(ctx, bson.M{
-		"project_id": "integration",
+		"project_id": testProjectID,
 		"prefix":     plaintext[:10],
 		"hash":       string(hash),
 		"active":     true,
