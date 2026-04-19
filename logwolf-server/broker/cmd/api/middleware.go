@@ -217,6 +217,8 @@ func (app *Config) requireUserLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		login := r.Header.Get("X-User-Login")
 		if login == "" {
+			log.Printf(`{"event":"auth","outcome":"deny","reason":"missing_x_user_login","method":"%s","path":"%s","remote_addr":"%s"}`,
+				r.Method, r.URL.Path, r.RemoteAddr)
 			app.errorJSON(w, fmt.Errorf("X-User-Login header is required"), http.StatusUnauthorized)
 			return
 		}
