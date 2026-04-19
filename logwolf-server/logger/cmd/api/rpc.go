@@ -91,6 +91,9 @@ func (r *RPCServer) GetMetrics(args *data.ProjectArgs, reply *data.Metrics) erro
 }
 
 func (r *RPCServer) CreateProject(args *data.RPCCreateProjectArgs, reply *data.Project) error {
+	if args.Name == "" {
+		return fmt.Errorf("CreateProject: name is required")
+	}
 	if !data.ValidSlug(args.Slug) {
 		return fmt.Errorf("CreateProject: invalid slug %q", args.Slug)
 	}
@@ -120,6 +123,9 @@ func (r *RPCServer) GetProject(args *data.RPCProjectIDArgs, reply *data.Project)
 }
 
 func (r *RPCServer) UpdateProject(args *data.RPCUpdateProjectArgs, reply *data.Project) error {
+	if args.Name == "" {
+		return fmt.Errorf("UpdateProject: name is required")
+	}
 	if !data.ValidSlug(args.Slug) {
 		return fmt.Errorf("UpdateProject: invalid slug %q", args.Slug)
 	}
