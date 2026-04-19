@@ -174,7 +174,24 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	keys, err := app.Models.ListAPIKeys()
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+	isMember, err := app.checkProjectMembership(projectID, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !isMember {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
+	keys, err := app.Models.ListAPIKeysByProject(projectID)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -188,6 +205,22 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := app.readJSON(w, r, &body); err != nil {
 		app.errorJSON(w, err)
+		return
+	}
+
+	if body.ProjectID == "" {
+		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+	isMember, err := app.checkProjectMembership(body.ProjectID, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !isMember {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
 		return
 	}
 
@@ -212,6 +245,24 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	key, err := app.Models.GetAPIKeyByID(id)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+	isMember, err := app.checkProjectMembership(key.ProjectID, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !isMember {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
 	if err := app.Models.RevokeAPIKey(id); err != nil {
 		app.errorJSON(w, err)
 		return
@@ -224,7 +275,22 @@ type retentionResponse struct {
 }
 
 func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
-	var days int
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+	isMember, err := app.checkProjectMembership(projectID, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !isMember {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
 
 	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
@@ -232,7 +298,8 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := data.RetentionArgs{ProjectID: r.URL.Query().Get("project_id")}
+	var days int
+	args := data.RetentionArgs{ProjectID: projectID}
 	if err := client.Call("RPCServer.GetRetention", &args, &days); err != nil {
 		app.errorJSON(w, err)
 		return
@@ -249,6 +316,22 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		app.errorJSON(w, err)
+		return
+	}
+
+	if payload.ProjectID == "" {
+		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+	isMember, err := app.checkProjectMembership(payload.ProjectID, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !isMember {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
 		return
 	}
 
@@ -269,13 +352,30 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+	isMember, err := app.checkProjectMembership(projectID, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !isMember {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
 	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 
-	args := data.ProjectArgs{ProjectID: r.URL.Query().Get("project_id")}
+	args := data.ProjectArgs{ProjectID: projectID}
 	var result data.Metrics
 	if err := client.Call("RPCServer.GetMetrics", &args, &result); err != nil {
 		app.errorJSON(w, err)

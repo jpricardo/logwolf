@@ -5,7 +5,8 @@ import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
-import { api } from '~/lib/api';
+import { createApi } from '~/lib/api';
+import { requireAuth } from '~/lib/auth.server';
 
 import type { Route } from './+types';
 import { AverageDuration, AverageDurationSkeleton } from './components/average-duration';
@@ -19,11 +20,15 @@ export function meta() {
 	return [{ title: 'Dashboard - Logwolf' }, { name: 'description', content: 'Logwolf dashboard!' }];
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	const metrics = api.getMetrics();
+	const user = await requireAuth(request);
+	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
+
+	const api = createApi(user.login);
+	const metrics = api.getMetrics(projectId);
 	event?.set('loaderData', 'async data');
 
 	return { metrics };

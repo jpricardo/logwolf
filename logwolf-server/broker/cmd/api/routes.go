@@ -27,6 +27,7 @@ func (app *Config) routes() http.Handler {
 	// Key management — dashboard only, no API key required
 	mux.Group(func(r chi.Router) {
 		r.Use(app.requireInternalSecret)
+		r.Use(app.requireUserLogin)
 		r.Get("/keys", app.ListAPIKeys)
 		r.Post("/keys", app.CreateAPIKey)
 		r.Delete("/keys/{id}", app.RevokeAPIKey)

@@ -9,6 +9,7 @@ import (
 	"log"
 	"logwolf-toolbox/data"
 	"net/http"
+	"net/rpc"
 	"os"
 	"strings"
 	"sync"
@@ -18,9 +19,17 @@ import (
 type contextKey string
 
 const projectIDKey contextKey = "projectID"
+const userLoginKey contextKey = "userLogin"
 
 func projectIDFromContext(r *http.Request) string {
 	if v, ok := r.Context().Value(projectIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func userLoginFromContext(r *http.Request) string {
+	if v, ok := r.Context().Value(userLoginKey).(string); ok {
 		return v
 	}
 	return ""
@@ -202,6 +211,33 @@ func safePrefix(key string) string {
 		return key[:10]
 	}
 	return "[invalid]"
+}
+
+func (app *Config) requireUserLogin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		login := r.Header.Get("X-User-Login")
+		if login == "" {
+			app.errorJSON(w, fmt.Errorf("X-User-Login header is required"), http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userLoginKey, login)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (app *Config) checkProjectMembership(projectID, userLogin string) (bool, error) {
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		return false, err
+	}
+	defer client.Close()
+
+	args := data.RPCCheckMembershipArgs{ProjectID: projectID, GithubLogin: userLogin}
+	var isMember bool
+	if err := client.Call("RPCServer.CheckMembership", &args, &isMember); err != nil {
+		return false, err
+	}
+	return isMember, nil
 }
 
 func (app *Config) requireInternalSecret(next http.Handler) http.Handler {
