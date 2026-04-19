@@ -231,7 +231,10 @@ func (app *Config) requireUserLogin(next http.Handler) http.Handler {
 // The caller is responsible for dialing the RPC client and closing it.
 // Accepting the client lets handlers that also need RPC for data reuse the
 // same connection instead of opening a second TCP dial.
-func (app *Config) checkProjectMembership(client *rpc.Client, projectID, userLogin string) (bool, error) {
+//
+// This is a package-level function (not a Config method) because it relies
+// only on the RPC client passed in and has no dependency on Config state.
+func checkProjectMembership(client *rpc.Client, projectID, userLogin string) (bool, error) {
 	args := data.RPCCheckMembershipArgs{ProjectID: projectID, GithubLogin: userLogin}
 	var isMember bool
 	return isMember, client.Call("RPCServer.CheckMembership", &args, &isMember)
