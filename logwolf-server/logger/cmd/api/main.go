@@ -9,14 +9,12 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-)
-
-const (
-	grpcPort = "50001"
 )
 
 var client *mongo.Client
@@ -33,11 +31,10 @@ func main() {
 
 	client = mongoClient
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
 	defer func() {
-		if err = client.Disconnect(ctx); err != nil {
+		disconnectCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err = client.Disconnect(disconnectCtx); err != nil {
 			panic(err)
 		}
 	}()
@@ -53,35 +50,42 @@ func main() {
 		log.Printf("Warning: could not ensure logs indexes: %v", err)
 	}
 
-	app.serve()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	go app.runCleanup(ctx)
+
+	app.serve(ctx)
 }
 
-func (app *Config) serve() {
+func (app *Config) serve(ctx context.Context) {
 	err := rpc.Register(&RPCServer{models: app.Models})
 	if err != nil {
 		log.Panic(err)
 	}
 	go app.rpcListen()
 
-	err = app.httpListen()
-	if err != nil {
-		log.Panic(err)
-	}
-}
-
-func (app *Config) httpListen() error {
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", httpPort()),
 		Handler: app.routes(),
 	}
 
-	log.Println("Starting HTTP server on port", httpPort())
-	err := srv.ListenAndServe()
-	if err != nil {
-		return (err)
-	}
+	go func() {
+		log.Println("Starting HTTP server on port", httpPort())
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
 
-	return nil
+	<-ctx.Done()
+	log.Println("Shutting down HTTP server...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
 }
 
 func (app *Config) rpcListen() error {
