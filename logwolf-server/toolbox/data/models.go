@@ -150,6 +150,17 @@ func (m *Models) EnsureLogsIndexes() error {
 	return nil
 }
 
+func (m *Models) DeleteExpiredLogs(ctx context.Context, projectID string, before time.Time) (int64, error) {
+	result, err := m.client.Database("logs").Collection("logs").DeleteMany(ctx, bson.M{
+		"project_id": projectID,
+		"created_at": bson.M{"$lt": before},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("DeleteExpiredLogs: %w", err)
+	}
+	return result.DeletedCount, nil
+}
+
 func (m *Models) DropLogsCollection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

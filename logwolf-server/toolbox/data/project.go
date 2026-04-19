@@ -241,6 +241,20 @@ func (m *Models) IsMember(projectID primitive.ObjectID, githubLogin string) (boo
 	return n > 0, nil
 }
 
+func (m *Models) GetAllProjects(ctx context.Context) ([]Project, error) {
+	cursor, err := m.client.Database("logs").Collection("projects").Find(ctx, bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("GetAllProjects: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var projects []Project
+	if err := cursor.All(ctx, &projects); err != nil {
+		return nil, fmt.Errorf("GetAllProjects decode: %w", err)
+	}
+	return projects, nil
+}
+
 func (m *Models) GetProjectsForUser(githubLogin string) ([]Project, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
