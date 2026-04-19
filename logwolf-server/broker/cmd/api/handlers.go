@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
@@ -261,6 +262,10 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	key, err := app.Models.GetAPIKeyByID(id)
+	if errors.Is(err, data.ErrKeyNotFound) {
+		app.errorJSON(w, fmt.Errorf("key not found"), http.StatusNotFound)
+		return
+	}
 	if err != nil {
 		app.errorJSON(w, err)
 		return

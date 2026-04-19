@@ -5,14 +5,19 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrKeyNotFound is returned when an API key is looked up by ID but does not exist.
+var ErrKeyNotFound = errors.New("api key not found")
 
 type APIKey struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
@@ -130,6 +135,9 @@ func (m *Models) GetAPIKeyByID(id string) (*APIKey, error) {
 
 	var key APIKey
 	err = m.client.Database("logs").Collection("api_keys").FindOne(ctx, bson.M{"_id": docID}).Decode(&key)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, ErrKeyNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
