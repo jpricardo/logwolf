@@ -180,8 +180,15 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
 	userLogin := userLoginFromContext(r)
-	isMember, err := app.checkProjectMembership(projectID, userLogin)
+	isMember, err := app.checkProjectMembership(client, projectID, userLogin)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -213,8 +220,15 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
 	userLogin := userLoginFromContext(r)
-	isMember, err := app.checkProjectMembership(body.ProjectID, userLogin)
+	isMember, err := app.checkProjectMembership(client, body.ProjectID, userLogin)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -252,8 +266,15 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
 	userLogin := userLoginFromContext(r)
-	isMember, err := app.checkProjectMembership(key.ProjectID, userLogin)
+	isMember, err := app.checkProjectMembership(client, key.ProjectID, userLogin)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -281,20 +302,21 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
 	userLogin := userLoginFromContext(r)
-	isMember, err := app.checkProjectMembership(projectID, userLogin)
+	isMember, err := app.checkProjectMembership(client, projectID, userLogin)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 	if !isMember {
 		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
 		return
 	}
 
@@ -324,20 +346,21 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
 	userLogin := userLoginFromContext(r)
-	isMember, err := app.checkProjectMembership(payload.ProjectID, userLogin)
+	isMember, err := app.checkProjectMembership(client, payload.ProjectID, userLogin)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 	if !isMember {
 		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
 		return
 	}
 
@@ -358,20 +381,21 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
 	userLogin := userLoginFromContext(r)
-	isMember, err := app.checkProjectMembership(projectID, userLogin)
+	isMember, err := app.checkProjectMembership(client, projectID, userLogin)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 	if !isMember {
 		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
 		return
 	}
 

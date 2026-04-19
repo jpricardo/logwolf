@@ -225,19 +225,14 @@ func (app *Config) requireUserLogin(next http.Handler) http.Handler {
 	})
 }
 
-func (app *Config) checkProjectMembership(projectID, userLogin string) (bool, error) {
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		return false, err
-	}
-	defer client.Close()
-
+// checkProjectMembership reports whether userLogin is a member of projectID.
+// The caller is responsible for dialing the RPC client and closing it.
+// Accepting the client lets handlers that also need RPC for data reuse the
+// same connection instead of opening a second TCP dial.
+func (app *Config) checkProjectMembership(client *rpc.Client, projectID, userLogin string) (bool, error) {
 	args := data.RPCCheckMembershipArgs{ProjectID: projectID, GithubLogin: userLogin}
 	var isMember bool
-	if err := client.Call("RPCServer.CheckMembership", &args, &isMember); err != nil {
-		return false, err
-	}
-	return isMember, nil
+	return isMember, client.Call("RPCServer.CheckMembership", &args, &isMember)
 }
 
 func (app *Config) requireInternalSecret(next http.Handler) http.Handler {
