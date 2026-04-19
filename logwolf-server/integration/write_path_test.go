@@ -116,14 +116,13 @@ func TestWritePathRoundTrip(t *testing.T) {
 	}
 
 	var doc struct {
-		Name      string `bson:"name"`
 		ProjectID string `bson:"project_id"`
 	}
 	err = collection.FindOne(ctx, bson.M{"name": "integration-test-event"}).Decode(&doc)
 	if err != nil {
 		t.Fatalf("log entry never appeared in MongoDB: %v", err)
 	}
-	if doc.ProjectID != "integration" {
-		t.Errorf("project_id = %q, want %q", doc.ProjectID, "integration")
+	if doc.ProjectID != testProjectID {
+		t.Errorf("project_id = %q, want %q", doc.ProjectID, testProjectID)
 	}
 }
