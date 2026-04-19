@@ -127,6 +127,60 @@ func TestRequireAPIKey_PropagatesProjectID(t *testing.T) {
 	}
 }
 
+// --- requireUserLogin tests ---
+
+func TestRequireUserLogin_MissingHeader(t *testing.T) {
+	app := newApp()
+	handler := app.requireUserLogin(http.HandlerFunc(okHandler))
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on missing X-User-Login, got %d", w.Code)
+	}
+}
+
+func TestRequireUserLogin_PresentHeader(t *testing.T) {
+	app := newApp()
+
+	var gotLogin string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLogin = userLoginFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := app.requireUserLogin(capture)
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("X-User-Login", "jpricardo")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 with X-User-Login present, got %d", w.Code)
+	}
+	if gotLogin != "jpricardo" {
+		t.Errorf("userLoginFromContext = %q, want %q", gotLogin, "jpricardo")
+	}
+}
+
+func TestRequireUserLogin_EmptyHeaderValue(t *testing.T) {
+	app := newApp()
+	handler := app.requireUserLogin(http.HandlerFunc(okHandler))
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("X-User-Login", "") // present but empty
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on empty X-User-Login, got %d", w.Code)
+	}
+}
+
+// --- requireAPIKey tests ---
+
 func TestRequireAPIKey_RateLimit(t *testing.T) {
 	app := newApp()
 	handler := app.requireAPIKeyWith(alwaysInvalidKey{}, http.HandlerFunc(okHandler))
