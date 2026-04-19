@@ -38,6 +38,44 @@ type ProjectMember struct {
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
 }
 
+// RPC argument types for project and member operations.
+
+// RPCCreateProjectArgs is the RPC argument for CreateProject.
+type RPCCreateProjectArgs struct {
+	Name string
+	Slug string
+}
+
+// RPCProjectIDArgs is the RPC argument for calls that take only a project ID.
+type RPCProjectIDArgs struct {
+	ID string
+}
+
+// RPCUpdateProjectArgs is the RPC argument for UpdateProject.
+type RPCUpdateProjectArgs struct {
+	ID   string
+	Name string
+	Slug string
+}
+
+// RPCUserProjectsArgs is the RPC argument for ListUserProjects.
+type RPCUserProjectsArgs struct {
+	GithubLogin string
+}
+
+// RPCAddMemberArgs is the RPC argument for AddMember.
+type RPCAddMemberArgs struct {
+	ProjectID   string
+	GithubLogin string
+	Role        string
+}
+
+// RPCRemoveMemberArgs is the RPC argument for RemoveMember.
+type RPCRemoveMemberArgs struct {
+	ProjectID   string
+	GithubLogin string
+}
+
 // ValidSlug reports whether s is a valid URL-safe slug.
 func ValidSlug(s string) bool {
 	return slugRe.MatchString(s)
@@ -253,42 +291,6 @@ func (m *Models) GetAllProjects(ctx context.Context) ([]Project, error) {
 		return nil, fmt.Errorf("GetAllProjects decode: %w", err)
 	}
 	return projects, nil
-}
-
-// RPCCreateProjectArgs is the RPC argument for CreateProject.
-type RPCCreateProjectArgs struct {
-	Name string
-	Slug string
-}
-
-// RPCProjectIDArgs is the RPC argument for calls that take only a project ID.
-type RPCProjectIDArgs struct {
-	ID string
-}
-
-// RPCUpdateProjectArgs is the RPC argument for UpdateProject.
-type RPCUpdateProjectArgs struct {
-	ID   string
-	Name string
-	Slug string
-}
-
-// RPCUserProjectsArgs is the RPC argument for ListUserProjects.
-type RPCUserProjectsArgs struct {
-	GithubLogin string
-}
-
-// RPCAddMemberArgs is the RPC argument for AddMember.
-type RPCAddMemberArgs struct {
-	ProjectID   string
-	GithubLogin string
-	Role        string
-}
-
-// RPCMemberArgs is the RPC argument for RemoveMember.
-type RPCMemberArgs struct {
-	ProjectID   string
-	GithubLogin string
 }
 
 func (m *Models) GetProjectsForUser(githubLogin string) ([]Project, error) {

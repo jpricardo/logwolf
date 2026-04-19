@@ -120,6 +120,9 @@ func (r *RPCServer) GetProject(args *data.RPCProjectIDArgs, reply *data.Project)
 }
 
 func (r *RPCServer) UpdateProject(args *data.RPCUpdateProjectArgs, reply *data.Project) error {
+	if !data.ValidSlug(args.Slug) {
+		return fmt.Errorf("UpdateProject: invalid slug %q", args.Slug)
+	}
 	log.Printf("Updating project: %s", args.ID)
 	id, err := primitive.ObjectIDFromHex(args.ID)
 	if err != nil {
@@ -181,7 +184,7 @@ func (r *RPCServer) AddMember(args *data.RPCAddMemberArgs, reply *string) error 
 	return nil
 }
 
-func (r *RPCServer) RemoveMember(args *data.RPCMemberArgs, reply *string) error {
+func (r *RPCServer) RemoveMember(args *data.RPCRemoveMemberArgs, reply *string) error {
 	log.Printf("Removing member %s from project %s", args.GithubLogin, args.ProjectID)
 	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)
 	if err != nil {
