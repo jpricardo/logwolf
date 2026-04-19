@@ -191,14 +191,12 @@ func TestDeleteProject_Cascade(t *testing.T) {
 		t.Errorf("logs still present: %d", len(logs))
 	}
 	// API keys must be gone.
-	keys, err := m.ListAPIKeys()
+	keys, err := m.ListAPIKeysByProject(p.ID.Hex())
 	if err != nil {
-		t.Fatalf("ListAPIKeys after delete: %v", err)
+		t.Fatalf("ListAPIKeysByProject after delete: %v", err)
 	}
-	for _, k := range keys {
-		if k.ProjectID == p.ID.Hex() {
-			t.Errorf("api_key still present for deleted project: %s", k.Prefix)
-		}
+	if len(keys) != 0 {
+		t.Errorf("api_keys still present for deleted project: %d key(s)", len(keys))
 	}
 	// Settings must be gone — GetRetentionDays falls back to the default (90)
 	// when no document exists, so verify directly that no settings doc survives.
