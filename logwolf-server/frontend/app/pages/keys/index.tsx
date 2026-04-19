@@ -20,11 +20,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const user = await requireAuth(request);
 	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
 
+	if (!projectId) {
+		return { keys: [], projectId: '', noProject: true };
+	}
+
 	const api = createApi(user.login);
 	const res = await api.getKeys(projectId);
 	event?.set('loaderData', res);
 
-	return { keys: res, projectId };
+	return { keys: res, projectId, noProject: false };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -74,6 +78,14 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 	const fetcher = useFetcher<FetcherData>();
 	const actionData = fetcher.data;
 	const csrfToken = useCsrfToken();
+
+	if (loaderData.noProject) {
+		return (
+			<Page title='API Keys'>
+				<p className='text-sm text-muted-foreground'>Select a project to manage its API keys.</p>
+			</Page>
+		);
+	}
 
 	return (
 		<Page title='API Keys'>

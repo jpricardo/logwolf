@@ -45,11 +45,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const user = await requireAuth(request);
 	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
 
+	if (!projectId) {
+		return { days: 90 as RetentionDays, projectId: '', noProject: true };
+	}
+
 	const api = createApi(user.login);
 	const res = await api.getRetention(projectId);
 	event?.set('loaderData', res);
 
-	return { ...res, projectId };
+	return { ...res, projectId, noProject: false };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -94,6 +98,14 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
 	const actionData = fetcher.data;
 
 	if (actionData?.data) toast('Updated retention days: ' + retentionDaysMap[actionData.data.days]);
+
+	if (loaderData.noProject) {
+		return (
+			<Page title='Settings'>
+				<p className='text-sm text-muted-foreground'>Select a project to manage its settings.</p>
+			</Page>
+		);
+	}
 
 	return (
 		<Page title='Settings'>
