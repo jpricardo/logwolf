@@ -17,10 +17,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const (
-	grpcPort = "50001"
-)
-
 var client *mongo.Client
 
 type Config struct {
