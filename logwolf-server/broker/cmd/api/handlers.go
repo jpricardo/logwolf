@@ -478,11 +478,16 @@ func checkLogger() serviceStatus {
 // but the user has no access. Used when getProjectRole returns an empty role.
 func (app *Config) denyProjectAccess(w http.ResponseWriter, client *rpc.Client, id string) {
 	var proj data.Project
-	if err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &proj); err != nil {
-		app.errorJSON(w, fmt.Errorf("project not found"), http.StatusNotFound)
-	} else {
+	err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &proj)
+	if err == nil {
 		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
 	}
+	if strings.Contains(err.Error(), "no documents in result") {
+		app.errorJSON(w, fmt.Errorf("project not found"), http.StatusNotFound)
+		return
+	}
+	app.errorJSON(w, err)
 }
 
 func (app *Config) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -551,7 +556,7 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}, &reply); err != nil {
 		// Best-effort rollback: project must not exist without an owner.
 		var rollbackReply string
-		client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: project.ID.Hex()}, &rollbackReply) //nolint:errcheck
+		_ = client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: project.ID.Hex()}, &rollbackReply)
 		app.errorJSON(w, err)
 		return
 	}
@@ -686,20 +691,23 @@ func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
-
+	// Single ListMembers call: reuse the result for both the access check and the response.
 	args := data.ProjectArgs{ProjectID: id}
 	var members []data.ProjectMember
 	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
 		app.errorJSON(w, err)
+		return
+	}
+
+	isMember := false
+	for _, m := range members {
+		if m.GithubLogin == userLogin {
+			isMember = true
+			break
+		}
+	}
+	if !isMember {
+		app.denyProjectAccess(w, client, id)
 		return
 	}
 
@@ -797,6 +805,8 @@ func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 		ProjectID:   id,
 		GithubLogin: login,
 	}, &reply); err != nil {
+		// net/rpc transmits errors as strings, so errors.Is won't work across the
+		// wire — string matching is the only way to detect data.ErrLastOwner here.
 		if strings.Contains(err.Error(), "last owner") {
 			app.errorJSON(w, fmt.Errorf("cannot remove the last owner"), http.StatusBadRequest)
 			return
