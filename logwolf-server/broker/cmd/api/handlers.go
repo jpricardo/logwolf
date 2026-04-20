@@ -549,6 +549,9 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 		GithubLogin: userLogin,
 		Role:        data.RoleOwner,
 	}, &reply); err != nil {
+		// Best-effort rollback: project must not exist without an owner.
+		var rollbackReply string
+		client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: project.ID.Hex()}, &rollbackReply) //nolint:errcheck
 		app.errorJSON(w, err)
 		return
 	}
@@ -683,23 +686,20 @@ func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	// Fetch members and check access in one RPC call.
-	args := data.ProjectArgs{ProjectID: id}
-	var members []data.ProjectMember
-	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
-		app.errorJSON(w, fmt.Errorf("project not found"), http.StatusNotFound)
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
 		return
 	}
 
-	isMember := false
-	for _, m := range members {
-		if m.GithubLogin == userLogin {
-			isMember = true
-			break
-		}
-	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	args := data.ProjectArgs{ProjectID: id}
+	var members []data.ProjectMember
+	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
+		app.errorJSON(w, err)
 		return
 	}
 
