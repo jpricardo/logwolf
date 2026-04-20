@@ -34,6 +34,14 @@ func (app *Config) routes() http.Handler {
 		r.Get("/settings/retention", app.GetRetention)
 		r.Patch("/settings/retention", app.UpdateRetention)
 		r.Get("/metrics", app.GetMetrics)
+		r.Get("/projects", app.ListProjects)
+		r.Post("/projects", app.CreateProject)
+		r.Get("/projects/{id}", app.GetProject)
+		r.Patch("/projects/{id}", app.UpdateProject)
+		r.Delete("/projects/{id}", app.DeleteProject)
+		r.Get("/projects/{id}/members", app.ListProjectMembers)
+		r.Post("/projects/{id}/members", app.AddProjectMember)
+		r.Delete("/projects/{id}/members/{login}", app.RemoveProjectMember)
 	})
 
 	// Protected routes

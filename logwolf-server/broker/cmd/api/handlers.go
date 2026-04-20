@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -469,4 +470,346 @@ func checkLogger() serviceStatus {
 	conn.Close()
 
 	return serviceStatus{Status: "up"}
+}
+
+// --- Project management ---
+
+// denyProjectAccess sends a 404 if the project doesn't exist, or 403 if it exists
+// but the user has no access. Used when getProjectRole returns an empty role.
+func (app *Config) denyProjectAccess(w http.ResponseWriter, client *rpc.Client, id string) {
+	var proj data.Project
+	err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &proj)
+	if err == nil {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+	if strings.Contains(err.Error(), "no documents in result") {
+		app.errorJSON(w, fmt.Errorf("project not found"), http.StatusNotFound)
+		return
+	}
+	app.errorJSON(w, err)
+}
+
+func (app *Config) ListProjects(w http.ResponseWriter, r *http.Request) {
+	userLogin := userLoginFromContext(r)
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	args := data.RPCUserProjectsArgs{GithubLogin: userLogin}
+	var projects []data.Project
+	if err := client.Call("RPCServer.ListUserProjects", &args, &projects); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if projects == nil {
+		projects = []data.Project{}
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: projects})
+}
+
+func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := app.readJSON(w, r, &body); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if body.Name == "" {
+		app.errorJSON(w, fmt.Errorf("name is required"), http.StatusBadRequest)
+		return
+	}
+	if !data.ValidSlug(body.Slug) {
+		app.errorJSON(w, fmt.Errorf("invalid slug"), http.StatusBadRequest)
+		return
+	}
+
+	userLogin := userLoginFromContext(r)
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	var project data.Project
+	if err := client.Call("RPCServer.CreateProject", &data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug}, &project); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	var reply string
+	if err := client.Call("RPCServer.AddMember", &data.RPCAddMemberArgs{
+		ProjectID:   project.ID.Hex(),
+		GithubLogin: userLogin,
+		Role:        data.RoleOwner,
+	}, &reply); err != nil {
+		// Best-effort rollback: project must not exist without an owner.
+		var rollbackReply string
+		_ = client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: project.ID.Hex()}, &rollbackReply)
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusCreated, jsonResponse{Error: false, Message: "Project created.", Data: project})
+}
+
+func (app *Config) GetProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userLogin := userLoginFromContext(r)
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+
+	var project data.Project
+	if err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &project); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: project})
+}
+
+func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userLogin := userLoginFromContext(r)
+
+	var body struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := app.readJSON(w, r, &body); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if body.Name == "" {
+		app.errorJSON(w, fmt.Errorf("name is required"), http.StatusBadRequest)
+		return
+	}
+	if !data.ValidSlug(body.Slug) {
+		app.errorJSON(w, fmt.Errorf("invalid slug"), http.StatusBadRequest)
+		return
+	}
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+	if role != data.RoleOwner {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
+	var project data.Project
+	if err := client.Call("RPCServer.UpdateProject", &data.RPCUpdateProjectArgs{ID: id, Name: body.Name, Slug: body.Slug}, &project); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Project updated.", Data: project})
+}
+
+func (app *Config) DeleteProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userLogin := userLoginFromContext(r)
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+	if role != data.RoleOwner {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
+	var reply string
+	if err := client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: id}, &reply); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Project deleted."})
+}
+
+func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userLogin := userLoginFromContext(r)
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	// Single ListMembers call: reuse the result for both the access check and the response.
+	args := data.ProjectArgs{ProjectID: id}
+	var members []data.ProjectMember
+	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	isMember := false
+	for _, m := range members {
+		if m.GithubLogin == userLogin {
+			isMember = true
+			break
+		}
+	}
+	if !isMember {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: members})
+}
+
+func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userLogin := userLoginFromContext(r)
+
+	var body struct {
+		Login string `json:"login"`
+		Role  string `json:"role"`
+	}
+	if err := app.readJSON(w, r, &body); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if body.Login == "" {
+		app.errorJSON(w, fmt.Errorf("login is required"), http.StatusBadRequest)
+		return
+	}
+	if !data.ValidRole(body.Role) {
+		app.errorJSON(w, fmt.Errorf("invalid role"), http.StatusBadRequest)
+		return
+	}
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+	if role != data.RoleOwner {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
+	var reply string
+	if err := client.Call("RPCServer.AddMember", &data.RPCAddMemberArgs{
+		ProjectID:   id,
+		GithubLogin: body.Login,
+		Role:        body.Role,
+	}, &reply); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusCreated, jsonResponse{Error: false, Message: "Member added."})
+}
+
+func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	login := chi.URLParam(r, "login")
+	userLogin := userLoginFromContext(r)
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+	if role != data.RoleOwner {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
+	var reply string
+	if err := client.Call("RPCServer.RemoveMember", &data.RPCRemoveMemberArgs{
+		ProjectID:   id,
+		GithubLogin: login,
+	}, &reply); err != nil {
+		// net/rpc transmits errors as strings, so errors.Is won't work across the
+		// wire — string matching is the only way to detect data.ErrLastOwner here.
+		if strings.Contains(err.Error(), "last owner") {
+			app.errorJSON(w, fmt.Errorf("cannot remove the last owner"), http.StatusBadRequest)
+			return
+		}
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Member removed."})
 }
