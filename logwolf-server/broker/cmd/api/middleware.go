@@ -246,6 +246,22 @@ func checkProjectMembership(client *rpc.Client, projectID, userLogin string) (bo
 	return isMember, client.Call("RPCServer.CheckMembership", &args, &isMember)
 }
 
+// getProjectRole returns the role of userLogin in projectID ("owner", "member", or "").
+// An empty string means the user is not a member (project may or may not exist).
+func getProjectRole(client *rpc.Client, projectID, userLogin string) (string, error) {
+	args := data.ProjectArgs{ProjectID: projectID}
+	var members []data.ProjectMember
+	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
+		return "", err
+	}
+	for _, m := range members {
+		if m.GithubLogin == userLogin {
+			return m.Role, nil
+		}
+	}
+	return "", nil
+}
+
 func (app *Config) requireInternalSecret(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secret := os.Getenv("INTERNAL_API_SECRET")
