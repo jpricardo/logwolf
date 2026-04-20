@@ -711,10 +711,6 @@ func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if members == nil {
-		members = []data.ProjectMember{}
-	}
-
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: members})
 }
 
