@@ -18,9 +18,19 @@ export type Metrics = {
 	avg_duration_ms: number;
 	events_last_24h: number;
 	errors_last_24h: number;
-	top_tags: { tag: string; count: number }[];
+	top_tags: { tag: string; count: number }[] | null;
 };
 
+export type Project = {
+	id: string;
+	name: string;
+	slug: string;
+	created_at: string; //Date
+};
+
+export type CreateProjectDTO = Pick<Project, 'name' | 'slug'>;
+
+// TODO - Event CRUD
 export interface IApi {
 	getKeys(projectId: string): Promise<ApiKey[]>;
 	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
@@ -28,6 +38,9 @@ export interface IApi {
 	getRetention(projectId: string): Promise<{ days: RetentionDays }>;
 	updateRetention(projectId: string, days: number): Promise<{ days: RetentionDays }>;
 	getMetrics(projectId: string): Promise<Metrics>;
+	getProjects(): Promise<Project[]>;
+	createProject(dto: CreateProjectDTO): Promise<Project>;
+	deleteProject(projectId: string): Promise<void>;
 }
 
 export class Api implements IApi {
@@ -52,10 +65,10 @@ export class Api implements IApi {
 			method: 'GET',
 			headers: this.internalHeaders(),
 		});
-		const json = (await res.json()) as ApiResponse<ApiKey[]>;
+		const json = (await res.json()) as ApiResponse<ApiKey[] | null>;
 		if (json.error) throw new Error(json.message);
 
-		return json.data;
+		return json.data ?? [];
 	}
 
 	public async createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }> {
@@ -113,6 +126,41 @@ export class Api implements IApi {
 			headers: this.internalHeaders(),
 		});
 		const json = (await res.json()) as ApiResponse<Metrics>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
+
+	public async getProjects(): Promise<Project[]> {
+		const url = new URL(`${this.baseUrl}projects`);
+		const res = await fetch(url.toString(), {
+			method: 'GET',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<Project[]>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
+
+	public async createProject(dto: CreateProjectDTO): Promise<Project> {
+		const res = await fetch(`${this.baseUrl}projects`, {
+			method: 'POST',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify(dto),
+		});
+		const json = (await res.json()) as ApiResponse<Project>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
+
+	public async deleteProject(projectId: string): Promise<void> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}`, {
+			method: 'DELETE',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
 		if (json.error) throw new Error(json.message);
 
 		return json.data;

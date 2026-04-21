@@ -11,7 +11,7 @@ const maxBarAmt = 5;
 type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
 export function TagsBarChart({ className, p, ...props }: Props) {
 	const metrics = use(p);
-	const data = metrics.top_tags.toSorted((a, b) => b.count - a.count).slice(0, maxBarAmt);
+	const data = metrics.top_tags?.toSorted((a, b) => b.count - a.count).slice(0, maxBarAmt);
 
 	return (
 		<Card className={cn('shadow-none h-full', className)} {...props}>

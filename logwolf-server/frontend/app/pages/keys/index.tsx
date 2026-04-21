@@ -10,6 +10,7 @@ import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
+import { getSession } from '~/lib/session.server';
 
 import type { Route } from './+types';
 
@@ -18,7 +19,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	event?.addTag('loader');
 
 	const user = await requireAuth(request);
-	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
+	const session = await getSession(request.headers.get('Cookie'));
+	const projectId = session.get('currentProjectID');
 
 	if (!projectId) {
 		return { keys: [], projectId: '', noProject: true };

@@ -1,4 +1,4 @@
-import { KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
+import { Factory, KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
 
 import type { Route } from '../../+types/root';
 import {
@@ -28,6 +28,12 @@ const items = [
 	},
 
 	{
+		title: 'Projects',
+		url: '/projects',
+		icon: Factory,
+	},
+
+	{
 		title: 'Keys',
 		url: '/keys',
 		icon: KeyRound,
@@ -40,8 +46,8 @@ const items = [
 	},
 ] as const;
 
-type Props = Pick<Route.ComponentProps, 'matches'>;
-export function AppSidebar({ matches }: Props) {
+type Props = Pick<Route.ComponentProps, 'matches'> & { footer?: React.ReactNode };
+export function AppSidebar({ matches, footer }: Props) {
 	return (
 		<Sidebar>
 			{/* TODO - Logo */}
@@ -50,7 +56,6 @@ export function AppSidebar({ matches }: Props) {
 			<SidebarContent>
 				<SidebarGroup>
 					<SidebarGroupLabel>Logwolf</SidebarGroupLabel>
-
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{items.map((item) => (
@@ -67,7 +72,13 @@ export function AppSidebar({ matches }: Props) {
 					</SidebarGroupContent>
 				</SidebarGroup>
 			</SidebarContent>
-			<SidebarFooter />
+
+			<SidebarFooter>
+				<SidebarGroup>
+					<SidebarGroupLabel>Project</SidebarGroupLabel>
+					<SidebarGroupContent>{footer}</SidebarGroupContent>
+				</SidebarGroup>
+			</SidebarFooter>
 		</Sidebar>
 	);
 }
