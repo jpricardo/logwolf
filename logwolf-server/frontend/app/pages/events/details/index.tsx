@@ -20,7 +20,14 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	const log = await logwolf.getOne(params.id);
+	// A rejected SDK key reads the same as a missing event here: there is nothing
+	// to show, so fall back to the list rather than a 500.
+	const log = await logwolf.getOne(params.id).catch((err: unknown) => {
+		event?.setSeverity('error');
+		event?.set('loaderError', err);
+
+		return null;
+	});
 	if (!log) throw redirect('/events');
 
 	event?.set('loaderData', ['too much data']);

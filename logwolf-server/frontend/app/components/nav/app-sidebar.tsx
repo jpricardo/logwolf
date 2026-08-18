@@ -1,5 +1,7 @@
 import { KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
 
+import type { Project } from '~/lib/api';
+
 import type { Route } from '../../+types/root';
 import {
 	Sidebar,
@@ -13,6 +15,7 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from '../ui/sidebar';
+import { ProjectSwitcher } from './project-switcher';
 
 const items = [
 	{
@@ -40,12 +43,17 @@ const items = [
 	},
 ] as const;
 
-type Props = Pick<Route.ComponentProps, 'matches'>;
-export function AppSidebar({ matches }: Props) {
+type Props = Pick<Route.ComponentProps, 'matches'> & {
+	projects: Project[];
+	currentProject: Project | undefined;
+	csrfToken: string;
+};
+export function AppSidebar({ matches, projects, currentProject, csrfToken }: Props) {
 	return (
 		<Sidebar>
-			{/* TODO - Logo */}
-			<SidebarHeader />
+			<SidebarHeader>
+				<ProjectSwitcher projects={projects} currentProject={currentProject} csrfToken={csrfToken} />
+			</SidebarHeader>
 
 			<SidebarContent>
 				<SidebarGroup>

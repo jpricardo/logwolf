@@ -4,6 +4,8 @@ export default [
 	index('pages/home/index.tsx'),
 	route('auth', 'pages/auth/index.tsx'),
 
+	route('projects/switch', 'pages/projects/switch/index.tsx'),
+
 	layout('pages/layout.tsx', [
 		route('dashboard', 'pages/dashboard/index.tsx'),
 		route('events', 'pages/events/index.tsx'),
