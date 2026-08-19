@@ -3,6 +3,9 @@ import { useLocalStorage } from 'usehooks-ts';
 
 type Theme = 'dark' | 'light' | 'system';
 
+export const THEME_STORAGE_KEY = 'logwolf-ui-theme';
+export const DEFAULT_THEME: Theme = 'system';
+
 type ThemeProviderState = {
 	theme: Theme;
 	setTheme: (theme: Theme) => void;
@@ -10,7 +13,7 @@ type ThemeProviderState = {
 };
 
 const initialState: ThemeProviderState = {
-	theme: 'light',
+	theme: DEFAULT_THEME,
 	setTheme: () => null,
 	toggleTheme: () => null,
 };
@@ -25,19 +28,19 @@ type ThemeProviderProps = {
 
 export function ThemeProvider({
 	children,
-	defaultTheme = 'system',
-	storageKey = 'logwolf-ui-theme',
+	defaultTheme = DEFAULT_THEME,
+	storageKey = THEME_STORAGE_KEY,
 	...props
 }: ThemeProviderProps) {
 	const [theme, setTheme] = useLocalStorage(storageKey, defaultTheme);
 
 	useEffect(() => {
-		const root = window.document.documentElement;
+		const root = globalThis.document.documentElement;
 
 		root.classList.remove('light', 'dark');
 
 		if (theme === 'system') {
-			const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+			const systemTheme = globalThis.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
 			root.classList.add(systemTheme);
 			return;
@@ -48,20 +51,13 @@ export function ThemeProvider({
 
 	const value = {
 		theme,
-		setTheme: (theme: Theme) => {
-			localStorage.setItem(storageKey, theme);
-			setTheme(theme);
-		},
-		toggleTheme: () => {
-			const newTheme = theme === 'light' ? 'dark' : 'light';
-			localStorage.setItem(storageKey, newTheme);
-			setTheme(newTheme);
-		},
+		setTheme,
+		toggleTheme: () => setTheme(theme === 'light' ? 'dark' : 'light'),
 	};
 
 	return (
 		<ThemeProviderContext.Provider {...props} value={value}>
-			{typeof window !== 'undefined' && children}
+			{children}
 		</ThemeProviderContext.Provider>
 	);
 }

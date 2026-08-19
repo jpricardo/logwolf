@@ -4,8 +4,31 @@ import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration }
 import type { Route } from './+types/root';
 import { eventContext } from './context';
 import { injectRequest, injectResponse, logwolf } from './lib/logwolf';
+import { DEFAULT_THEME, THEME_STORAGE_KEY } from './store/theme-provider';
 
 import './app.css';
+
+// Runs before first paint so the document never renders light on its way to the
+// stored theme. ThemeProvider takes over once React hydrates; the two must agree
+// on THEME_STORAGE_KEY and on the JSON encoding useLocalStorage writes.
+const themeScript = `
+(function () {
+	try {
+		var raw = localStorage.getItem('${THEME_STORAGE_KEY}');
+		var theme = '${DEFAULT_THEME}';
+
+		if (raw) {
+			try { theme = JSON.parse(raw); } catch (e) { theme = raw; }
+		}
+
+		if (theme === 'system') {
+			theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+		}
+
+		document.documentElement.classList.add(theme);
+	} catch (e) {}
+})();
+`;
 
 const logMiddleware: Route.MiddlewareFunction = async function ({ request, params, context }, next) {
 	const event = new LogwolfEvent({
@@ -43,12 +66,13 @@ export const links: Route.LinksFunction = () => [
 
 export function Layout({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang='en'>
+		<html lang='en' suppressHydrationWarning>
 			<head>
 				<meta charSet='utf-8' />
 				<meta name='viewport' content='width=device-width, initial-scale=1' />
 				<Meta />
 				<Links />
+				<script dangerouslySetInnerHTML={{ __html: themeScript }} />
 			</head>
 			<body>
 				{children}
