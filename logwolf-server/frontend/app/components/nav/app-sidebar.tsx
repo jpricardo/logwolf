@@ -1,4 +1,5 @@
 import { KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
+import { Link } from 'react-router';
 
 import type { Project } from '~/lib/api';
 
@@ -64,10 +65,10 @@ export function AppSidebar({ matches, projects, currentProject, csrfToken }: Pro
 							{items.map((item) => (
 								<SidebarMenuItem key={item.title}>
 									<SidebarMenuButton asChild isActive={matches.some((m) => m?.pathname.includes(item.url))}>
-										<a href={item.url}>
+										<Link to={item.url}>
 											<item.icon />
 											<span>{item.title}</span>
-										</a>
+										</Link>
 									</SidebarMenuButton>
 								</SidebarMenuItem>
 							))}
