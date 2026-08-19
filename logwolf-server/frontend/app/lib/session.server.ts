@@ -7,6 +7,7 @@ type SessionData = {
 		avatarUrl: string;
 	};
 	csrfToken: string;
+	currentProjectID: string;
 };
 
 export const sessionStorage = createCookieSessionStorage<SessionData>({
@@ -21,3 +22,13 @@ export const sessionStorage = createCookieSessionStorage<SessionData>({
 });
 
 export const { getSession, commitSession, destroySession } = sessionStorage;
+
+/**
+ * Reads the project the user is currently working in. Undefined means the user
+ * has no reachable project — the layout loader clears the id whenever the
+ * stored project is gone or the user lost access to it.
+ */
+export async function getCurrentProjectID(request: Request): Promise<string | undefined> {
+	const session = await getSession(request.headers.get('Cookie'));
+	return session.get('currentProjectID');
+}

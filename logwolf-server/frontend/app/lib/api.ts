@@ -9,6 +9,13 @@ type ApiKey = {
 	revoked_at: string;
 };
 
+export type Project = {
+	id: string;
+	name: string;
+	slug: string;
+	created_at: string;
+};
+
 export type RetentionDays = 0 | 30 | 60 | 90 | 180 | 365;
 
 export type Metrics = {
@@ -22,6 +29,7 @@ export type Metrics = {
 };
 
 export interface IApi {
+	getProjects(): Promise<Project[]>;
 	getKeys(projectId: string): Promise<ApiKey[]>;
 	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
 	deleteKey(id: string): Promise<void>;
@@ -43,6 +51,17 @@ export class Api implements IApi {
 			'X-User-Login': this.userLogin,
 			...extra,
 		};
+	}
+
+	public async getProjects(): Promise<Project[]> {
+		const res = await fetch(`${this.baseUrl}projects`, {
+			method: 'GET',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<Project[]>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
 	}
 
 	public async getKeys(projectId: string): Promise<ApiKey[]> {
