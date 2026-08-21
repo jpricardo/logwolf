@@ -32,14 +32,25 @@ cmd/api/
 
 ### Internal routes (`X-Internal-Secret` header required)
 
-| Method   | Path                  | Description           |
-| -------- | --------------------- | --------------------- |
-| `GET`    | `/keys`               | List API keys         |
-| `POST`   | `/keys`               | Create an API key     |
-| `DELETE` | `/keys/{id}`          | Revoke an API key     |
-| `GET`    | `/settings/retention` | Get retention setting |
-| `PATCH`  | `/settings/retention` | Update retention TTL  |
-| `GET`    | `/metrics`            | Usage analytics       |
+| Method   | Path                             | Description                                 |
+| -------- | -------------------------------- | ------------------------------------------- |
+| `GET`    | `/keys`                          | List API keys                               |
+| `POST`   | `/keys`                          | Create an API key                           |
+| `DELETE` | `/keys/{id}`                     | Revoke an API key                           |
+| `GET`    | `/settings/retention`            | Get retention setting                       |
+| `PATCH`  | `/settings/retention`            | Update retention TTL                        |
+| `GET`    | `/metrics`                       | Usage analytics                             |
+| `GET`    | `/projects`                      | Projects the caller belongs to, with `role` |
+| `POST`   | `/projects`                      | Create a project (409 if the slug is taken) |
+| `GET`    | `/projects/{id}`                 | Get one project                             |
+| `PATCH`  | `/projects/{id}`                 | Rename a project                            |
+| `DELETE` | `/projects/{id}`                 | Delete a project and everything under it    |
+| `GET`    | `/projects/{id}/members`         | List members                                |
+| `POST`   | `/projects/{id}/members`         | Add a member                                |
+| `DELETE` | `/projects/{id}/members/{login}` | Remove a member                             |
+
+Internal routes also require `X-User-Login`; project access is checked against
+that login on every call.
 
 ### Health
 

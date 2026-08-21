@@ -43,9 +43,11 @@ app/
 │   ├── csrf.server.ts    # CSRF token generation + validation
 │   ├── format.ts         # Formatting utilities (dates, numbers)
 │   ├── parse.ts          # Parsing utilities
+│   ├── slug.ts           # Project name -> URL-safe slug
 │   └── utils.ts          # General utilities
 ├── hooks/
 │   ├── use-csrf-token.ts # Fetch CSRF token for form submissions
+│   ├── use-projects.ts   # Read the user's projects from the layout loader
 │   └── use-mobile.ts     # Detect mobile viewport
 └── store/
     └── theme-provider.tsx # Dark/light mode provider (next-themes)
@@ -53,16 +55,31 @@ app/
 
 ## Routes
 
-| Path             | Auth      | Description                   |
-| ---------------- | --------- | ----------------------------- |
-| `/`              | Public    | Landing page                  |
-| `/auth`          | Public    | GitHub OAuth login            |
-| `/dashboard`     | Protected | Metrics overview with charts  |
-| `/events`        | Protected | Paginated event list          |
-| `/events/create` | Protected | Create a new event            |
-| `/events/:id`    | Protected | Event detail view             |
-| `/keys`          | Protected | API key management            |
-| `/settings`      | Protected | Retention and system settings |
+| Path               | Auth      | Description                   |
+| ------------------ | --------- | ----------------------------- |
+| `/`                | Public    | Landing page                  |
+| `/auth`            | Public    | GitHub OAuth login            |
+| `/dashboard`       | Protected | Metrics overview with charts  |
+| `/events`          | Protected | Paginated event list          |
+| `/events/create`   | Protected | Create a new event            |
+| `/events/:id`      | Protected | Event detail view             |
+| `/keys`            | Protected | API key management            |
+| `/settings`        | Protected | Retention and system settings |
+| `/projects`        | Protected | Projects the user belongs to  |
+| `/projects/new`    | Protected | Create a project              |
+| `/projects/switch` | Protected | POST-only project switch      |
+
+## Project selection
+
+Every protected page except `/projects/new` is scoped to one project, held in the
+session as `currentProjectID`. The layout loader owns that value: it re-points the
+session when the stored project is gone or the user lost access to it, and it sends
+a user with no projects at all to `/projects/new` — the one page that renders
+without a current project.
+
+Switching projects is a POST to `/projects/switch`, which re-checks membership
+server-side before writing the session. The sidebar switcher and the `/projects`
+list both go through it.
 
 ## Authentication
 

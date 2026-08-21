@@ -16,6 +16,11 @@ export type Project = {
 	created_at: string;
 };
 
+export type ProjectRole = 'owner' | 'member';
+
+/** A project together with the role the requesting user holds in it. */
+export type UserProject = Project & { role: ProjectRole };
+
 export type RetentionDays = 0 | 30 | 60 | 90 | 180 | 365;
 
 export type Metrics = {
@@ -29,7 +34,8 @@ export type Metrics = {
 };
 
 export interface IApi {
-	getProjects(): Promise<Project[]>;
+	getProjects(): Promise<UserProject[]>;
+	createProject(name: string, slug: string): Promise<Project>;
 	getKeys(projectId: string): Promise<ApiKey[]>;
 	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
 	deleteKey(id: string): Promise<void>;
@@ -53,12 +59,24 @@ export class Api implements IApi {
 		};
 	}
 
-	public async getProjects(): Promise<Project[]> {
+	public async getProjects(): Promise<UserProject[]> {
 		const res = await fetch(`${this.baseUrl}projects`, {
 			method: 'GET',
 			headers: this.internalHeaders(),
 		});
-		const json = (await res.json()) as ApiResponse<Project[]>;
+		const json = (await res.json()) as ApiResponse<UserProject[]>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
+
+	public async createProject(name: string, slug: string): Promise<Project> {
+		const res = await fetch(`${this.baseUrl}projects`, {
+			method: 'POST',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify({ name, slug }),
+		});
+		const json = (await res.json()) as ApiResponse<Project>;
 		if (json.error) throw new Error(json.message);
 
 		return json.data;
