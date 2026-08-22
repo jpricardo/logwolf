@@ -10,6 +10,7 @@ import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
+import { getCurrentProjectID } from '~/lib/session.server';
 
 import type { Route } from './+types';
 
@@ -18,17 +19,17 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	event?.addTag('loader');
 
 	const user = await requireAuth(request);
-	const projectId = new URL(request.url).searchParams.get('projectId') ?? '';
 
-	if (!projectId) {
-		return { keys: [], projectId: '', noProject: true };
-	}
+	// Keys are listed for the project the session is pointed at; switching
+	// projects revalidates this loader into that project's keys instead.
+	const projectId = await getCurrentProjectID(request);
+	if (!projectId) return { keys: [], noProject: true };
 
 	const api = createApi(user.login);
 	const res = await api.getKeys(projectId);
 	event?.set('loaderData', res);
 
-	return { keys: res, projectId, noProject: false };
+	return { keys: res, noProject: false };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -47,7 +48,12 @@ export async function action({ request, context }: Route.ActionArgs) {
 		const api = createApi(user.login);
 
 		if (intent === 'create') {
-			const projectId = fd.get('projectId')?.toString() ?? '';
+			// The new key belongs to the project in session rather than one named by
+			// the form, so a tab left open on a since-switched project cannot mint a
+			// key somewhere the user is no longer looking.
+			const projectId = await getCurrentProjectID(request);
+			if (!projectId) return { error: new Error('No project selected.') };
+
 			const res = await api.createKey(projectId);
 			event?.set('actionData', { ...res, key: '-' });
 			return { data: res };
@@ -112,7 +118,6 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 						<fetcher.Form method='post'>
 							<input type='hidden' name='_csrf' value={csrfToken} />
 							<input type='hidden' name='intent' value='create' />
-							<input type='hidden' name='projectId' value={loaderData.projectId} />
 							<Button type='submit' disabled={fetcher.state !== 'idle'}>
 								Generate new key
 							</Button>

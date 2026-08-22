@@ -1,4 +1,3 @@
-import { type DeleteLogwolfEventDTO } from '@logwolf/client-js';
 import { Plus } from 'lucide-react';
 import { Link } from 'react-router';
 
@@ -8,8 +7,9 @@ import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
+import { createApi } from '~/lib/api';
+import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
-import { logwolf } from '~/lib/logwolf';
 import { getCurrentProjectID } from '~/lib/session.server';
 
 import type { Route } from './+types';
@@ -23,14 +23,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
+	const user = await requireAuth(request);
+
 	const projectId = await getCurrentProjectID(request);
 	if (!projectId) return { events: [], noProject: true, error: null };
 
-	// Events are still read through the SDK route, which authenticates with its
-	// own API key instead of the dashboard session. A rejected key must not take
-	// the whole page down, so it surfaces as an alert above an empty table.
+	// A broker that refuses the read must not take the whole page down, so it
+	// surfaces as an alert above an empty table.
 	try {
-		const events = await logwolf.getAll({ page: 1, pageSize: 20 });
+		const events = await createApi(user.login).getLogs(projectId, { page: 1, pageSize: 20 });
 		event?.set('loaderData', ['too much data']);
 
 		return { events, noProject: false, error: null };
@@ -47,17 +48,23 @@ export async function action({ request, context }: Route.ActionArgs) {
 	event?.addTag('action');
 
 	if (request.method === 'DELETE') {
+		const user = await requireAuth(request);
 		const fd = await request.formData();
 
 		await validateCsrfToken(request, fd);
 
-		const data = Object.fromEntries(fd.entries()) as DeleteLogwolfEventDTO;
+		// Deleting is scoped to the project in session, so an id belonging to
+		// another one is a 404 rather than someone else's event disappearing.
+		const projectId = await getCurrentProjectID(request);
+		if (!projectId) return { error: 'No project selected.' };
+
+		const id = fd.get('id')?.toString() ?? '';
 
 		try {
-			const res = await logwolf.delete(data);
-			event?.set('actionData', res);
+			await createApi(user.login).deleteLog(projectId, id);
+			event?.set('actionData', { deleted: id });
 
-			return res;
+			return { deleted: id };
 		} catch (err) {
 			event?.setSeverity('error');
 			event?.set('actionError', err);

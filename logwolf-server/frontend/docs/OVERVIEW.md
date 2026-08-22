@@ -62,7 +62,7 @@ app/
 | `/auth`                  | Public    | GitHub OAuth login                          |
 | `/dashboard`             | Protected | Metrics overview with charts                |
 | `/events`                | Protected | Paginated event list                        |
-| `/events/create`         | Protected | Create a new event                          |
+| `/events/new`            | Protected | Create a new event                          |
 | `/events/:id`            | Protected | Event detail view                           |
 | `/keys`                  | Protected | API key management                          |
 | `/settings`              | Protected | Redirects to the current project's settings |
@@ -82,6 +82,17 @@ without a current project.
 Switching projects is a POST to `/projects/switch`, which re-checks membership
 server-side before writing the session. The sidebar switcher and the `/projects`
 list both go through it.
+
+Pages take the project from the session and nowhere else — never from the URL or
+a hidden form field. Every loader and action calls `getCurrentProjectID()` and
+passes the result to the API client, so the redirect back from
+`/projects/switch` revalidates them straight into the new project.
+
+That includes `/events`, which reads and writes through the broker's
+`/projects/:id/logs` routes rather than the SDK. The SDK authenticates with the
+dashboard's own `API_KEY`, which belongs to one fixed project — it could never
+follow the switcher, and it would have shown every user that project's events.
+`lib/logwolf.ts` keeps using it for what it is: the dashboard's own telemetry.
 
 ## Project settings
 
@@ -107,6 +118,10 @@ CSRF tokens are required on all mutating form submissions.
 ## API communication
 
 `lib/api.ts` exports an `Api` class that calls Broker's **internal routes** using the `X-Internal-Secret` header (sourced from `INTERNAL_API_SECRET`). The frontend never calls the public Broker routes — those are for SDK clients only.
+
+The client is request-scoped: `createApi(login)` takes the GitHub login of the signed-in user and sends it as `X-User-Login` on every call, which is what the broker checks project membership against. Project-scoped methods (`getKeys`, `createKey`, `getMetrics`, `getRetention`, `updateRetention`, `getLogs`, `getLog`, `createLog`, `deleteLog`, and everything under `projects`) take the project id as an argument, so a route has to state which project it means.
+
+Event payloads come back exactly as the broker stores them, so `getLogs`/`getLog` decode them with the SDK's own `LogwolfEventSchema` — `data` back into an object, timestamps back into `Date`s. Pages therefore keep working with `LogwolfEventData`, unchanged by the move off the SDK transport.
 
 ## Error tracking
 

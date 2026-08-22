@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -113,29 +114,10 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	qp := r.URL.Query()
-	page, err := strconv.ParseInt(qp.Get("page"), 10, 0)
-	if err != nil {
-		page = 0
-	}
-
-	if page < 1 {
-		page = 1
-	}
-
-	pageSize, err := strconv.ParseInt(qp.Get("pageSize"), 10, 0)
-	if err != nil {
-		pageSize = 0
-	}
-
-	if pageSize < 1 {
-		pageSize = 20
-	}
-
 	var result []data.LogEntry
 	err = client.Call("RPCServer.GetLogs", data.QueryParams{
 		ProjectID:  projectIDFromContext(r),
-		Pagination: data.PaginationParams{Page: page, PageSize: pageSize},
+		Pagination: paginationFromQuery(r.URL.Query()),
 	}, &result)
 	if err != nil {
 		app.errorJSON(w, err)
@@ -147,6 +129,22 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
+}
+
+// paginationFromQuery reads page/pageSize off a query string, falling back to
+// the first page of 20 whenever either is missing or unusable.
+func paginationFromQuery(qp url.Values) data.PaginationParams {
+	page, err := strconv.ParseInt(qp.Get("page"), 10, 0)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.ParseInt(qp.Get("pageSize"), 10, 0)
+	if err != nil || pageSize < 1 {
+		pageSize = 20
+	}
+
+	return data.PaginationParams{Page: page, PageSize: pageSize}
 }
 
 func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +203,11 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		app.errorJSON(w, err)
 		return
 	}
+
+	if keys == nil {
+		keys = []data.APIKey{}
+	}
+
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: keys})
 }
 
@@ -819,4 +822,179 @@ func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Member removed."})
+}
+
+// --- Project-scoped log access ---
+
+// The dashboard reads and writes events through the routes below instead of the
+// public SDK ones. It authenticates as a user rather than as an API key, so the
+// project cannot come from a key: it comes from the path, and the caller has to
+// be a member of it.
+
+// requireProjectAccess confirms the caller belongs to the project named in the
+// path, over the connection the handler already opened. It returns false once a
+// response has been written, so the handler only has to return — and the client
+// stays the handler's to close.
+func (app *Config) requireProjectAccess(w http.ResponseWriter, r *http.Request, client *rpc.Client, projectID string) bool {
+	isMember, err := checkProjectMembership(client, projectID, userLoginFromContext(r))
+	if err != nil {
+		app.errorJSON(w, err)
+		return false
+	}
+	if !isMember {
+		app.denyProjectAccess(w, client, projectID)
+		return false
+	}
+
+	return true
+}
+
+// logNotFound reports whether an RPC error means "this project has no such log".
+// net/rpc flattens errors into strings, so the cause has to be read back out of
+// the message. A malformed id is not found either — it cannot name a document.
+func logNotFound(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "no documents in result") || strings.Contains(msg, "not a valid ObjectID")
+}
+
+func (app *Config) ListProjectLogs(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	if !app.requireProjectAccess(w, r, client, projectID) {
+		return
+	}
+
+	var result []data.LogEntry
+	err = client.Call("RPCServer.GetLogs", data.QueryParams{
+		ProjectID:  projectID,
+		Pagination: paginationFromQuery(r.URL.Query()),
+	}, &result)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if result == nil {
+		result = []data.LogEntry{}
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
+}
+
+func (app *Config) GetProjectLog(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	if !app.requireProjectAccess(w, r, client, projectID) {
+		return
+	}
+
+	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "logID"), ProjectID: projectID}
+
+	var entry data.LogEntry
+	if err := client.Call("RPCServer.GetLog", filter, &entry); err != nil {
+		if logNotFound(err) {
+			app.errorJSON(w, fmt.Errorf("log not found"), http.StatusNotFound)
+			return
+		}
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: entry})
+}
+
+func (app *Config) CreateProjectLog(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	if !app.requireProjectAccess(w, r, client, projectID) {
+		return
+	}
+
+	var payload data.JSONLogPayload
+	if err := app.readJSON(w, r, &payload); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	// Whatever project the body named is discarded: the event belongs to the one
+	// in the path, which the caller was just checked against.
+	payload.ProjectID = projectID
+
+	evp := event.Payload{Action: "log", Log: payload}
+
+	emitter, err := event.NewEmitter(app.Rabbit)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	j, err := json.MarshalIndent(&evp, "", "	")
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	if err := emitter.Push(string(j), "log.INFO"); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+}
+
+func (app *Config) DeleteProjectLog(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "id")
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	if !app.requireProjectAccess(w, r, client, projectID) {
+		return
+	}
+
+	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "logID"), ProjectID: projectID}
+
+	var deleted int64
+	if err := client.Call("RPCServer.DeleteLog", filter, &deleted); err != nil {
+		if logNotFound(err) {
+			app.errorJSON(w, fmt.Errorf("log not found"), http.StatusNotFound)
+			return
+		}
+		app.errorJSON(w, err)
+		return
+	}
+
+	// A log of another project matches the filter no better than a deleted one,
+	// so both land here rather than reporting a successful delete of nothing.
+	if deleted == 0 {
+		app.errorJSON(w, fmt.Errorf("log not found"), http.StatusNotFound)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: fmt.Sprintf("Deleted entries: %d", deleted)})
 }

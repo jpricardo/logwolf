@@ -24,6 +24,7 @@ The RPC server is exposed via Go's standard `net/rpc` package on TCP port 5001.
 | --------------------- | ------------------- | ------------ | -------------------------------------------------- |
 | `RPCServer.LogInfo`   | `RPCLogPayload`     | `string`     | Insert a single log entry into MongoDB             |
 | `RPCServer.GetLogs`   | `QueryParams`       | `[]LogEntry` | Query logs with optional filtering and pagination  |
+| `RPCServer.GetLog`    | `RPCLogEntryFilter` | `LogEntry`   | Fetch one entry by id within a project             |
 | `RPCServer.DeleteLog` | `RPCLogEntryFilter` | `int64`      | Delete matching log entries; returns count deleted |
 
 ## HTTP interface
