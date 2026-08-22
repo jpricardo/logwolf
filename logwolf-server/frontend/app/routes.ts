@@ -15,5 +15,6 @@ export default [
 		route('settings', 'pages/settings/index.tsx'),
 		route('projects', 'pages/projects/index.tsx'),
 		route('projects/new', 'pages/projects/new/index.tsx'),
+		route('projects/:id/settings', 'pages/projects/settings/index.tsx'),
 	]),
 ] satisfies RouteConfig;

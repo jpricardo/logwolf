@@ -134,9 +134,11 @@ Key files: `lib/client.ts` (Logwolf class), `lib/schema.ts` (Zod schemas), `lib/
 
 Key files: `app/root.tsx`, `app/lib/api.ts` (dashboard API client), `app/lib/auth.server.ts`.
 
-Routes: `/` (public), `/auth`, `/dashboard`, `/events`, `/events/create`, `/events/:id`, `/keys`, `/settings`, `/projects`, `/projects/new`, `/projects/switch`.
+Routes: `/` (public), `/auth`, `/dashboard`, `/events`, `/events/create`, `/events/:id`, `/keys`, `/projects`, `/projects/new`, `/projects/switch`, `/projects/:id/settings`. `/settings` is a redirect to the current project's settings page.
 
 The layout loader keeps `currentProjectID` in the session honest and redirects a user with no projects to `/projects/new`, the only protected page that renders without a current project.
+
+Project name, retention, members and deletion all live on `/projects/:id/settings`. Retention is editable by any member; renaming, member changes and deletion are owner-only, enforced in the broker and mirrored in the route so the UI can explain itself.
 
 `lib/api.ts` → calls Broker internal routes via `X-Internal-Secret`. Never calls public SDK routes.
 
