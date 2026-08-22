@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -341,10 +344,62 @@ func spawn(pkgPath string, env map[string]string) error {
 }
 
 // startProcess is spawn scoped to a single test.
+// TestMain deletes the binaries built for the run once every test has finished.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if binDir != "" {
+		os.RemoveAll(binDir)
+	}
+	os.Exit(code)
+}
+
+var (
+	binMu   sync.Mutex
+	binDir  string
+	binPath = map[string]string{}
+)
+
+// serviceBinary compiles a service package once per run and returns the path to
+// the binary. Tests execute that binary directly rather than going through
+// `go run`, which is what makes cleanup reliable: `go run` starts the service as
+// a child of its own, so killing `go run` leaves the service running. On Windows
+// it survives the whole session, and a stray Listener that reconnects to a
+// recycled RabbitMQ port will consume the messages a later test is waiting for.
+func serviceBinary(t *testing.T, pkgPath string) string {
+	t.Helper()
+
+	binMu.Lock()
+	defer binMu.Unlock()
+
+	if path, ok := binPath[pkgPath]; ok {
+		return path
+	}
+
+	if binDir == "" {
+		dir, err := os.MkdirTemp("", "logwolf-integration")
+		if err != nil {
+			t.Fatalf("serviceBinary: temp dir: %v", err)
+		}
+		binDir = dir
+	}
+
+	out := filepath.Join(binDir, strings.NewReplacer("../", "", "/", "-").Replace(pkgPath))
+	if runtime.GOOS == "windows" {
+		out += ".exe"
+	}
+
+	if output, err := exec.Command("go", "build", "-o", out, pkgPath).CombinedOutput(); err != nil {
+		t.Fatalf("serviceBinary %s: build failed: %v: %s", pkgPath, err, output)
+	}
+
+	binPath[pkgPath] = out
+	return out
+}
+
 func startProcess(t *testing.T, pkgPath string, env map[string]string) {
 	t.Helper()
 
-	cmd := exec.Command("go", "run", pkgPath)
+	cmd := exec.Command(serviceBinary(t, pkgPath))
 	cmd.Env = append(os.Environ(), envSlice(env)...)
 
 	if os.Getenv("LOGWOLF_TEST_VERBOSE") != "" {

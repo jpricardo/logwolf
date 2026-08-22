@@ -13,7 +13,9 @@ toolbox/
 ├── data/
 │   ├── models.go    # Models struct, LogEntry, APIKey, Settings types + CRUD methods
 │   ├── apikey.go    # APIKey model, key generation, validation
-│   ├── settings.go  # TTL/retention settings, index management
+│   ├── settings.go  # Per-project retention settings, index management
+│   ├── project.go   # Project and ProjectMember models, membership queries
+│   ├── migrate.go   # Startup migration of pre-multi-tenancy data
 │   └── log.go       # Log entry type aliases
 ├── event/
 │   ├── event.go     # Exchange + queue declarations
@@ -51,7 +53,20 @@ Stores API key metadata: key value (hashed), label, created/last-used timestamps
 
 ### `Settings`
 
-Manages the single-document settings record (currently: retention TTL in days). Also owns the logic for creating/dropping the MongoDB TTL index when retention changes.
+Manages per-project settings documents (currently: retention in days), keyed by `(project_id, key)`.
+
+### Startup migration (`migrate.go`)
+
+Adopts data written before projects existed. Logger calls it on every start; Broker and Listener never do.
+
+| Function                         | Description                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `CountOrphanedDocuments`         | Counts `logs`, `api_keys`, and `settings` documents with no project ID                  |
+| `MigrateOrphansToDefaultProject` | Adopts those documents into the `Default` project, creating it and its owners if needed |
+| `DropLegacyTTLIndex`             | Removes the global TTL index that predates per-project retention                        |
+| `ParseGithubLogins`              | Splits a comma-separated allowlist into logins (trimmed, deduplicated, case preserved)  |
+
+`MigrateOrphansToDefaultProject` returns a nil `*MigrationReport` when there is nothing to adopt, which is what makes repeated runs a no-op.
 
 ## `event` package
 

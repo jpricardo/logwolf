@@ -25,7 +25,11 @@ jobs:
 
       - name: Run logger unit tests
         working-directory: logwolf-server/logger
-        run: go test ./... -v -count=1
+        run: go test ./cmd/api/... -v -count=1
+
+      - name: Run listener unit tests
+        working-directory: logwolf-server/listener
+        run: go test ./cmd/api/... -v -count=1
 
   test-integration:
     name: Integration tests
