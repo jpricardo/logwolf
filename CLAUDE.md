@@ -88,7 +88,9 @@ docker compose up
 
 **RabbitMQ topology:** Topic exchange `logs_topic`; routing keys `log.INFO`, `log.WARNING`, `log.ERROR`. Queue declarations live in `toolbox/event/event.go`.
 
-**Data retention:** Logger maintains a MongoDB TTL index on `logs.created_at`. Default is 90 days; supported values are 30/60/90/180/365. Changing the setting recreates the index.
+**Data retention:** Retention is per project (default 90 days; supported values are 30/60/90/180/365, or 0 for forever). A cleanup loop in Logger deletes expired logs project by project every `CLEANUP_INTERVAL`. The global TTL index used before multi-tenancy is dropped on startup.
+
+**Startup migration:** Logger adopts pre-multi-tenancy `logs`, `api_keys`, and `settings` (documents with no `project_id`) into a project named `Default` before it serves traffic, making every login in `LOGWOLF_ALLOWED_GITHUB_USERS` an owner. It is idempotent and silent when there is nothing to migrate. See `toolbox/data/migrate.go` and `logger/cmd/api/migrate.go`.
 
 ## Service details
 
@@ -107,7 +109,7 @@ Entry point: `cmd/api/main.go`. No external dependencies beyond toolbox. Pure co
 
 ### Logger (`logwolf-server/logger`)
 
-Entry point: `cmd/api/main.go`. Key files: `rpc.go`, `routes.go`.
+Entry point: `cmd/api/main.go`. Key files: `rpc.go`, `routes.go`, `migrate.go`, `cleanup.go`.
 
 RPC methods (Go stdlib `net/rpc`):
 
@@ -163,17 +165,18 @@ Copy `.env.example` to `.env` and fill in GitHub OAuth credentials before runnin
 
 Per-service env vars:
 
-| Variable              | Service          | Default                       | Description                              |
-| --------------------- | ---------------- | ----------------------------- | ---------------------------------------- |
-| `MONGO_URL`           | broker, logger   | `mongodb://mongo:27017`       | MongoDB connection                       |
-| `RABBITMQ_URL`        | broker, listener | `amqp://guest:guest@rabbitmq` | RabbitMQ connection                      |
-| `BROKER_PORT`         | broker           | `80`                          | HTTP listen port                         |
-| `LOGGER_RPC_PORT`     | logger           | `5001`                        | RPC listen port                          |
-| `LOGGER_HTTP_PORT`    | logger           | `80`                          | HTTP health check port                   |
-| `CLEANUP_INTERVAL`    | logger           | `1h`                          | Per-project retention cleanup frequency  |
-| `API_URL`             | frontend         | —                             | Broker base URL                          |
-| `INTERNAL_API_SECRET` | frontend         | —                             | Shared secret for internal Broker routes |
-| `SESSION_SECRET`      | frontend         | —                             | iron-session signing key                 |
+| Variable                       | Service          | Default                       | Description                                                            |
+| ------------------------------ | ---------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| `MONGO_URL`                    | broker, logger   | `mongodb://mongo:27017`       | MongoDB connection                                                     |
+| `RABBITMQ_URL`                 | broker, listener | `amqp://guest:guest@rabbitmq` | RabbitMQ connection                                                    |
+| `BROKER_PORT`                  | broker           | `80`                          | HTTP listen port                                                       |
+| `LOGGER_RPC_PORT`              | logger           | `5001`                        | RPC listen port                                                        |
+| `LOGGER_HTTP_PORT`             | logger           | `80`                          | HTTP health check port                                                 |
+| `CLEANUP_INTERVAL`             | logger           | `1h`                          | Per-project retention cleanup frequency                                |
+| `LOGWOLF_ALLOWED_GITHUB_USERS` | frontend, logger | —                             | Dashboard allowlist; also the owners of the migrated `Default` project |
+| `API_URL`                      | frontend         | —                             | Broker base URL                                                        |
+| `INTERNAL_API_SECRET`          | frontend         | —                             | Shared secret for internal Broker routes                               |
+| `SESSION_SECRET`               | frontend         | —                             | iron-session signing key                                               |
 
 ## Detailed docs
 
