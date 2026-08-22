@@ -203,6 +203,11 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		app.errorJSON(w, err)
 		return
 	}
+
+	if keys == nil {
+		keys = []data.APIKey{}
+	}
+
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: keys})
 }
 
