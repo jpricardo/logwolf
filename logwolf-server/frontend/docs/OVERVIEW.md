@@ -62,7 +62,7 @@ app/
 | `/auth`                  | Public    | GitHub OAuth login                          |
 | `/dashboard`             | Protected | Metrics overview with charts                |
 | `/events`                | Protected | Paginated event list                        |
-| `/events/create`         | Protected | Create a new event                          |
+| `/events/new`            | Protected | Create a new event                          |
 | `/events/:id`            | Protected | Event detail view                           |
 | `/keys`                  | Protected | API key management                          |
 | `/settings`              | Protected | Redirects to the current project's settings |
@@ -82,6 +82,13 @@ without a current project.
 Switching projects is a POST to `/projects/switch`, which re-checks membership
 server-side before writing the session. The sidebar switcher and the `/projects`
 list both go through it.
+
+Pages take the project from the session and nowhere else — never from the URL or
+a hidden form field. `/dashboard` and `/keys` call `getCurrentProjectID()` in
+their loaders and actions, so the redirect back from `/projects/switch`
+revalidates them straight into the new project. `/events` is the one exception:
+it still reads through the SDK route, which authenticates with its own API key
+rather than the dashboard session.
 
 ## Project settings
 
@@ -107,6 +114,8 @@ CSRF tokens are required on all mutating form submissions.
 ## API communication
 
 `lib/api.ts` exports an `Api` class that calls Broker's **internal routes** using the `X-Internal-Secret` header (sourced from `INTERNAL_API_SECRET`). The frontend never calls the public Broker routes — those are for SDK clients only.
+
+The client is request-scoped: `createApi(login)` takes the GitHub login of the signed-in user and sends it as `X-User-Login` on every call, which is what the broker checks project membership against. Project-scoped methods (`getKeys`, `createKey`, `getMetrics`, `getRetention`, `updateRetention`, and everything under `projects`) take the project id as an argument, so a route has to state which project it means.
 
 ## Error tracking
 
