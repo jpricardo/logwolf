@@ -157,7 +157,7 @@ func (r *RPCServer) DeleteProject(args *data.RPCProjectIDArgs, reply *string) er
 	return nil
 }
 
-func (r *RPCServer) ListUserProjects(args *data.RPCUserProjectsArgs, reply *[]data.Project) error {
+func (r *RPCServer) ListUserProjects(args *data.RPCUserProjectsArgs, reply *[]data.UserProject) error {
 	log.Printf("Listing projects for user: %s", args.GithubLogin)
 	projects, err := r.models.GetProjectsForUser(args.GithubLogin)
 	if err != nil {

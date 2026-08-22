@@ -38,6 +38,14 @@ type ProjectMember struct {
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
 }
 
+// UserProject is a project as seen by one user: the project itself plus the
+// role that user holds in it. Callers listing "my projects" need both, and the
+// role is never a property of the project on its own.
+type UserProject struct {
+	Project
+	Role string `json:"role"`
+}
+
 // RPC argument types for project and member operations.
 
 // RPCCreateProjectArgs is the RPC argument for CreateProject.
@@ -299,7 +307,9 @@ func (m *Models) GetAllProjects(ctx context.Context) ([]Project, error) {
 	return projects, nil
 }
 
-func (m *Models) GetProjectsForUser(githubLogin string) ([]Project, error) {
+// GetProjectsForUser returns every project the user is a member of, each paired
+// with the role they hold in it.
+func (m *Models) GetProjectsForUser(githubLogin string) ([]UserProject, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -315,12 +325,14 @@ func (m *Models) GetProjectsForUser(githubLogin string) ([]Project, error) {
 	}
 
 	if len(members) == 0 {
-		return []Project{}, nil
+		return []UserProject{}, nil
 	}
 
 	ids := make([]primitive.ObjectID, len(members))
+	roles := make(map[primitive.ObjectID]string, len(members))
 	for i, mb := range members {
 		ids[i] = mb.ProjectID
+		roles[mb.ProjectID] = mb.Role
 	}
 
 	projectCursor, err := m.client.Database("logs").Collection("projects").Find(ctx, bson.M{"_id": bson.M{"$in": ids}})
@@ -333,5 +345,12 @@ func (m *Models) GetProjectsForUser(githubLogin string) ([]Project, error) {
 	if err := projectCursor.All(ctx, &projects); err != nil {
 		return nil, fmt.Errorf("GetProjectsForUser projects decode: %w", err)
 	}
-	return projects, nil
+
+	// A membership row can outlive its project (the project was deleted while the
+	// row lingers); the projects query is what decides which entries survive.
+	result := make([]UserProject, 0, len(projects))
+	for _, p := range projects {
+		result = append(result, UserProject{Project: p, Role: roles[p.ID]})
+	}
+	return result, nil
 }

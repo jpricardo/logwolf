@@ -134,7 +134,9 @@ Key files: `lib/client.ts` (Logwolf class), `lib/schema.ts` (Zod schemas), `lib/
 
 Key files: `app/root.tsx`, `app/lib/api.ts` (dashboard API client), `app/lib/auth.server.ts`.
 
-Routes: `/` (public), `/auth`, `/dashboard`, `/events`, `/events/create`, `/events/:id`, `/keys`, `/settings`.
+Routes: `/` (public), `/auth`, `/dashboard`, `/events`, `/events/create`, `/events/:id`, `/keys`, `/settings`, `/projects`, `/projects/new`, `/projects/switch`.
+
+The layout loader keeps `currentProjectID` in the session honest and redirects a user with no projects to `/projects/new`, the only protected page that renders without a current project.
 
 `lib/api.ts` → calls Broker internal routes via `X-Internal-Secret`. Never calls public SDK routes.
 

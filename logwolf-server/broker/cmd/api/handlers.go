@@ -501,14 +501,14 @@ func (app *Config) ListProjects(w http.ResponseWriter, r *http.Request) {
 	defer client.Close()
 
 	args := data.RPCUserProjectsArgs{GithubLogin: userLogin}
-	var projects []data.Project
+	var projects []data.UserProject
 	if err := client.Call("RPCServer.ListUserProjects", &args, &projects); err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 
 	if projects == nil {
-		projects = []data.Project{}
+		projects = []data.UserProject{}
 	}
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: projects})
@@ -544,6 +544,13 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 	var project data.Project
 	if err := client.Call("RPCServer.CreateProject", &data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug}, &project); err != nil {
+		// Slugs are globally unique, so a collision is a client mistake, not a
+		// server fault. net/rpc flattens errors to strings, so the Mongo
+		// duplicate-key code is the only thing left to match on.
+		if strings.Contains(err.Error(), "E11000") {
+			app.errorJSON(w, fmt.Errorf("a project with that slug already exists"), http.StatusConflict)
+			return
+		}
 		app.errorJSON(w, err)
 		return
 	}

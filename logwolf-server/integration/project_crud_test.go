@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -209,6 +210,24 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	}
 }
 
+// The broker turns a slug collision into a 409 by matching "E11000" in the RPC
+// error string, so that substring is part of the contract this test pins down.
+func TestInsertProject_DuplicateSlug(t *testing.T) {
+	m := setupProjectModels(t)
+
+	if _, err := m.InsertProject(data.Project{Name: "First", Slug: "taken"}); err != nil {
+		t.Fatalf("first InsertProject: %v", err)
+	}
+
+	_, err := m.InsertProject(data.Project{Name: "Second", Slug: "taken"})
+	if err == nil {
+		t.Fatal("second InsertProject: expected duplicate key error, got nil")
+	}
+	if !strings.Contains(err.Error(), "E11000") {
+		t.Errorf("second InsertProject: error %q must mention E11000", err)
+	}
+}
+
 // --- Member helpers ---
 
 func TestInsertProjectMember_Duplicate(t *testing.T) {
@@ -305,6 +324,19 @@ func TestGetProjectsForUser(t *testing.T) {
 	}
 	if len(projects) != 2 {
 		t.Errorf("GetProjectsForUser: want 2 projects, got %d", len(projects))
+	}
+
+	// The role travels with the project so the dashboard can label each one
+	// without a second round trip per project.
+	roles := map[string]string{}
+	for _, p := range projects {
+		roles[p.Slug] = p.Role
+	}
+	if roles["p1"] != data.RoleOwner {
+		t.Errorf("GetProjectsForUser: p1 role = %q, want %q", roles["p1"], data.RoleOwner)
+	}
+	if roles["p2"] != data.RoleMember {
+		t.Errorf("GetProjectsForUser: p2 role = %q, want %q", roles["p2"], data.RoleMember)
 	}
 }
 

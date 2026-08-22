@@ -1,4 +1,4 @@
-import { Check, ChevronsUpDown, Plus } from 'lucide-react';
+import { Check, ChevronsUpDown, LayoutList, Plus } from 'lucide-react';
 import { Link, useLocation, useSubmit } from 'react-router';
 
 import type { Project } from '~/lib/api';
@@ -81,6 +81,13 @@ export function ProjectSwitcher({ projects, currentProject, csrfToken }: Props) 
 						))}
 
 						<DropdownMenuSeparator />
+
+						<DropdownMenuItem asChild>
+							<Link to='/projects'>
+								<LayoutList />
+								<span>All projects</span>
+							</Link>
+						</DropdownMenuItem>
 
 						<DropdownMenuItem asChild>
 							<Link to='/projects/new'>
