@@ -1,4 +1,18 @@
+import {
+	LogwolfEventSchema,
+	type CreateLogwolfEventDTOSchema,
+	type LogwolfEventData,
+	type Pagination,
+} from '@logwolf/client-js';
+import z from 'zod';
+
 type ApiResponse<T> = { message: string } & ({ error: true; data: never } | { error: false; data: T });
+
+/**
+ * An event the way the broker takes it in: `data` already encoded as a JSON
+ * string. `LogwolfEvent.toObject()` produces exactly this shape.
+ */
+export type EncodedEvent = z.input<typeof CreateLogwolfEventDTOSchema>;
 
 type ApiKey = {
 	id: string;
@@ -56,6 +70,10 @@ export interface IApi {
 	getRetention(projectId: string): Promise<{ days: RetentionDays }>;
 	updateRetention(projectId: string, days: number): Promise<{ days: RetentionDays }>;
 	getMetrics(projectId: string): Promise<Metrics>;
+	getLogs(projectId: string, p: Pagination): Promise<LogwolfEventData[]>;
+	getLog(projectId: string, id: string): Promise<LogwolfEventData>;
+	createLog(projectId: string, event: EncodedEvent): Promise<void>;
+	deleteLog(projectId: string, id: string): Promise<void>;
 }
 
 export class Api implements IApi {
@@ -168,7 +186,11 @@ export class Api implements IApi {
 			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
 			body: JSON.stringify({ project_id: projectId }),
 		});
-		const json = (await res.json()) as ApiResponse<{ key: string; prefix: string; id: string }>;
+		const json = (await res.json()) as ApiResponse<{
+			key: string;
+			prefix: string;
+			id: string;
+		}>;
 		if (json.error) throw new Error(json.message);
 
 		return json.data;
@@ -220,6 +242,50 @@ export class Api implements IApi {
 		if (json.error) throw new Error(json.message);
 
 		return json.data;
+	}
+
+	public async getLogs(projectId: string, p: Pagination): Promise<LogwolfEventData[]> {
+		const url = new URL(`${this.baseUrl}projects/${projectId}/logs`);
+		url.searchParams.set('page', String(p.page));
+		url.searchParams.set('pageSize', String(p.pageSize));
+		const res = await fetch(url.toString(), {
+			method: 'GET',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<unknown[]>;
+		if (json.error) throw new Error(json.message);
+
+		return LogwolfEventSchema.array().parse(json.data ?? []);
+	}
+
+	public async getLog(projectId: string, id: string): Promise<LogwolfEventData> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/logs/${encodeURIComponent(id)}`, {
+			method: 'GET',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<unknown>;
+		if (json.error) throw new Error(json.message);
+
+		return LogwolfEventSchema.parse(json.data);
+	}
+
+	public async createLog(projectId: string, event: EncodedEvent): Promise<void> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/logs`, {
+			method: 'POST',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify(event),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
+		if (json.error) throw new Error(json.message);
+	}
+
+	public async deleteLog(projectId: string, id: string): Promise<void> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/logs/${encodeURIComponent(id)}`, {
+			method: 'DELETE',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
+		if (json.error) throw new Error(json.message);
 	}
 }
 

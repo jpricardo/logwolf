@@ -84,7 +84,7 @@ docker compose up
 - SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting (in broker middleware)
 - Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations
 
-**Reading vs. writing:** Broker handles writes asynchronously (via RabbitMQ) and reads synchronously (via RPC to logger). Do not add direct DB calls to broker or listener.
+**Reading vs. writing:** Broker handles writes asynchronously (via RabbitMQ) and reads synchronously (via RPC to logger). Do not add direct DB calls to broker or listener. This holds for both entry points: SDK clients scoped by API key, and the dashboard scoped by project id + membership.
 
 **RabbitMQ topology:** Topic exchange `logs_topic`; routing keys `log.INFO`, `log.WARNING`, `log.ERROR`. Queue declarations live in `toolbox/event/event.go`.
 
@@ -98,7 +98,7 @@ Entry point: `cmd/api/main.go`. Key files: `routes.go`, `handlers.go`, `middlewa
 
 - `POST /logs`, `POST /logs/batch` — enqueue events (async, 202)
 - `GET /logs`, `DELETE /logs` — proxy to Logger RPC
-- Internal routes (`X-Internal-Secret`): `/keys`, `/settings/retention`, `/metrics`
+- Internal routes (`X-Internal-Secret` + `X-User-Login`): `/keys`, `/settings/retention`, `/metrics`, `/projects/...` — including `/projects/{id}/logs`, the dashboard's project-scoped read/write path for events
 - `requireAPIKey` middleware caches key lookups; `requireInternalSecret` guards dashboard routes
 
 ### Listener (`logwolf-server/listener`)
@@ -113,6 +113,7 @@ RPC methods (Go stdlib `net/rpc`):
 
 - `RPCServer.LogInfo` — insert event
 - `RPCServer.GetLogs` — query with pagination/filtering
+- `RPCServer.GetLog` — fetch one event by id within a project
 - `RPCServer.DeleteLog` — delete by filter, returns count
 
 ### Toolbox (`logwolf-server/toolbox`)
@@ -138,7 +139,7 @@ Routes: `/` (public), `/auth`, `/dashboard`, `/events`, `/events/new`, `/events/
 
 The layout loader keeps `currentProjectID` in the session honest and redirects a user with no projects to `/projects/new`, the only protected page that renders without a current project.
 
-Pages take the current project from the session (`getCurrentProjectID`), never from the URL or a form field, so the redirect back from `/projects/switch` revalidates them into the new project. `/events` is the exception: it reads through the SDK, which authenticates with the dashboard's own `API_KEY` and therefore stays on that key's project.
+Pages take the current project from the session (`getCurrentProjectID`), never from the URL or a form field, so the redirect back from `/projects/switch` revalidates them into the new project. `/events` included: it goes through the broker's `/projects/:id/logs` routes, not the SDK. The SDK's key belongs to one fixed project, so `lib/logwolf.ts` is now only the dashboard's own error tracking.
 
 Project name, retention, members and deletion all live on `/projects/:id/settings`. Retention is editable by any member; renaming, member changes and deletion are owner-only, enforced in the broker and mirrored in the route so the UI can explain itself.
 

@@ -48,9 +48,19 @@ cmd/api/
 | `GET`    | `/projects/{id}/members`         | List members                                |
 | `POST`   | `/projects/{id}/members`         | Add a member                                |
 | `DELETE` | `/projects/{id}/members/{login}` | Remove a member                             |
+| `GET`    | `/projects/{id}/logs`            | List a project's events (paginated)         |
+| `POST`   | `/projects/{id}/logs`            | Submit an event to a project (async, 202)   |
+| `GET`    | `/projects/{id}/logs/{logID}`    | Get one event                               |
+| `DELETE` | `/projects/{id}/logs/{logID}`    | Delete one event                            |
 
 Internal routes also require `X-User-Login`; project access is checked against
 that login on every call.
+
+The `/projects/{id}/logs` routes are the dashboard's way into events. They do the
+same work as the public `/logs` routes, but take the project from the path and
+check the caller's membership instead of reading it off an API key — the
+dashboard authenticates as a user and has no key of its own to scope it. An id
+that belongs to another project is a 404, never another project's event.
 
 ### Health
 
@@ -76,7 +86,8 @@ Events are published to the `logs_topic` exchange with routing key `log.<SEVERIT
 ## Read path
 
 ```
-Client → GET /logs → requireAPIKey → RPC call to Logger:5001 → response
+Client    → GET /logs                   → requireAPIKey       → RPC call to Logger:5001 → response
+Dashboard → GET /projects/{id}/logs     → membership check    → RPC call to Logger:5001 → response
 ```
 
 ## Environment variables

@@ -49,6 +49,22 @@ func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
 	return nil
 }
 
+// GetLog fetches a single entry by id. The project is part of the query rather
+// than a check layered on top of it, so an id belonging to another project
+// comes back as "no documents in result" — the same as one that never existed.
+func (r *RPCServer) GetLog(f data.RPCLogEntryFilter, resp *data.LogEntry) error {
+	log.Printf("Getting log %s of project %s...\n", f.ID, f.ProjectID)
+
+	entry, err := r.models.GetLog(f.ID, f.ProjectID)
+	if err != nil {
+		log.Println("Error getting log:", err)
+		return err
+	}
+
+	*resp = *entry
+	return nil
+}
+
 func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 	log.Printf("Deleting log %+v...\n", f)
 

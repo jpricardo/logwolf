@@ -7,7 +7,9 @@ import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
 import { SeverityBadge } from '~/components/ui/severity-badge';
 import { eventContext } from '~/context';
-import { logwolf } from '~/lib/logwolf';
+import { createApi } from '~/lib/api';
+import { requireAuth } from '~/lib/auth.server';
+import { getCurrentProjectID } from '~/lib/session.server';
 
 import type { Route } from './+types';
 import { InfoItem } from './components/info-item';
@@ -16,18 +18,25 @@ export function meta({ loaderData }: Route.MetaArgs) {
 	return [{ title: loaderData.name + ' - Logwolf' }, { name: 'description', content: 'Logwolf event details!' }];
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	// A rejected SDK key reads the same as a missing event here: there is nothing
-	// to show, so fall back to the list rather than a 500.
-	const log = await logwolf.getOne(params.id).catch((err: unknown) => {
-		event?.setSeverity('error');
-		event?.set('loaderError', err);
+	const user = await requireAuth(request);
 
-		return null;
-	});
+	const projectId = await getCurrentProjectID(request);
+	if (!projectId) throw redirect('/projects/new');
+
+	// An event of another project is a 404 here, and a 404 reads the same as any
+	// other failure: there is nothing to show, so fall back to the list.
+	const log = await createApi(user.login)
+		.getLog(projectId, params.id)
+		.catch((err: unknown) => {
+			event?.setSeverity('error');
+			event?.set('loaderError', err);
+
+			return null;
+		});
 	if (!log) throw redirect('/events');
 
 	event?.set('loaderData', ['too much data']);
