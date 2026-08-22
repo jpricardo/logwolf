@@ -21,6 +21,15 @@ export type ProjectRole = 'owner' | 'member';
 /** A project together with the role the requesting user holds in it. */
 export type UserProject = Project & { role: ProjectRole };
 
+/** A row of the project_members collection, as returned by the broker. */
+export type ProjectMember = {
+	id: string;
+	project_id: string;
+	github_login: string;
+	role: ProjectRole;
+	created_at: string;
+};
+
 export type RetentionDays = 0 | 30 | 60 | 90 | 180 | 365;
 
 export type Metrics = {
@@ -36,6 +45,11 @@ export type Metrics = {
 export interface IApi {
 	getProjects(): Promise<UserProject[]>;
 	createProject(name: string, slug: string): Promise<Project>;
+	updateProject(id: string, name: string, slug: string): Promise<Project>;
+	deleteProject(id: string): Promise<void>;
+	getMembers(projectId: string): Promise<ProjectMember[]>;
+	addMember(projectId: string, login: string, role: ProjectRole): Promise<void>;
+	removeMember(projectId: string, login: string): Promise<void>;
 	getKeys(projectId: string): Promise<ApiKey[]>;
 	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
 	deleteKey(id: string): Promise<void>;
@@ -80,6 +94,59 @@ export class Api implements IApi {
 		if (json.error) throw new Error(json.message);
 
 		return json.data;
+	}
+
+	public async updateProject(id: string, name: string, slug: string): Promise<Project> {
+		const res = await fetch(`${this.baseUrl}projects/${id}`, {
+			method: 'PATCH',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify({ name, slug }),
+		});
+		const json = (await res.json()) as ApiResponse<Project>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data;
+	}
+
+	public async deleteProject(id: string): Promise<void> {
+		const res = await fetch(`${this.baseUrl}projects/${id}`, {
+			method: 'DELETE',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
+		if (json.error) throw new Error(json.message);
+	}
+
+	public async getMembers(projectId: string): Promise<ProjectMember[]> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/members`, {
+			method: 'GET',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<ProjectMember[]>;
+		if (json.error) throw new Error(json.message);
+
+		return json.data ?? [];
+	}
+
+	public async addMember(projectId: string, login: string, role: ProjectRole): Promise<void> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/members`, {
+			method: 'POST',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify({ login, role }),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
+		if (json.error) throw new Error(json.message);
+	}
+
+	public async removeMember(projectId: string, login: string): Promise<void> {
+		// GitHub logins are URL-safe, but the value reaches us from a form field —
+		// encoding it keeps a hand-crafted login from reshaping the path.
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/members/${encodeURIComponent(login)}`, {
+			method: 'DELETE',
+			headers: this.internalHeaders(),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
+		if (json.error) throw new Error(json.message);
 	}
 
 	public async getKeys(projectId: string): Promise<ApiKey[]> {

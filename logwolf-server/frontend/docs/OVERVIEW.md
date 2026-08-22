@@ -34,7 +34,8 @@ app/
 │   ├── dashboard/        # Metrics overview + charts
 │   ├── events/           # Event list, detail view, create form
 │   ├── keys/             # API key management
-│   └── settings/         # System settings (retention TTL)
+│   ├── projects/         # Project list, create, switch, per-project settings
+│   └── settings/         # Redirect to the current project's settings
 ├── lib/
 │   ├── api.ts            # Dashboard API client (calls Broker internal routes)
 │   ├── logwolf.ts        # Logwolf SDK setup for client-side error tracking
@@ -55,19 +56,20 @@ app/
 
 ## Routes
 
-| Path               | Auth      | Description                   |
-| ------------------ | --------- | ----------------------------- |
-| `/`                | Public    | Landing page                  |
-| `/auth`            | Public    | GitHub OAuth login            |
-| `/dashboard`       | Protected | Metrics overview with charts  |
-| `/events`          | Protected | Paginated event list          |
-| `/events/create`   | Protected | Create a new event            |
-| `/events/:id`      | Protected | Event detail view             |
-| `/keys`            | Protected | API key management            |
-| `/settings`        | Protected | Retention and system settings |
-| `/projects`        | Protected | Projects the user belongs to  |
-| `/projects/new`    | Protected | Create a project              |
-| `/projects/switch` | Protected | POST-only project switch      |
+| Path                     | Auth      | Description                                 |
+| ------------------------ | --------- | ------------------------------------------- |
+| `/`                      | Public    | Landing page                                |
+| `/auth`                  | Public    | GitHub OAuth login                          |
+| `/dashboard`             | Protected | Metrics overview with charts                |
+| `/events`                | Protected | Paginated event list                        |
+| `/events/create`         | Protected | Create a new event                          |
+| `/events/:id`            | Protected | Event detail view                           |
+| `/keys`                  | Protected | API key management                          |
+| `/settings`              | Protected | Redirects to the current project's settings |
+| `/projects`              | Protected | Projects the user belongs to                |
+| `/projects/new`          | Protected | Create a project                            |
+| `/projects/switch`       | Protected | POST-only project switch                    |
+| `/projects/:id/settings` | Protected | Rename, retention, members, delete          |
 
 ## Project selection
 
@@ -80,6 +82,18 @@ without a current project.
 Switching projects is a POST to `/projects/switch`, which re-checks membership
 server-side before writing the session. The sidebar switcher and the `/projects`
 list both go through it.
+
+## Project settings
+
+`/projects/:id/settings` holds everything scoped to one project: its name, the
+retention window, the member list, and deletion. Both the loader and the action
+resolve the `:id` against the caller's own project list, so a project the user
+does not belong to sends them back to `/projects` instead of surfacing a 403.
+
+Every section except retention is owner-only — the broker enforces that as well,
+so the role checks in the route are there to keep a stale tab from producing a
+bare "forbidden". Deleting a project clears `currentProjectID` when it was the
+one in session and returns to `/projects`, where the layout takes over.
 
 ## Authentication
 

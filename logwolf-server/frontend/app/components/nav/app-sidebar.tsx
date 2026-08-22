@@ -36,12 +36,6 @@ const items = [
 		url: '/keys',
 		icon: KeyRound,
 	},
-
-	{
-		title: 'Settings',
-		url: '/settings',
-		icon: Settings,
-	},
 ] as const;
 
 type Props = Pick<Route.ComponentProps, 'matches'> & {
@@ -50,6 +44,18 @@ type Props = Pick<Route.ComponentProps, 'matches'> & {
 	csrfToken: string;
 };
 export function AppSidebar({ matches, projects, currentProject, csrfToken }: Props) {
+	// Settings live under the project they configure. /settings still forwards
+	// there, but linking straight at the project keeps the item highlighted once
+	// the page is open.
+	const navItems = [
+		...items,
+		{
+			title: 'Settings',
+			url: currentProject ? `/projects/${currentProject.id}/settings` : '/settings',
+			icon: Settings,
+		},
+	];
+
 	return (
 		<Sidebar>
 			<SidebarHeader>
@@ -62,7 +68,7 @@ export function AppSidebar({ matches, projects, currentProject, csrfToken }: Pro
 
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{items.map((item) => (
+							{navItems.map((item) => (
 								<SidebarMenuItem key={item.title}>
 									<SidebarMenuButton asChild isActive={matches.some((m) => m?.pathname.includes(item.url))}>
 										<Link to={item.url}>
