@@ -5,46 +5,33 @@ package integration
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+
 	"logwolf-toolbox/data"
 )
 
-// setupProjectModels spins up a throwaway MongoDB and returns a data.Models
-// with project indexes already created. Cleanup terminates the container.
+// setupProjectModels returns a data.Models backed by the MongoDB the data-layer
+// tests share, with the collections they touch cleared and the project indexes
+// recreated. One container serves every test in this file; a clean database per
+// test comes from the drop, not from a new container.
 func setupProjectModels(t *testing.T) data.Models {
 	t.Helper()
-	ctx := context.Background()
 
-	mongoC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "mongo:4.2.16-bionic",
-			ExposedPorts: []string{"27017/tcp"},
-			WaitingFor:   wait.ForLog("waiting for connections on port 27017"),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("setupProjectModels: container start: %v", err)
+	client := testMongo(t, sharedModelsMongo(t))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for _, name := range []string{"projects", "project_members", "logs", "api_keys", "settings"} {
+		if err := client.Database("logs").Collection(name).Drop(ctx); err != nil {
+			t.Fatalf("setupProjectModels: drop %s: %v", name, err)
+		}
 	}
-	t.Cleanup(func() { mongoC.Terminate(ctx) })
-
-	host, _ := mongoC.Host(ctx)
-	port, _ := mongoC.MappedPort(ctx, "27017")
-	uri := fmt.Sprintf("mongodb://%s:%s", host, port.Port())
-
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		t.Fatalf("setupProjectModels: connect: %v", err)
-	}
-	t.Cleanup(func() { client.Disconnect(ctx) })
 
 	m := data.New(client)
 	if err := m.EnsureProjectIndexes(); err != nil {
@@ -288,6 +275,56 @@ func TestRemoveProjectMember_NotFound(t *testing.T) {
 	err := m.RemoveProjectMember(p.ID, "ghost")
 	if !errors.Is(err, mongo.ErrNoDocuments) {
 		t.Errorf("RemoveProjectMember missing: want mongo.ErrNoDocuments, got %v", err)
+	}
+}
+
+func TestGetProjectMembers(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Listed", Slug: "listed"})
+	other, _ := m.InsertProject(data.Project{Name: "Other", Slug: "other"})
+
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "erin", Role: data.RoleOwner})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "frank", Role: data.RoleMember})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: other.ID, GithubLogin: "grace", Role: data.RoleOwner})
+
+	members, err := m.GetProjectMembers(p.ID)
+	if err != nil {
+		t.Fatalf("GetProjectMembers: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("GetProjectMembers: want 2 members, got %d: %+v", len(members), members)
+	}
+
+	roles := map[string]string{}
+	for _, member := range members {
+		if member.ProjectID != p.ID {
+			t.Errorf("GetProjectMembers returned a member of project %s", member.ProjectID.Hex())
+		}
+		roles[member.GithubLogin] = member.Role
+	}
+	if roles["erin"] != data.RoleOwner {
+		t.Errorf("erin role = %q, want %q", roles["erin"], data.RoleOwner)
+	}
+	if roles["frank"] != data.RoleMember {
+		t.Errorf("frank role = %q, want %q", roles["frank"], data.RoleMember)
+	}
+	if _, leaked := roles["grace"]; leaked {
+		t.Error("GetProjectMembers leaked a member of another project")
+	}
+}
+
+func TestGetProjectMembers_NoMembers(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Empty", Slug: "empty"})
+
+	members, err := m.GetProjectMembers(p.ID)
+	if err != nil {
+		t.Fatalf("GetProjectMembers: %v", err)
+	}
+	if len(members) != 0 {
+		t.Errorf("GetProjectMembers on a memberless project: got %d", len(members))
 	}
 }
 

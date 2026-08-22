@@ -4,16 +4,12 @@ package integration
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // TestRetentionCleanup verifies that the logger's background cleanup goroutine
@@ -22,34 +18,11 @@ import (
 func TestRetentionCleanup(t *testing.T) {
 	ctx := context.Background()
 
-	mongoC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "mongo:4.2.16-bionic",
-			ExposedPorts: []string{"27017/tcp"},
-			Env: map[string]string{
-				"MONGO_INITDB_ROOT_USERNAME": "admin",
-				"MONGO_INITDB_ROOT_PASSWORD": "password",
-			},
-			WaitingFor: wait.ForLog("waiting for connections on port 27017"),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("mongo container: %v", err)
-	}
-	defer mongoC.Terminate(ctx)
-
-	mongoHost, _ := mongoC.Host(ctx)
-	mongoPort, _ := mongoC.MappedPort(ctx, "27017")
-	mongoURI := fmt.Sprintf("mongodb://admin:password@%s:%s", mongoHost, mongoPort.Port())
-
-	// Connect directly to MongoDB for seeding and assertions.
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).
-		SetAuth(options.Credential{Username: "admin", Password: "password"}))
-	if err != nil {
-		t.Fatalf("mongo connect: %v", err)
-	}
-	t.Cleanup(func() { client.Disconnect(context.Background()) })
+	// A logger with a two-second cleanup interval runs against this database for
+	// the length of the test, so it gets a MongoDB of its own rather than
+	// deleting entries other tests are still asserting on.
+	mongoURI := dedicatedMongo(t)
+	client := testMongo(t, mongoURI)
 
 	db := client.Database("logs")
 
@@ -64,7 +37,7 @@ func TestRetentionCleanup(t *testing.T) {
 	projectBStr := projectB.Hex()
 
 	// Insert projects into the projects collection.
-	_, err = db.Collection("projects").InsertMany(ctx, []interface{}{
+	_, err := db.Collection("projects").InsertMany(ctx, []interface{}{
 		bson.M{"_id": projectA, "name": "Project A", "slug": "project-a", "created_at": time.Now()},
 		bson.M{"_id": projectB, "name": "Project B", "slug": "project-b", "created_at": time.Now()},
 	})

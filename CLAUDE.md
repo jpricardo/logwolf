@@ -38,12 +38,16 @@ Managed as a Go workspace (`logwolf-server/go.work`):
 # Run a service locally
 cd logwolf-server/broker && go run ./cmd/api
 
-# Unit tests (broker + toolbox)
+# Unit tests (broker + toolbox + logger)
 cd logwolf-server/broker && go test ./cmd/api/... -v
 cd logwolf-server/toolbox && go test ./... -v
+cd logwolf-server/logger && go test ./... -v
 
 # Integration tests (requires Docker — spins up real MongoDB + RabbitMQ)
 cd logwolf-server/integration && go test -tags integration ./... -v -timeout 5m
+
+# ...with the service subprocesses' output on stderr, when the stack won't come up
+LOGWOLF_TEST_VERBOSE=1 go test -tags integration ./... -v -timeout 5m
 ```
 
 ### JS SDK (`logwolf-client/js`)
@@ -151,7 +155,7 @@ The frontend instruments itself with `@logwolf/client-js` (`lib/logwolf.ts`) for
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and all PRs:
 
-1. Go unit tests (broker + toolbox)
+1. Go unit tests (broker + toolbox + logger)
 2. Integration tests
 3. JS SDK tests
 

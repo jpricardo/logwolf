@@ -74,6 +74,19 @@ The HTTP server has a 15-second shutdown timeout. The RPC server closes its TCP 
 | `logwolf-toolbox`  | Shared data models and utilities    |
 | `net/rpc` (stdlib) | RPC server (no external dependency) |
 
+## Development
+
+```bash
+# Run locally
+cd logwolf-server/logger && go run ./cmd/api
+
+# Unit tests
+cd logwolf-server/logger && go test ./... -v
+```
+
+The project-scoped RPC methods are covered end to end by the integration suite
+(`logwolf-server/integration`), which runs the real Logger against MongoDB.
+
 ## Relationship to other services
 
 | Service  | Relationship                                                  |
