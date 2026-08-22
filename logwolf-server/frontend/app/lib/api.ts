@@ -53,7 +53,7 @@ export type Metrics = {
 	avg_duration_ms: number;
 	events_last_24h: number;
 	errors_last_24h: number;
-	top_tags: { tag: string; count: number }[];
+	top_tags: { tag: string; count: number }[] | null;
 };
 
 export interface IApi {
