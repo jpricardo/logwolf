@@ -49,6 +49,13 @@ func main() {
 	if err := app.Models.EnsureLogsIndexes(); err != nil {
 		log.Printf("Warning: could not ensure logs indexes: %v", err)
 	}
+	if err := app.Models.EnsureProjectIndexes(); err != nil {
+		log.Printf("Warning: could not ensure project indexes: %v", err)
+	}
+
+	// Adopt any data that predates projects before the RPC server comes up, so no
+	// caller ever reads a half-migrated database.
+	app.runStartupMigration()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

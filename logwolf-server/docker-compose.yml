@@ -44,6 +44,11 @@ services:
     deploy:
       mode: replicated
       replicas: 1
+    environment:
+      # Owners of the Default project created by the startup migration when an
+      # existing deployment is upgraded from a pre-multi-tenancy build.
+      LOGWOLF_ALLOWED_GITHUB_USERS: ${LOGWOLF_ALLOWED_GITHUB_USERS:-}
+      CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-1h}
     networks:
       - internal
 
