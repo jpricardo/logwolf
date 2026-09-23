@@ -18,6 +18,10 @@ var errUnknownProject = errors.New("project does not exist")
 type RPCServer struct {
 	models   data.Models
 	projects *projectCache
+
+	// purges hands deleted projects to the cleanup loop; nil hands them to no
+	// one, and the orphan sweep deletes their logs instead.
+	purges chan<- string
 }
 
 func (r *RPCServer) projectExists(projectID string) (bool, error) {
@@ -197,8 +201,23 @@ func (r *RPCServer) DeleteProject(args *data.RPCProjectIDArgs, reply *string) er
 		return err
 	}
 	r.projects.forget(args.ID)
+	r.requestPurge(args.ID)
 	*reply = "ok"
 	return nil
+}
+
+// requestPurge asks the cleanup loop to delete a deleted project's logs, which
+// DeleteProject leaves behind. It never blocks the RPC: if the queue is full the
+// request is dropped, and the next orphan sweep deletes those logs anyway.
+func (r *RPCServer) requestPurge(projectID string) {
+	if r.purges == nil {
+		return
+	}
+	select {
+	case r.purges <- projectID:
+	default:
+		log.Printf("Purge queue full: logs of deleted project %s are left for the next cleanup pass", projectID)
+	}
 }
 
 func (r *RPCServer) ListUserProjects(args *data.RPCUserProjectsArgs, reply *[]data.UserProject) error {

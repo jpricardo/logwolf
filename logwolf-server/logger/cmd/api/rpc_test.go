@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"logwolf-toolbox/data"
 )
@@ -54,5 +55,52 @@ func TestLogInfo_UnknownProject(t *testing.T) {
 	}
 	if reply != "" {
 		t.Errorf("reply should stay empty when the event is dropped, got %q", reply)
+	}
+}
+
+// TestRequestPurge_Queues checks that a deleted project reaches the cleanup
+// loop's queue.
+func TestRequestPurge_Queues(t *testing.T) {
+	purges := make(chan string, 1)
+	srv := &RPCServer{purges: purges}
+
+	srv.requestPurge("doomed")
+
+	select {
+	case got := <-purges:
+		if got != "doomed" {
+			t.Errorf("queued %q, want %q", got, "doomed")
+		}
+	default:
+		t.Fatal("requestPurge queued nothing")
+	}
+}
+
+// TestRequestPurge_NeverBlocks checks that DeleteProject cannot hang on the
+// purge queue: a full queue drops the request (the orphan sweep deletes those
+// logs later), and a server with no queue at all asks no one.
+func TestRequestPurge_NeverBlocks(t *testing.T) {
+	full := make(chan string, 1)
+	full <- "earlier"
+
+	for name, srv := range map[string]*RPCServer{
+		"full queue": {purges: full},
+		"no queue":   {},
+	} {
+		done := make(chan struct{})
+		go func() {
+			srv.requestPurge("doomed")
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("%s: requestPurge blocked", name)
+		}
+	}
+
+	if got := <-full; got != "earlier" {
+		t.Errorf("full queue: now holds %q, want the earlier %q", got, "earlier")
 	}
 }

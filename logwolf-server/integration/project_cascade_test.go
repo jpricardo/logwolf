@@ -90,8 +90,10 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 
 	mustInternalCall(t, stack.brokerURL, http.MethodDelete, "/projects/"+project.ID, owner, nil, http.StatusOK)
 
-	// The logs deletion is a DeleteMany the RPC waits on, so everything should
-	// already be gone; poll briefly rather than depend on that.
+	// Everything but the logs is deleted before the RPC returns. The logs are
+	// purged by the Logger's cleanup loop right after, so poll for them. The
+	// hourly orphan sweep never runs in this window, so this also covers the
+	// purge the delete hands to the loop.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		clean := true

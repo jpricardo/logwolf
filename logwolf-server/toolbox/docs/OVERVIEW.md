@@ -59,10 +59,10 @@ Manages per-project settings documents (currently: retention in days), keyed by 
 
 Two operations run in MongoDB transactions, so MongoDB must run as a replica set (a single member is enough, and that is how `docker-compose.yml` and the integration tests run it):
 
-- `DeleteProject` removes the project's logs, API keys, settings, members and the project itself as one unit. A failure part-way rolls the whole thing back.
+- `DeleteProject` removes the project's API keys, settings, members and the project itself as one unit. A failure part-way rolls the whole thing back. The logs are left out, since a big project's would outlast the transaction; `PurgeProjectLogs` deletes them afterwards and refuses (`ErrProjectExists`) for a project that still exists.
 - `RemoveProjectMember` counts the owners and deletes the member in one transaction, and writes to the project document first (`members_updated_at`). A transaction on its own would still let two concurrent removals of different owners both pass the count. The write to a shared document forces a write conflict, `WithTransaction` retries the loser, and the retry sees `ErrLastOwner`.
 
-`ProjectExists` answers whether a hex id names a project; a string that is not an ObjectID is simply `false`. Logger uses it to refuse events for deleted projects, and `DeleteOrphanedLogs` (in `models.go`) removes the ones that got through: logs whose `project_id` matches no project and that are older than a minute, so it never races a project being created. It skips logs with no or an empty `project_id`, which belong to the startup migration.
+`ProjectExists` answers whether a hex id names a project; a string that is not an ObjectID is simply `false`. Logger uses it to refuse events for deleted projects, and `DeleteOrphanedLogs` (in `models.go`) removes the ones that got through: logs whose `project_id` matches no project and that are older than a minute, so it never races a project being created. It skips logs with no or an empty `project_id`, which belong to the startup migration. Both it and `PurgeProjectLogs` delete in batches of 10,000, each with its own 30s timeout, so a project with millions of logs is purged over as long as it takes rather than failing on one `DeleteMany`.
 
 ### Startup migration (`migrate.go`)
 
