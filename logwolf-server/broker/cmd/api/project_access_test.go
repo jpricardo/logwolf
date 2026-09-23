@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -280,6 +281,7 @@ func TestProjectRoutes_OwnerOnly(t *testing.T) {
 		{"delete project", http.MethodDelete, "/projects/" + projAlpha, nil},
 		{"add member", http.MethodPost, "/projects/" + projAlpha + "/members", map[string]string{"login": "newbie", "role": data.RoleMember}},
 		{"remove member", http.MethodDelete, "/projects/" + projAlpha + "/members/member-a", nil},
+		{"change member role", http.MethodPatch, "/projects/" + projAlpha + "/members/member-a", map[string]string{"role": data.RoleOwner}},
 	}
 
 	for _, tc := range cases {
@@ -320,6 +322,8 @@ func TestProjectRoutes_OwnerOnlyDeniesBeforeForwarding(t *testing.T) {
 	do(handler, internalRequest(http.MethodPost, "/projects/"+projAlpha+"/members", "member-a",
 		map[string]string{"login": "newbie", "role": data.RoleMember}))
 	do(handler, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/members/member-a", "member-a", nil))
+	do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/member-a", "member-a",
+		map[string]string{"role": data.RoleOwner}))
 
 	fake.snapshot(func(f *fakeLogger) {
 		if len(f.deletedProjects) != 0 {
@@ -334,6 +338,9 @@ func TestProjectRoutes_OwnerOnlyDeniesBeforeForwarding(t *testing.T) {
 		if len(f.removedMembers) != 0 {
 			t.Errorf("RemoveMember forwarded for a non-owner: %v", f.removedMembers)
 		}
+		if len(f.roleChanges) != 0 {
+			t.Errorf("UpdateMemberRole forwarded for a non-owner: %v", f.roleChanges)
+		}
 	})
 }
 
@@ -344,6 +351,99 @@ func TestRemoveProjectMember_LastOwnerIsBadRequest(t *testing.T) {
 	w := do(handler, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/members/owner-a", "owner-a", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("removing the last owner: got %d, want 400 (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// --- member roles ---
+
+func TestUpdateProjectMemberRole_PromoteAndDemote(t *testing.T) {
+	handler, fake := newInternalTestServer(t)
+
+	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/member-a", "owner-a",
+		map[string]string{"role": data.RoleOwner}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("promote: got %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Now that member-a is an owner too, owner-a may step down: the two-step
+	// ownership transfer the endpoint exists for.
+	w = do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/owner-a", "owner-a",
+		map[string]string{"role": data.RoleMember}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("demote self: got %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+
+	fake.snapshot(func(f *fakeLogger) {
+		want := []data.RPCUpdateMemberRoleArgs{
+			{ProjectID: projAlpha, GithubLogin: "member-a", Role: data.RoleOwner},
+			{ProjectID: projAlpha, GithubLogin: "owner-a", Role: data.RoleMember},
+		}
+		if len(f.roleChanges) != len(want) {
+			t.Fatalf("UpdateMemberRole calls = %v, want %v", f.roleChanges, want)
+		}
+		for i := range want {
+			if f.roleChanges[i] != want[i] {
+				t.Errorf("UpdateMemberRole call %d = %+v, want %+v", i, f.roleChanges[i], want[i])
+			}
+		}
+	})
+}
+
+// The login in the path reaches the logger normalized, as it does for removal:
+// memberships are stored lowercase, so "Member-A" has to find "member-a".
+func TestUpdateProjectMemberRole_NormalizesLogin(t *testing.T) {
+	handler, fake := newInternalTestServer(t)
+
+	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/Member-A", "owner-a",
+		map[string]string{"role": data.RoleOwner}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("promote Member-A: got %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+
+	fake.snapshot(func(f *fakeLogger) {
+		if len(f.roleChanges) != 1 || f.roleChanges[0].GithubLogin != "member-a" {
+			t.Errorf("UpdateMemberRole calls = %+v, want one for member-a", f.roleChanges)
+		}
+	})
+}
+
+func TestUpdateProjectMemberRole_LastOwnerIsBadRequest(t *testing.T) {
+	handler, fake := newInternalTestServer(t)
+	fake.lastOwnerLogin = "owner-a"
+
+	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/owner-a", "owner-a",
+		map[string]string{"role": data.RoleMember}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("demoting the last owner: got %d, want 400 (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "cannot demote the last owner") {
+		t.Errorf("demoting the last owner: body %s lacks the last-owner message", w.Body.String())
+	}
+}
+
+func TestUpdateProjectMemberRole_InvalidRole(t *testing.T) {
+	for _, body := range []any{map[string]string{"role": "admin"}, map[string]string{}} {
+		handler, fake := newInternalTestServer(t)
+
+		w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/member-a", "owner-a", body))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("role %v: got %d, want 400 (body: %s)", body, w.Code, w.Body.String())
+		}
+		fake.snapshot(func(f *fakeLogger) {
+			if len(f.roleChanges) != 0 {
+				t.Errorf("role %v: UpdateMemberRole forwarded: %v", body, f.roleChanges)
+			}
+		})
+	}
+}
+
+func TestUpdateProjectMemberRole_UnknownMemberIsNotFound(t *testing.T) {
+	handler, _ := newInternalTestServer(t)
+
+	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/members/ghost", "owner-a",
+		map[string]string{"role": data.RoleOwner}))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("promote a non-member: got %d, want 404 (body: %s)", w.Code, w.Body.String())
 	}
 }
 

@@ -47,6 +47,7 @@ cmd/api/
 | `DELETE` | `/projects/{id}`                 | Delete a project and everything under it    |
 | `GET`    | `/projects/{id}/members`         | List members                                |
 | `POST`   | `/projects/{id}/members`         | Add a member                                |
+| `PATCH`  | `/projects/{id}/members/{login}` | Change a member's `role` (owner or member)  |
 | `DELETE` | `/projects/{id}/members/{login}` | Remove a member                             |
 | `GET`    | `/projects/{id}/logs`            | List a project's events (paginated)         |
 | `POST`   | `/projects/{id}/logs`            | Submit an event to a project (async, 202)   |
@@ -56,6 +57,12 @@ cmd/api/
 Internal routes also require `X-User-Login`; project access is checked against
 that login on every call. `requireUserLogin` lowercases it first, as memberships
 are stored: GitHub logins are case-insensitive.
+
+Renaming or deleting a project and adding, removing or changing the role of a
+member are owner-only. A project always keeps one owner: removing or demoting the last one is a 400
+(`cannot remove the last owner` / `cannot demote the last owner`). An owner may
+demote themselves while another owner remains, which is how a project changes
+hands: promote the new owner, then step down.
 
 The `/projects/{id}/logs` routes are the dashboard's way into events. They do the
 same work as the public `/logs` routes, but take the project from the path and

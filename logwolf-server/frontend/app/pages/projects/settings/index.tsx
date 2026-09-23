@@ -92,6 +92,15 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			return { success: `Added ${login} as ${role}.` };
 		}
 
+		if (intent === 'change-role') {
+			const login = fd.get('login')?.toString() ?? '';
+			const role = fd.get('role')?.toString();
+			if (role !== 'owner' && role !== 'member') return { error: 'Choose owner or member.' };
+
+			await api.updateMemberRole(project.id, login, role);
+			return { success: `${login} is now ${role === 'owner' ? 'an owner' : 'a member'}.` };
+		}
+
 		if (intent === 'remove-member') {
 			const login = fd.get('login')?.toString() ?? '';
 			await api.removeMember(project.id, login);

@@ -39,11 +39,12 @@ type fakeLogger struct {
 	deletedProjects []string
 	addedMembers    []data.RPCAddMemberArgs
 	removedMembers  []data.RPCRemoveMemberArgs
+	roleChanges     []data.RPCUpdateMemberRoleArgs
 
 	// Failure injection.
 	duplicateSlug  string // CreateProject returns an E11000 error for this slug
 	failAddMember  bool   // AddMember always fails (exercises the create-project rollback)
-	lastOwnerLogin string // RemoveMember refuses to remove this login
+	lastOwnerLogin string // RemoveMember and UpdateMemberRole refuse to remove or demote this login
 }
 
 // errNoDocuments mirrors the driver error the logger passes back when a lookup
@@ -195,6 +196,25 @@ func (f *fakeLogger) RemoveMember(args *data.RPCRemoveMemberArgs, reply *string)
 	f.members[args.ProjectID] = kept
 	*reply = "ok"
 	return nil
+}
+
+func (f *fakeLogger) UpdateMemberRole(args *data.RPCUpdateMemberRoleArgs, reply *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.roleChanges = append(f.roleChanges, *args)
+	if args.GithubLogin == f.lastOwnerLogin && args.Role != data.RoleOwner {
+		return fmt.Errorf("UpdateProjectMemberRole: cannot remove the last owner of a project")
+	}
+
+	for i, m := range f.members[args.ProjectID] {
+		if m.GithubLogin == args.GithubLogin {
+			f.members[args.ProjectID][i].Role = args.Role
+			*reply = "ok"
+			return nil
+		}
+	}
+	return fmt.Errorf("UpdateProjectMemberRole: %w", errNoDocuments)
 }
 
 func (f *fakeLogger) GetLogs(p data.QueryParams, reply *[]data.LogEntry) error {

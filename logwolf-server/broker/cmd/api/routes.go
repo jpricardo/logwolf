@@ -41,6 +41,7 @@ func (app *Config) routes() http.Handler {
 		r.Delete("/projects/{id}", app.DeleteProject)
 		r.Get("/projects/{id}/members", app.ListProjectMembers)
 		r.Post("/projects/{id}/members", app.AddProjectMember)
+		r.Patch("/projects/{id}/members/{login}", app.UpdateProjectMemberRole)
 		r.Delete("/projects/{id}/members/{login}", app.RemoveProjectMember)
 		r.Get("/projects/{id}/logs", app.ListProjectLogs)
 		r.Post("/projects/{id}/logs", app.CreateProjectLog)

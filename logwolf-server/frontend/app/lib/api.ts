@@ -63,6 +63,7 @@ export interface IApi {
 	deleteProject(id: string): Promise<void>;
 	getMembers(projectId: string): Promise<ProjectMember[]>;
 	addMember(projectId: string, login: string, role: ProjectRole): Promise<void>;
+	updateMemberRole(projectId: string, login: string, role: ProjectRole): Promise<void>;
 	removeMember(projectId: string, login: string): Promise<void>;
 	getKeys(projectId: string): Promise<ApiKey[]>;
 	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
@@ -151,6 +152,17 @@ export class Api implements IApi {
 			method: 'POST',
 			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
 			body: JSON.stringify({ login, role }),
+		});
+		const json = (await res.json()) as ApiResponse<void>;
+		if (json.error) throw new Error(json.message);
+	}
+
+	public async updateMemberRole(projectId: string, login: string, role: ProjectRole): Promise<void> {
+		// Encoded for the same reason as in removeMember.
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/members/${encodeURIComponent(login)}`, {
+			method: 'PATCH',
+			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
+			body: JSON.stringify({ role }),
 		});
 		const json = (await res.json()) as ApiResponse<void>;
 		if (json.error) throw new Error(json.message);

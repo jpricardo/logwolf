@@ -103,7 +103,9 @@ does not belong to sends them back to `/projects` instead of surfacing a 403.
 
 Every section except retention is owner-only — the broker enforces that as well,
 so the role checks in the route are there to keep a stale tab from producing a
-bare "forbidden". Deleting a project clears `currentProjectID` when it was the
+bare "forbidden". Owners change a member's role from a select in the members
+table; the last owner shows a plain badge instead, since the broker would refuse
+to demote them. Deleting a project clears `currentProjectID` when it was the
 one in session and returns to `/projects`, where the layout takes over.
 
 ## Authentication
