@@ -10,6 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+
+	"logwolf-toolbox/data"
 )
 
 // TestRetentionCleanup verifies that the logger's background cleanup goroutine
@@ -142,6 +144,40 @@ func TestRetentionCleanup(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("expected infinite-retention log %q to be present, but it was deleted", oldLogName)
+	}
+}
+
+// TestDeleteExpiredLogs_ManyLogs expires more logs than one batch holds. All of
+// them must go, and nothing newer, or of another project.
+func TestDeleteExpiredLogs_ManyLogs(t *testing.T) {
+	m := setupProjectModels(t)
+	logs := testMongo(t, sharedModelsMongo(t)).Database("logs").Collection("logs")
+
+	p, err := m.InsertProject(data.Project{Name: "Old", Slug: "old"})
+	if err != nil {
+		t.Fatalf("InsertProject: %v", err)
+	}
+	other, err := m.InsertProject(data.Project{Name: "Neighbour", Slug: "neighbour"})
+	if err != nil {
+		t.Fatalf("InsertProject: %v", err)
+	}
+	old := time.Now().Add(-31 * 24 * time.Hour)
+	seedLogs(t, logs, p.ID.Hex(), bigProjectLogs, old)
+	seedLogs(t, logs, p.ID.Hex(), 2, time.Now())
+	seedLogs(t, logs, other.ID.Hex(), 3, old)
+
+	deleted, err := m.DeleteExpiredLogs(context.Background(), p.ID.Hex(), time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("DeleteExpiredLogs: %v", err)
+	}
+	if deleted != bigProjectLogs {
+		t.Errorf("DeleteExpiredLogs = %d, want %d", deleted, bigProjectLogs)
+	}
+	if n := countDocs(t, logs, bson.M{"project_id": p.ID.Hex()}); n != 2 {
+		t.Errorf("project has %d logs left, want its 2 fresh ones", n)
+	}
+	if n := countDocs(t, logs, bson.M{"project_id": other.ID.Hex()}); n != 3 {
+		t.Errorf("DeleteExpiredLogs reached another project: %d of its 3 logs left", n)
 	}
 }
 

@@ -112,7 +112,10 @@ func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 }
 
 func (r *RPCServer) GetRetention(args *data.RetentionArgs, reply *int) error {
-	days, err := r.models.Settings.GetRetentionDays(args.ProjectID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	days, err := r.models.Settings.GetRetentionDays(ctx, args.ProjectID)
 	if err != nil {
 		return err
 	}

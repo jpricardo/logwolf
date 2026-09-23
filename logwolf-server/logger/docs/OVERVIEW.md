@@ -56,6 +56,8 @@ Each log entry stored in MongoDB contains:
 
 Retention is a per-project setting (default 90 days; supported values 30, 60, 90, 180, 365, or 0 for forever). A background loop deletes expired logs project by project every `CLEANUP_INTERVAL`.
 
+Each project gets its own two-minute timeout, so a project with a huge expired set (say, one that just shortened its retention) cannot use up the time of the projects after it in the list. `DeleteExpiredLogs` deletes in batches, so what a project deleted before its timeout stays deleted and the next pass carries on from there.
+
 ### Logs of deleted projects
 
 `DeleteProject` does not delete the project's logs itself. There can be millions, and inside the transaction that removes the project they would outlast MongoDB's transaction lifetime limit, so the project could never be deleted. Instead the RPC returns as soon as the project, its keys, settings and members are gone, and hands the project id to the cleanup loop over a small queue. The loop purges its logs in batches (`PurgeProjectLogs`) between passes. If the purge fails, is cut short by shutdown, or the queue is full, the orphan sweep below deletes the rest in a later pass; the project stays deleted either way.
