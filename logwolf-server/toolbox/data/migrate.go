@@ -53,6 +53,13 @@ type MigrationReport struct {
 	Owners    int64
 }
 
+// OwnerRepair summarises one run of EnsureDefaultProjectOwners: the ownerless
+// Default project it found, and how many owners it gave it.
+type OwnerRepair struct {
+	ProjectID string
+	Owners    int64
+}
+
 // orphanedFilter matches documents written before project scoping existed. A
 // pre-multi-tenancy document has no project_id at all; the null and empty-string
 // cases cover data half-written by a build in between.
@@ -114,7 +121,8 @@ func (m *Models) CountOrphanedDocuments(ctx context.Context) (OrphanCounts, erro
 //
 // It is idempotent: it does nothing and returns a nil report once no orphaned
 // documents remain, so it is safe to run on every start. A partially completed
-// run leaves the remaining orphans behind for the next start to finish.
+// run leaves the remaining orphans behind for the next start to finish; owners
+// it failed to add are EnsureDefaultProjectOwners' job.
 func (m *Models) MigrateOrphansToDefaultProject(ctx context.Context, owners []string) (*MigrationReport, error) {
 	counts, err := m.CountOrphanedDocuments(ctx)
 	if err != nil {
@@ -143,12 +151,52 @@ func (m *Models) MigrateOrphansToDefaultProject(ctx context.Context, owners []st
 		return report, err
 	}
 
-	report.Owners, err = m.ensureOwners(ctx, project.ID, owners)
+	report.Owners, err = m.ensureOwners(ctx, project.ID, owners, false)
 	if err != nil {
 		return report, err
 	}
 
 	return report, nil
+}
+
+// EnsureDefaultProjectOwners gives an ownerless Default project an owner
+// membership for each of owners. Only an owner can add members, so without this
+// a Default project left with no owner — by an owner step that failed after the
+// data moved, or by a first start with no owners configured — would stay
+// unreachable for good: MigrateOrphansToDefaultProject is a no-op once the
+// orphans are gone and never gets another chance to add them.
+//
+// It runs independently of the orphan count, so it is safe to call on every
+// start. It returns a nil report when there is no Default project or it already
+// has an owner; a Default project with owners is left alone, so a login removed
+// from it through the dashboard is not added back. Members of an ownerless
+// project who appear in owners are promoted. A report with zero Owners means the
+// project is still ownerless because owners was empty.
+func (m *Models) EnsureDefaultProjectOwners(ctx context.Context, owners []string) (*OwnerRepair, error) {
+	project, err := m.GetProjectBySlug(DefaultProjectSlug)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("EnsureDefaultProjectOwners: %w", err)
+	}
+
+	n, err := m.client.Database("logs").Collection("project_members").CountDocuments(ctx, bson.M{
+		"project_id": project.ID,
+		"role":       RoleOwner,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("EnsureDefaultProjectOwners: %w", err)
+	}
+	if n > 0 {
+		return nil, nil
+	}
+
+	repair := &OwnerRepair{ProjectID: project.ID.Hex()}
+	// Promote rather than skip existing memberships: a project with no owner can
+	// still have plain members, and one of them may be on the owners list.
+	repair.Owners, err = m.ensureOwners(ctx, project.ID, owners, true)
+	return repair, err
 }
 
 // adoptOrphans stamps every project-less document in collection with projectID.
@@ -185,33 +233,45 @@ func (m *Models) ensureDefaultProject() (*Project, error) {
 	return nil, fmt.Errorf("ensureDefaultProject: %w", err)
 }
 
-// ensureOwners gives each login an owner membership on the project, leaving any
-// membership that already exists untouched. Returns how many were created.
-func (m *Models) ensureOwners(ctx context.Context, projectID primitive.ObjectID, logins []string) (int64, error) {
+// ensureOwners gives each login an owner membership on the project. A
+// membership that already exists is left untouched unless promote is set, in
+// which case a plain member is made an owner. Returns how many logins became
+// owners.
+func (m *Models) ensureOwners(ctx context.Context, projectID primitive.ObjectID, logins []string, promote bool) (int64, error) {
 	collection := m.client.Database("logs").Collection("project_members")
-	var created int64
+	var changed int64
 
 	for _, login := range logins {
+		update := bson.M{"$setOnInsert": bson.M{
+			"project_id":   projectID,
+			"github_login": login,
+			"role":         RoleOwner,
+			"created_at":   time.Now(),
+		}}
+		if promote {
+			update = bson.M{
+				"$set": bson.M{"role": RoleOwner},
+				"$setOnInsert": bson.M{
+					"project_id":   projectID,
+					"github_login": login,
+					"created_at":   time.Now(),
+				},
+			}
+		}
+
 		result, err := collection.UpdateOne(
 			ctx,
 			bson.M{"project_id": projectID, "github_login": login},
-			bson.M{"$setOnInsert": bson.M{
-				"project_id":   projectID,
-				"github_login": login,
-				"role":         RoleOwner,
-				"created_at":   time.Now(),
-			}},
+			update,
 			options.Update().SetUpsert(true),
 		)
 		if err != nil {
-			return created, fmt.Errorf("ensureOwners %s: %w", login, err)
+			return changed, fmt.Errorf("ensureOwners %s: %w", login, err)
 		}
-		if result.UpsertedCount > 0 {
-			created++
-		}
+		changed += result.UpsertedCount + result.ModifiedCount
 	}
 
-	return created, nil
+	return changed, nil
 }
 
 // DropLegacyTTLIndex removes the global TTL index that pre-multi-tenancy builds

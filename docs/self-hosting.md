@@ -43,15 +43,16 @@ Caddy will handle TLS automatically. The `email` field is used for Let's Encrypt
 
 Create a `.env` file in `logwolf-server/`. The full reference:
 
-| Variable                       | Required    | Description                                                                                         |
-| ------------------------------ | ----------- | --------------------------------------------------------------------------------------------------- |
-| `GITHUB_CLIENT_ID`             | ✅          | GitHub OAuth app client ID                                                                          |
-| `GITHUB_CLIENT_SECRET`         | ✅          | GitHub OAuth app client secret                                                                      |
-| `SESSION_SECRET`               | ✅          | Signs session cookies. Minimum 32 random bytes.                                                     |
-| `INTERNAL_API_SECRET`          | ✅          | Authenticates Frontend → Broker calls. Minimum 32 random bytes.                                     |
-| `LOGWOLF_ALLOWED_GITHUB_USERS` | ✅ (one of) | Comma-separated list of GitHub usernames allowed to access the dashboard                            |
-| `LOGWOLF_ALLOWED_GITHUB_ORGS`  | ✅ (one of) | Comma-separated list of GitHub orgs. Any member is allowed.                                         |
-| `API_KEY`                      | ✅          | An `lw_`-prefixed API key used by the frontend to instrument itself. Generate one after first boot. |
+| Variable                         | Required      | Description                                                                                                                                                                              |
+| -------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_CLIENT_ID`               | ✅            | GitHub OAuth app client ID                                                                                                                                                               |
+| `GITHUB_CLIENT_SECRET`           | ✅            | GitHub OAuth app client secret                                                                                                                                                           |
+| `SESSION_SECRET`                 | ✅            | Signs session cookies. Minimum 32 random bytes.                                                                                                                                          |
+| `INTERNAL_API_SECRET`            | ✅            | Authenticates Frontend → Broker calls. Minimum 32 random bytes.                                                                                                                          |
+| `LOGWOLF_ALLOWED_GITHUB_USERS`   | ✅ (one of)   | Comma-separated list of GitHub usernames allowed to access the dashboard                                                                                                                 |
+| `LOGWOLF_ALLOWED_GITHUB_ORGS`    | ✅ (one of)   | Comma-separated list of GitHub orgs. Any member is allowed.                                                                                                                              |
+| `LOGWOLF_DEFAULT_PROJECT_OWNERS` | Upgrades only | GitHub usernames made owners of the `Default` project that holds pre-multi-tenancy data, on top of `LOGWOLF_ALLOWED_GITHUB_USERS`. Needed for org-only deployments. Read on every start. |
+| `API_KEY`                        | ✅            | An `lw_`-prefixed API key used by the frontend to instrument itself. Generate one after first boot.                                                                                      |
 
 Generate secrets with:
 
@@ -139,11 +140,11 @@ A healthy response looks like:
 
 ```json
 {
-	"status": "healthy",
-	"services": {
-		"rabbitmq": { "status": "up" },
-		"logger": { "status": "up" }
-	}
+  "status": "healthy",
+  "services": {
+    "rabbitmq": { "status": "up" },
+    "logger": { "status": "up" }
+  }
 }
 ```
 
@@ -184,6 +185,13 @@ Check Listener logs — this is usually a RabbitMQ connectivity issue:
 ```bash
 docker compose logs listener
 docker compose logs broker
+```
+
+**After upgrading, the old events are nowhere in the dashboard.**
+Logger moves data from before projects existed into a project named `Default`, owned by `LOGWOLF_ALLOWED_GITHUB_USERS` and `LOGWOLF_DEFAULT_PROJECT_OWNERS`. If neither was set, the project has no owner and Logger logs a warning on every start. Set one of them, for org-only deployments `LOGWOLF_DEFAULT_PROJECT_OWNERS`, and restart Logger. The owners then add everyone else from the project's settings page.
+
+```bash
+docker compose logs logger | grep Migration
 ```
 
 **The stack starts but the dashboard is blank.**

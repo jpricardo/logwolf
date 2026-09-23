@@ -87,14 +87,7 @@ func TestStartupMigration(t *testing.T) {
 
 	// Both allowlisted logins own the project, with their case preserved.
 	for _, login := range []string{"alice", "Bob"} {
-		var member data.ProjectMember
-		err := db.Collection("project_members").FindOne(ctx, bson.M{"project_id": project.ID, "github_login": login}).Decode(&member)
-		if err != nil {
-			t.Fatalf("membership for %q: %v", login, err)
-		}
-		if member.Role != data.RoleOwner {
-			t.Errorf("member %q role = %q, want %q", login, member.Role, data.RoleOwner)
-		}
+		assertOwner(t, db, project, login)
 	}
 
 	if hasIndex(t, db, "logs", "ttl_created_at") {
@@ -110,8 +103,8 @@ func TestStartupMigration(t *testing.T) {
 	assertCount(t, db, "api_keys", bson.M{"project_id": projectID}, 1)
 	assertCount(t, db, "settings", bson.M{"project_id": projectID, "key": "retention_days"}, 1)
 
-	// With no orphans left there is nothing to migrate, so the login added to the
-	// allowlist since the first boot must not be granted ownership.
+	// Default already has owners, so the login added to the allowlist since the
+	// first boot must not be granted ownership.
 	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 2)
 }
 
@@ -170,7 +163,122 @@ func TestStartupMigration_LegacyDataReadableThroughBroker(t *testing.T) {
 	}
 }
 
+// TestStartupMigration_OwnerStepRetried covers an owner step that fails after
+// the data has moved. The next start finds no orphans, so it is the owner repair
+// — not the adoption — that has to finish the job.
+func TestStartupMigration_OwnerStepRetried(t *testing.T) {
+	ctx := context.Background()
+	mongoURI, client := migrationMongo(t)
+	db := client.Database("logs")
+
+	seedOrphanLog(t, db)
+
+	// A validator no membership can satisfy makes every owner upsert fail, while
+	// the adoption itself, which never touches project_members, succeeds.
+	if err := db.CreateCollection(ctx, "project_members",
+		options.CreateCollection().SetValidator(bson.M{"never_present": bson.M{"$exists": true}}),
+	); err != nil {
+		t.Fatalf("create project_members with validator: %v", err)
+	}
+
+	startLogger(t, mongoURI, "alice")
+
+	project := requireDefaultProject(t, db)
+	assertCount(t, db, "logs", orphanQuery(), 0)
+	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 0)
+
+	if err := db.RunCommand(ctx, bson.D{
+		{Key: "collMod", Value: "project_members"},
+		{Key: "validator", Value: bson.M{}},
+	}).Err(); err != nil {
+		t.Fatalf("drop project_members validator: %v", err)
+	}
+
+	startLogger(t, mongoURI, "alice")
+
+	assertOwner(t, db, project, "alice")
+}
+
+// TestStartupMigration_OwnersConfiguredLater covers an upgrade whose first start
+// had nobody to make owner. Configuring owners afterwards must be enough — no
+// hand-editing MongoDB.
+func TestStartupMigration_OwnersConfiguredLater(t *testing.T) {
+	ctx := context.Background()
+	mongoURI, client := migrationMongo(t)
+	db := client.Database("logs")
+
+	seedOrphanLog(t, db)
+
+	startLogger(t, mongoURI, "")
+
+	project := requireDefaultProject(t, db)
+	assertCount(t, db, "logs", orphanQuery(), 0)
+	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 0)
+
+	// A plain member of the still-ownerless project: listing them as an owner
+	// must promote them, not leave the existing membership as it is.
+	if _, err := db.Collection("project_members").InsertOne(ctx, bson.M{
+		"project_id": project.ID, "github_login": "erin", "role": data.RoleMember, "created_at": time.Now(),
+	}); err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+
+	startLoggerWithOwners(t, mongoURI, "alice", "erin")
+
+	assertOwner(t, db, project, "alice")
+	assertOwner(t, db, project, "erin")
+
+	// Once Default has an owner, the allowlist no longer grants ownership: the
+	// owners manage membership from the dashboard.
+	startLogger(t, mongoURI, "alice,bob")
+
+	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 2)
+}
+
+// TestStartupMigration_OrgOnlyDeployment covers a deployment that admits users
+// through LOGWOLF_ALLOWED_GITHUB_ORGS only. Logger cannot see org membership,
+// so LOGWOLF_DEFAULT_PROJECT_OWNERS is how Default gets its owners.
+func TestStartupMigration_OrgOnlyDeployment(t *testing.T) {
+	mongoURI, client := migrationMongo(t)
+	db := client.Database("logs")
+
+	seedOrphanLog(t, db)
+
+	startLoggerWithOwners(t, mongoURI, "", "dave")
+
+	project := requireDefaultProject(t, db)
+	assertCount(t, db, "logs", bson.M{"project_id": project.ID.Hex()}, 1)
+	assertOwner(t, db, project, "dave")
+	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 1)
+}
+
 // --- helpers ---
+
+// seedOrphanLog inserts one log in the pre-multi-tenancy shape, enough to make
+// the migration create the Default project.
+func seedOrphanLog(t *testing.T, db *mongo.Database) {
+	t.Helper()
+
+	if _, err := db.Collection("logs").InsertOne(context.Background(), bson.M{
+		"name": "old-event", "data": "{}", "severity": "INFO", "created_at": time.Now(), "updated_at": time.Now(),
+	}); err != nil {
+		t.Fatalf("seed logs: %v", err)
+	}
+}
+
+// assertOwner fails unless login holds an owner membership on project.
+func assertOwner(t *testing.T, db *mongo.Database, project data.Project, login string) {
+	t.Helper()
+
+	var member data.ProjectMember
+	err := db.Collection("project_members").FindOne(context.Background(), bson.M{"project_id": project.ID, "github_login": login}).Decode(&member)
+	if err != nil {
+		t.Fatalf("membership for %q: %v", login, err)
+	}
+	if member.Role != data.RoleOwner {
+		t.Errorf("member %q role = %q, want %q", login, member.Role, data.RoleOwner)
+	}
+}
 
 // migrationMongo gives the test a MongoDB of its own — the migration only runs
 // against a database no Logger has booted on yet — plus a client for seeding
@@ -186,15 +294,23 @@ func migrationMongo(t *testing.T) (string, *mongo.Client) {
 // connections, which only happens after the startup migration has run.
 func startLogger(t *testing.T, mongoURI, allowedUsers string) string {
 	t.Helper()
+	return startLoggerWithOwners(t, mongoURI, allowedUsers, "")
+}
+
+// startLoggerWithOwners is startLogger with LOGWOLF_DEFAULT_PROJECT_OWNERS set
+// as well — the owners an org-only deployment configures for Default.
+func startLoggerWithOwners(t *testing.T, mongoURI, allowedUsers, defaultOwners string) string {
+	t.Helper()
 
 	rpcAddr := freeAddr(t)
 	httpAddr := freeAddr(t)
 
 	startProcess(t, "../logger/cmd/api", map[string]string{
-		"MONGO_URL":                    mongoURI,
-		"LOGGER_RPC_PORT":              portOf(rpcAddr),
-		"LOGGER_HTTP_PORT":             portOf(httpAddr),
-		"LOGWOLF_ALLOWED_GITHUB_USERS": allowedUsers,
+		"MONGO_URL":                      mongoURI,
+		"LOGGER_RPC_PORT":                portOf(rpcAddr),
+		"LOGGER_HTTP_PORT":               portOf(httpAddr),
+		"LOGWOLF_ALLOWED_GITHUB_USERS":   allowedUsers,
+		"LOGWOLF_DEFAULT_PROJECT_OWNERS": defaultOwners,
 		// Keep the retention loop out of the way of the assertions.
 		"CLEANUP_INTERVAL": "24h",
 	})
