@@ -6,69 +6,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// TestWritePathRoundTrip drives an event through the whole write path —
+// Broker HTTP, RabbitMQ, Listener, Logger RPC, MongoDB — and checks that it
+// lands under the project the API key belongs to.
 func TestWritePathRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
-	// --- Start containers ---
-	mongoC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "mongo:4.2.16-bionic",
-			ExposedPorts: []string{"27017/tcp"},
-			Env: map[string]string{
-				"MONGO_INITDB_ROOT_USERNAME": "admin",
-				"MONGO_INITDB_ROOT_PASSWORD": "password",
-			},
-			WaitingFor: wait.ForLog("waiting for connections on port 27017"),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("mongo container: %v", err)
-	}
-	defer mongoC.Terminate(ctx)
+	stack := sharedStack(t)
+	apiKey := testAPIKey(t, stack.mongoURI)
 
-	mongoHost, _ := mongoC.Host(ctx)
-	mongoPort, _ := mongoC.MappedPort(ctx, "27017")
-	mongoURI := fmt.Sprintf("mongodb://admin:password@%s:%s", mongoHost, mongoPort.Port())
-
-	rabbitC, err := rabbitmq.Run(ctx, "rabbitmq:3.9-alpine")
-	if err != nil {
-		t.Fatalf("rabbitmq container: %v", err)
-	}
-	defer rabbitC.Terminate(ctx)
-
-	rabbitURI, _ := rabbitC.AmqpURL(ctx)
-
-	// --- Start Logger, Listener, Broker in-process (using env vars) ---
-	// Wire up the stack pointing at test containers, then POST a log entry
-	// and poll MongoDB until it appears.
-	//
-	// In practice the three services are separate binaries, so this test
-	// invokes them as subprocesses with environment overrides, or you extract
-	// the wiring into testable packages. The simplest approach that matches
-	// the existing architecture: run the stack via docker-compose with
-	// overridden env vars and drive it via HTTP.
-	//
-	// Here we use direct Mongo polling as the assertion — no need to go
-	// through the Broker GET /logs endpoint for the round-trip assertion.
-
-	brokerURL := startStack(t, mongoURI, rabbitURI)
-
-	// --- POST a log entry via Broker HTTP ---
 	payload := map[string]interface{}{
 		"name":     "integration-test-event",
 		"data":     `{"test":true}`,
@@ -77,42 +31,30 @@ func TestWritePathRoundTrip(t *testing.T) {
 	}
 	body, _ := json.Marshal(payload)
 
-	req, _ := http.NewRequest(http.MethodPost, brokerURL+"/logs", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, stack.brokerURL+"/logs", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+testAPIKey(t, mongoURI))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /logs: %v", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST /logs: expected 202, got %d: %s", resp.StatusCode, respBody)
 	}
 
-	// --- Verify POST response body for early diagnosis ---
-	respBody, _ := io.ReadAll(resp.Body)
-	t.Logf("POST /logs response: %s", string(respBody))
+	collection := testMongo(t, stack.mongoURI).Database("logs").Collection("logs")
 
-	// --- Poll MongoDB with progress logging ---
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).
-		SetAuth(options.Credential{Username: "admin", Password: "password"}))
-	if err != nil {
-		t.Fatalf("mongo connect: %v", err)
-	}
-	defer client.Disconnect(ctx)
-
-	collection := client.Database("logs").Collection("logs")
-	deadline := time.Now().Add(10 * time.Second)
-	attempt := 0
-
+	// Delivery is asynchronous, so poll until the entry shows up.
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		attempt++
 		count, err := collection.CountDocuments(ctx, bson.M{"name": "integration-test-event"})
-		t.Logf("attempt %d: count=%d err=%v", attempt, count, err)
 		if err == nil && count > 0 {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	var doc struct {
@@ -124,5 +66,74 @@ func TestWritePathRoundTrip(t *testing.T) {
 	}
 	if doc.ProjectID != testProjectID {
 		t.Errorf("project_id = %q, want %q", doc.ProjectID, testProjectID)
+	}
+}
+
+// TestWritePathBatch_ScopedToKeysProject covers the batch endpoint and the
+// property that makes it safe to expose: the project comes from the API key,
+// so a caller cannot file events against a project it has no key for.
+func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
+	ctx := context.Background()
+
+	stack := sharedStack(t)
+	apiKey := seedAPIKey(t, stack.mongoURI, "batch-project", "lw_batchkey0000000001")
+
+	batch := []map[string]interface{}{
+		{"name": "batch-event-1", "data": "{}", "severity": "info", "tags": []string{}},
+		{"name": "batch-event-2", "data": "{}", "severity": "warning", "tags": []string{}},
+		// This one claims to belong somewhere else. The Broker overwrites the
+		// field with the key's project rather than trusting the body.
+		{"name": "batch-event-3", "data": "{}", "severity": "error", "tags": []string{}, "project_id": "victim-project"},
+	}
+	body, _ := json.Marshal(batch)
+
+	req, _ := http.NewRequest(http.MethodPost, stack.brokerURL+"/logs/batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /logs/batch: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST /logs/batch: expected 202, got %d: %s", resp.StatusCode, respBody)
+	}
+
+	coll := testMongo(t, stack.mongoURI).Database("logs").Collection("logs")
+
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		count, err := coll.CountDocuments(ctx, bson.M{"project_id": "batch-project"})
+		if err == nil && count == int64(len(batch)) {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	count, err := coll.CountDocuments(ctx, bson.M{"project_id": "batch-project"})
+	if err != nil {
+		t.Fatalf("count batch entries: %v", err)
+	}
+	if count != int64(len(batch)) {
+		t.Errorf("batch landed %d entr(ies) under batch-project, want %d", count, len(batch))
+	}
+
+	// The forged project_id must not have created anything.
+	stray, err := coll.CountDocuments(ctx, bson.M{"project_id": "victim-project"})
+	if err != nil {
+		t.Fatalf("count forged entries: %v", err)
+	}
+	if stray != 0 {
+		t.Errorf("body-supplied project_id was honoured: %d entr(ies) landed under victim-project", stray)
+	}
+
+	// And the key reads back exactly its own events.
+	names := getLogs(t, stack.brokerURL, apiKey)
+	for _, want := range []string{"batch-event-1", "batch-event-2", "batch-event-3"} {
+		if !containsName(names, want) {
+			t.Errorf("GET /logs did not return %q: %v", want, names)
+		}
 	}
 }
