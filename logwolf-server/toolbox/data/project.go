@@ -16,6 +16,10 @@ import (
 // ErrLastOwner is returned when an operation would remove the last owner of a project.
 var ErrLastOwner = errors.New("cannot remove the last owner of a project")
 
+// ErrProjectExists is returned by PurgeProjectLogs for a project that has not
+// been deleted.
+var ErrProjectExists = errors.New("project still exists")
+
 const (
 	RoleOwner  = "owner"
 	RoleMember = "member"
@@ -235,10 +239,16 @@ func (m *Models) UpdateProject(id primitive.ObjectID, name, slug string) (*Proje
 	return &p, nil
 }
 
-// DeleteProject removes a project and all of its associated data (logs, API keys,
-// settings, and members) in one transaction: either every collection loses the
-// project's documents or none does, so a failure part-way leaves nothing to
-// clean up by hand. Transactions need MongoDB to run as a replica set.
+// DeleteProject removes a project with its API keys, settings, and members in one
+// transaction: either every collection loses the project's documents or none
+// does, so a failure part-way leaves nothing to clean up by hand. Transactions
+// need MongoDB to run as a replica set.
+//
+// The project's logs are not part of it. There can be millions, and deleting
+// them inside the transaction would outlast both the timeout here and MongoDB's
+// transaction lifetime limit, so the project could never be deleted. Once this
+// returns they belong to no project: nobody can read them, PurgeProjectLogs
+// removes them, and DeleteOrphanedLogs catches any it misses.
 func (m *Models) DeleteProject(id primitive.ObjectID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -255,9 +265,6 @@ func (m *Models) DeleteProject(id primitive.ObjectID) error {
 	// WithTransaction may run the callback more than once on a transient error;
 	// every step is a delete by filter, so a rerun is harmless.
 	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
-		if _, err := db.Collection("logs").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
-			return nil, fmt.Errorf("DeleteProject logs: %w", err)
-		}
 		if _, err := db.Collection("api_keys").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
 			return nil, fmt.Errorf("DeleteProject api_keys: %w", err)
 		}

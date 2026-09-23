@@ -21,6 +21,10 @@ var client *mongo.Client
 
 type Config struct {
 	Models data.Models
+
+	// purges carries the ids of just-deleted projects from the DeleteProject RPC
+	// to the cleanup loop, which deletes their logs. See requestPurge.
+	purges chan string
 }
 
 func main() {
@@ -41,6 +45,7 @@ func main() {
 
 	app := Config{
 		Models: data.New(client),
+		purges: make(chan string, purgeQueueSize),
 	}
 
 	if err := app.Models.Settings.EnsureSettingsIndex(); err != nil {
@@ -66,7 +71,11 @@ func main() {
 }
 
 func (app *Config) serve(ctx context.Context) {
-	err := rpc.Register(&RPCServer{models: app.Models, projects: newProjectCache(projectCacheTTL)})
+	err := rpc.Register(&RPCServer{
+		models:   app.Models,
+		projects: newProjectCache(projectCacheTTL),
+		purges:   app.purges,
+	})
 	if err != nil {
 		log.Panic(err)
 	}

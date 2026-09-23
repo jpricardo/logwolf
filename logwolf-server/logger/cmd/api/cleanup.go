@@ -35,8 +35,29 @@ func (app *Config) runCleanup(ctx context.Context) {
 			return
 		case <-ticker.C:
 			app.cleanupPass(ctx)
+		case projectID := <-app.purges:
+			app.purgeProjectLogs(ctx, projectID)
 		}
 	}
+}
+
+// purgeQueueSize is how many deleted projects can wait for their logs to be
+// purged. Deletes are rare; one that finds the queue full is left to the orphan
+// sweep.
+const purgeQueueSize = 64
+
+// purgeProjectLogs deletes the logs of a project DeleteProject has just removed.
+// It runs here rather than in the RPC, so the delete returns as soon as the
+// project is gone while its logs, however many, are deleted in the background.
+// A purge that fails or is cut short by shutdown is not retried: the logs belong
+// to no project now, and the orphan sweep in the next pass deletes them.
+func (app *Config) purgeProjectLogs(ctx context.Context, projectID string) {
+	deleted, err := app.Models.PurgeProjectLogs(ctx, projectID)
+	if err != nil {
+		log.Printf("Retention cleanup: deleted project %s: error purging logs after %d: %v", projectID, deleted, err)
+		return
+	}
+	log.Printf("Retention cleanup: deleted project %s: purged %d logs", projectID, deleted)
 }
 
 func (app *Config) cleanupPass(ctx context.Context) {
@@ -47,12 +68,13 @@ func (app *Config) cleanupPass(ctx context.Context) {
 // cleanupOrphanedLogs deletes logs whose project no longer exists. LogInfo
 // refuses new ones, but an event can pass that check just before its project
 // is deleted, and those logs are invisible to everyone and outside every
-// project's retention.
+// project's retention. It is also what finishes a purgeProjectLogs that failed.
+//
+// There is no deadline on the pass as a whole: a deleted project can leave
+// millions of logs, which take minutes to delete. DeleteOrphanedLogs times out
+// each batch on its own, and ctx stops it on shutdown.
 func (app *Config) cleanupOrphanedLogs(ctx context.Context) {
-	passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	deleted, err := app.Models.DeleteOrphanedLogs(passCtx)
+	deleted, err := app.Models.DeleteOrphanedLogs(ctx)
 	if err != nil {
 		log.Printf("Retention cleanup: error deleting logs of deleted projects: %v", err)
 	}

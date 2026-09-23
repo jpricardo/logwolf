@@ -178,23 +178,30 @@ const orphanGrace = time.Minute
 //
 // Logs with no project_id, or an empty one, are left alone: they predate
 // projects, and the startup migration adopts them.
+//
+// The deletes run in batches (see deleteLogsInBatches), so a deleted project
+// with millions of logs is purged over as long as it takes; ctx bounds the whole
+// sweep, and each step has its own timeout.
 func (m *Models) DeleteOrphanedLogs(ctx context.Context) (map[string]int64, error) {
 	cutoff := time.Now().Add(-orphanGrace)
 	db := m.client.Database("logs")
 
-	logged, err := db.Collection("logs").Distinct(ctx, "project_id", bson.M{})
+	stepCtx, cancel := context.WithTimeout(ctx, logBatchTimeout)
+	defer cancel()
+
+	logged, err := db.Collection("logs").Distinct(stepCtx, "project_id", bson.M{})
 	if err != nil {
 		return nil, fmt.Errorf("DeleteOrphanedLogs distinct: %w", err)
 	}
 
-	cursor, err := db.Collection("projects").Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"_id": 1}))
+	cursor, err := db.Collection("projects").Find(stepCtx, bson.M{}, options.Find().SetProjection(bson.M{"_id": 1}))
 	if err != nil {
 		return nil, fmt.Errorf("DeleteOrphanedLogs projects: %w", err)
 	}
 	var projects []struct {
 		ID primitive.ObjectID `bson:"_id"`
 	}
-	if err := cursor.All(ctx, &projects); err != nil {
+	if err := cursor.All(stepCtx, &projects); err != nil {
 		return nil, fmt.Errorf("DeleteOrphanedLogs projects decode: %w", err)
 	}
 
@@ -210,18 +217,110 @@ func (m *Models) DeleteOrphanedLogs(ctx context.Context) (map[string]int64, erro
 			continue
 		}
 
-		result, err := db.Collection("logs").DeleteMany(ctx, bson.M{
+		n, err := m.deleteLogsInBatches(ctx, bson.M{
 			"project_id": projectID,
 			"created_at": bson.M{"$lt": cutoff},
 		})
+		if n > 0 {
+			deleted[projectID] = n
+		}
 		if err != nil {
 			return deleted, fmt.Errorf("DeleteOrphanedLogs project %s: %w", projectID, err)
 		}
-		if result.DeletedCount > 0 {
-			deleted[projectID] = result.DeletedCount
-		}
 	}
 	return deleted, nil
+}
+
+// PurgeProjectLogs deletes every log of a project that has been deleted, and
+// returns how many it deleted. DeleteProject leaves the logs behind so that its
+// transaction stays small; this is what removes them afterwards.
+//
+// Unlike DeleteOrphanedLogs it needs no grace period: the caller names one
+// project, it is checked to be gone first, and a project id is never reused. It
+// refuses with ErrProjectExists if the project is still there.
+//
+// Like DeleteOrphanedLogs it deletes in batches, so it can run for minutes on a
+// big project; ctx bounds the whole purge. If it stops part-way, the orphan
+// sweep finishes the job.
+func (m *Models) PurgeProjectLogs(ctx context.Context, projectID string) (int64, error) {
+	existsCtx, cancel := context.WithTimeout(ctx, logBatchTimeout)
+	exists, err := m.ProjectExists(existsCtx, projectID)
+	cancel()
+	if err != nil {
+		return 0, fmt.Errorf("PurgeProjectLogs: %w", err)
+	}
+	if exists {
+		return 0, fmt.Errorf("PurgeProjectLogs %s: %w", projectID, ErrProjectExists)
+	}
+
+	n, err := m.deleteLogsInBatches(ctx, bson.M{"project_id": projectID})
+	if err != nil {
+		return n, fmt.Errorf("PurgeProjectLogs %s: %w", projectID, err)
+	}
+	return n, nil
+}
+
+const (
+	// logDeleteBatch is how many logs deleteLogsInBatches removes per round trip.
+	// Small enough that one batch finishes in well under logBatchTimeout.
+	logDeleteBatch = 10000
+
+	// logBatchTimeout bounds one step of a long-running log delete — a single
+	// batch, or a lookup before the batches start — rather than the whole run.
+	logBatchTimeout = 30 * time.Second
+)
+
+// deleteLogsInBatches deletes the logs matching filter, logDeleteBatch at a
+// time, and returns how many it deleted, including when it stops on an error.
+// One DeleteMany over a huge set could outlast any sensible deadline, and
+// cancelling it throws away the progress report; batches keep each call short
+// and let ctx stop the run between two of them.
+func (m *Models) deleteLogsInBatches(ctx context.Context, filter bson.M) (int64, error) {
+	coll := m.client.Database("logs").Collection("logs")
+	var total int64
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+
+		n, more, err := deleteLogBatch(ctx, coll, filter)
+		total += n
+		if err != nil || !more {
+			return total, err
+		}
+	}
+}
+
+// deleteLogBatch deletes up to logDeleteBatch logs matching filter, and reports
+// whether there may be more.
+func deleteLogBatch(ctx context.Context, coll *mongo.Collection, filter bson.M) (int64, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, logBatchTimeout)
+	defer cancel()
+
+	cursor, err := coll.Find(ctx, filter, options.Find().
+		SetProjection(bson.M{"_id": 1}).
+		SetLimit(logDeleteBatch))
+	if err != nil {
+		return 0, false, fmt.Errorf("find batch: %w", err)
+	}
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		return 0, false, fmt.Errorf("decode batch: %w", err)
+	}
+	if len(docs) == 0 {
+		return 0, false, nil
+	}
+
+	ids := make(bson.A, len(docs))
+	for i, d := range docs {
+		ids[i] = d["_id"]
+	}
+	result, err := coll.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}})
+	if err != nil {
+		return 0, false, fmt.Errorf("delete batch: %w", err)
+	}
+	return result.DeletedCount, len(docs) == logDeleteBatch, nil
 }
 
 func (m *Models) DropLogsCollection() error {

@@ -58,10 +58,12 @@ Retention is a per-project setting (default 90 days; supported values 30, 60, 90
 
 ### Logs of deleted projects
 
-Deleting a project does not stop every event already addressed to it: the Broker caches API keys for 60 seconds, and events can be waiting in RabbitMQ. Nobody could read those logs, and the retention loop, which walks the existing projects, would never delete them. Two things keep them from piling up:
+`DeleteProject` does not delete the project's logs itself. There can be millions, and inside the transaction that removes the project they would outlast MongoDB's transaction lifetime limit, so the project could never be deleted. Instead the RPC returns as soon as the project, its keys, settings and members are gone, and hands the project id to the cleanup loop over a small queue. The loop purges its logs in batches (`PurgeProjectLogs`) between passes. If the purge fails, is cut short by shutdown, or the queue is full, the orphan sweep below deletes the rest in a later pass; the project stays deleted either way.
+
+Deleting a project also does not stop every event already addressed to it: the Broker caches API keys for 60 seconds, and events can be waiting in RabbitMQ. Nobody could read those logs, and the retention loop, which walks the existing projects, would never delete them. Two things keep them from piling up:
 
 - `LogInfo` checks that the event's project exists and drops the event with a `project does not exist` error if not. The Listener logs the error and moves on. Project ids seen to exist are cached for a minute, and `DeleteProject` evicts its project from the cache at once, so the check is rarely a database round trip.
-- Each cleanup pass also deletes logs whose `project_id` names no project (`DeleteOrphanedLogs`). That catches an event that passed the check just before its project was deleted, or one accepted by another Logger instance whose cache has not expired. Logs with no `project_id`, or an empty one, are left for the startup migration.
+- Each cleanup pass also deletes logs whose `project_id` names no project (`DeleteOrphanedLogs`). That catches an event that passed the check just before its project was deleted, or one accepted by another Logger instance whose cache has not expired. It deletes in batches too, with a timeout per batch rather than per pass, so a big deleted project is not cut off every time. Logs with no `project_id`, or an empty one, are left for the startup migration.
 
 Pre-multi-tenancy builds enforced retention with a single global TTL index on `logs.created_at`. That index is dropped on startup — left in place it would keep expiring logs on the old global schedule, overriding whatever each project now has configured.
 

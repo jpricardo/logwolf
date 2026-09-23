@@ -170,7 +170,14 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	if len(members) != 0 {
 		t.Errorf("members still present: %d", len(members))
 	}
-	// Logs must be gone.
+	// Logs are left behind for PurgeProjectLogs, which removes them.
+	purged, err := m.PurgeProjectLogs(context.Background(), p.ID.Hex())
+	if err != nil {
+		t.Fatalf("PurgeProjectLogs: %v", err)
+	}
+	if purged != 1 {
+		t.Errorf("PurgeProjectLogs deleted %d log(s), want the 1 seeded", purged)
+	}
 	logs, err := m.AllLogs(data.QueryParams{
 		ProjectID:  p.ID.Hex(),
 		Pagination: data.PaginationParams{Page: 1, PageSize: 100},
@@ -201,8 +208,9 @@ func TestDeleteProject_Cascade(t *testing.T) {
 }
 
 // TestDeleteProject_RollsBackOnFailure fails the cascade part-way through — the
-// fourth delete, project_members, after logs, api_keys and settings have gone —
-// and checks that the transaction takes those three back with it.
+// third delete, project_members, after api_keys and settings have gone — and
+// checks that the transaction takes those two back with it. The seeded log is
+// outside the transaction and must simply be untouched.
 func TestDeleteProject_RollsBackOnFailure(t *testing.T) {
 	m := setupProjectModels(t)
 	client := testMongo(t, sharedModelsMongo(t))
@@ -230,9 +238,9 @@ func TestDeleteProject_RollsBackOnFailure(t *testing.T) {
 		t.Fatalf("InsertProjectMember: %v", err)
 	}
 
-	// Let three deletes through, then fail every one after with a non-transient
+	// Let two deletes through, then fail every one after with a non-transient
 	// error, so WithTransaction gives up instead of retrying.
-	setFailPoint(t, client, bson.M{"skip": 3}, bson.M{"failCommands": bson.A{"delete"}, "errorCode": 2})
+	setFailPoint(t, client, bson.M{"skip": 2}, bson.M{"failCommands": bson.A{"delete"}, "errorCode": 2})
 
 	err = m.DeleteProject(p.ID)
 	clearFailPoint(t, client)
