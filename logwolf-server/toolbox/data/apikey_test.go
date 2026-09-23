@@ -2,6 +2,7 @@ package data
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func TestRPCCheckMembershipArgs(t *testing.T) {
 // TestGenerateAPIKey_ProjectID verifies GenerateAPIKey propagates ProjectID.
 func TestGenerateAPIKey_ProjectID(t *testing.T) {
 	projectID := "proj-unit-test"
-	_, key, err := GenerateAPIKey(projectID)
+	_, key, err := GenerateAPIKey(projectID, nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestGenerateAPIKey_ProjectID(t *testing.T) {
 // TestGenerateAPIKey_Shape verifies generated keys have the shape ValidateAPIKey
 // accepts, and that the stored prefix is the head of the plaintext.
 func TestGenerateAPIKey_Shape(t *testing.T) {
-	plaintext, key, err := GenerateAPIKey("proj-unit-test")
+	plaintext, key, err := GenerateAPIKey("proj-unit-test", nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestGenerateAPIKey_Shape(t *testing.T) {
 // have produced is refused before the database is touched. The zero Models has
 // no client, so reaching the query would panic.
 func TestValidateAPIKey_RejectsMalformed(t *testing.T) {
-	valid, _, err := GenerateAPIKey("proj-unit-test")
+	valid, _, err := GenerateAPIKey("proj-unit-test", nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
@@ -139,5 +140,76 @@ func TestValidateAPIKey_RejectsMalformed(t *testing.T) {
 				t.Errorf("ValidateAPIKey(%q) = %v, %v, %v; want false, nil, nil", plaintext, ok, key, err)
 			}
 		})
+	}
+}
+
+// TestGenerateAPIKey_DefaultsToIngest verifies a key created without scopes can
+// only ingest: keys end up in browser bundles, where read and delete would let
+// anyone who pulls one out read or wipe the project's logs.
+func TestGenerateAPIKey_DefaultsToIngest(t *testing.T) {
+	_, key, err := GenerateAPIKey("proj-unit-test", nil)
+	if err != nil {
+		t.Fatalf("GenerateAPIKey failed: %v", err)
+	}
+	if !slices.Equal(key.Scopes, []string{ScopeIngest}) {
+		t.Errorf("Scopes = %v, want [%s]", key.Scopes, ScopeIngest)
+	}
+	if key.HasScope(ScopeRead) || key.HasScope(ScopeDelete) {
+		t.Errorf("default key must not read or delete, got %v", key.Scopes)
+	}
+}
+
+// TestGenerateAPIKey_RejectsUnknownScope verifies no key is minted with a scope
+// the broker would never check.
+func TestGenerateAPIKey_RejectsUnknownScope(t *testing.T) {
+	if _, _, err := GenerateAPIKey("proj-unit-test", []string{ScopeIngest, "admin"}); !errors.Is(err, ErrInvalidScope) {
+		t.Errorf("err = %v, want ErrInvalidScope", err)
+	}
+}
+
+func TestNormalizeScopes(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"nil means default", nil, []string{ScopeIngest}},
+		{"empty means default", []string{}, []string{ScopeIngest}},
+		{"single", []string{ScopeRead}, []string{ScopeRead}},
+		{"canonical order", []string{ScopeDelete, ScopeIngest, ScopeRead}, []string{ScopeIngest, ScopeRead, ScopeDelete}},
+		{"deduplicated", []string{ScopeRead, ScopeRead, ScopeIngest}, []string{ScopeIngest, ScopeRead}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := NormalizeScopes(c.in)
+			if err != nil {
+				t.Fatalf("NormalizeScopes(%v) error: %v", c.in, err)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Errorf("NormalizeScopes(%v) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+
+	for _, bad := range [][]string{{"admin"}, {ScopeIngest, ""}, {"INGEST"}} {
+		if _, err := NormalizeScopes(bad); !errors.Is(err, ErrInvalidScope) {
+			t.Errorf("NormalizeScopes(%q) err = %v, want ErrInvalidScope", bad, err)
+		}
+	}
+}
+
+// TestFillLegacyScopes verifies a key stored before scopes existed keeps full
+// access and is flagged for the UI, while a scoped key is left alone.
+func TestFillLegacyScopes(t *testing.T) {
+	legacy := APIKey{}
+	legacy.fillLegacyScopes()
+	if !slices.Equal(legacy.Scopes, AllScopes) || !legacy.Legacy {
+		t.Errorf("legacy key = %v (legacy=%v), want %v (legacy=true)", legacy.Scopes, legacy.Legacy, AllScopes)
+	}
+
+	scoped := APIKey{Scopes: []string{ScopeIngest}}
+	scoped.fillLegacyScopes()
+	if !slices.Equal(scoped.Scopes, []string{ScopeIngest}) || scoped.Legacy {
+		t.Errorf("scoped key = %v (legacy=%v), want [%s] (legacy=false)", scoped.Scopes, scoped.Legacy, ScopeIngest)
 	}
 }

@@ -43,10 +43,10 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 		t.Fatalf("created project has no id: %s", data)
 	}
 
-	// --- Mint an API key for it ---
+	// --- Mint an API key for it, able to read back as well as ingest ---
 
 	data = mustInternalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner,
-		map[string]string{"project_id": project.ID}, http.StatusCreated)
+		map[string]any{"project_id": project.ID, "scopes": []string{"ingest", "read"}}, http.StatusCreated)
 
 	var created struct {
 		Key string `json:"key"`

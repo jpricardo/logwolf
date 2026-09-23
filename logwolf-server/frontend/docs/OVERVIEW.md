@@ -64,7 +64,7 @@ app/
 | `/events`                | Protected | Paginated event list                        |
 | `/events/new`            | Protected | Create a new event                          |
 | `/events/:id`            | Protected | Event detail view                           |
-| `/keys`                  | Protected | API key management                          |
+| `/keys`                  | Protected | API keys and their scopes                   |
 | `/settings`              | Protected | Redirects to the current project's settings |
 | `/projects`              | Protected | Projects the user belongs to                |
 | `/projects/new`          | Protected | Create a project                            |

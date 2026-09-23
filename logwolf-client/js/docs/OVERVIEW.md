@@ -43,7 +43,8 @@ client.capture({ name: 'user.signup', severity: 'INFO', data: { ... } });
 await client.flush();    // force-send queued events
 await client.destroy();  // flush + stop background timer
 
-// Read-side (requires valid API key with read permission)
+// Read-side: getAll/getOne need a key with the `read` scope, delete the `delete`
+// scope. New keys only have `ingest` unless you pick more on /keys.
 const events = await client.getAll({ page: 1, limit: 50 });
 const event  = await client.getOne(id);
 await client.delete(id);

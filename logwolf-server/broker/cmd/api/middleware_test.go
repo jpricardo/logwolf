@@ -208,6 +208,14 @@ func TestRequireAPIKey_RateLimit(t *testing.T) {
 	app := newApp()
 	handler := app.requireAPIKeyWith(alwaysInvalidKey{}, http.HandlerFunc(okHandler))
 
+	// Every httptest request comes from the same address; lift the limit
+	// afterwards so the tests that run next are not answered with 429.
+	t.Cleanup(func() {
+		ipLimiterMu.Lock()
+		clear(ipLimiter)
+		ipLimiterMu.Unlock()
+	})
+
 	// Exhaust the rate limit
 	for i := 0; i < maxFailures; i++ {
 		w := httptest.NewRecorder()

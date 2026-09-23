@@ -1,6 +1,7 @@
 package main
 
 import (
+	"logwolf-toolbox/data"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -49,13 +50,13 @@ func (app *Config) routes() http.Handler {
 		r.Delete("/projects/{id}/logs/{logID}", app.DeleteProjectLog)
 	})
 
-	// Protected routes
+	// Protected routes — each also needs its scope on the key
 	mux.Group(func(r chi.Router) {
 		r.Use(app.requireAPIKey)
-		r.Post("/logs", app.CreateLog)
-		r.Post("/logs/batch", app.CreateLogBatch)
-		r.Get("/logs", app.GetLogs)
-		r.Delete("/logs", app.DeleteLog)
+		r.With(app.requireScope(data.ScopeIngest)).Post("/logs", app.CreateLog)
+		r.With(app.requireScope(data.ScopeIngest)).Post("/logs/batch", app.CreateLogBatch)
+		r.With(app.requireScope(data.ScopeRead)).Get("/logs", app.GetLogs)
+		r.With(app.requireScope(data.ScopeDelete)).Delete("/logs", app.DeleteLog)
 	})
 
 	return mux

@@ -213,6 +213,8 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ProjectID string `json:"project_id"`
+		// Scopes left out, or empty, mean data.DefaultScopes: ingest only.
+		Scopes []string `json:"scopes"`
 	}
 	if err := app.readJSON(w, r, &body); err != nil {
 		app.errorJSON(w, err)
@@ -221,6 +223,12 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	if body.ProjectID == "" {
 		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+
+	scopes, err := data.NormalizeScopes(body.Scopes)
+	if err != nil {
+		app.errorJSON(w, err, http.StatusBadRequest)
 		return
 	}
 
@@ -242,7 +250,7 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plaintext, key, err := data.GenerateAPIKey(body.ProjectID)
+	plaintext, key, err := data.GenerateAPIKey(body.ProjectID, scopes)
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -257,7 +265,12 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusCreated, jsonResponse{
 		Error:   false,
 		Message: "API key created. Copy it now — it will not be shown again.",
-		Data:    map[string]string{"key": plaintext, "prefix": key.Prefix, "id": key.ID.Hex()},
+		Data: map[string]any{
+			"key":    plaintext,
+			"prefix": key.Prefix,
+			"id":     key.ID.Hex(),
+			"scopes": key.Scopes,
+		},
 	})
 }
 
