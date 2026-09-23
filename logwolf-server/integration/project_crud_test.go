@@ -5,10 +5,13 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
@@ -197,6 +200,94 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	}
 }
 
+// TestDeleteProject_RollsBackOnFailure fails the cascade part-way through — the
+// fourth delete, project_members, after logs, api_keys and settings have gone —
+// and checks that the transaction takes those three back with it.
+func TestDeleteProject_RollsBackOnFailure(t *testing.T) {
+	m := setupProjectModels(t)
+	client := testMongo(t, sharedModelsMongo(t))
+	db := client.Database("logs")
+
+	p, _ := m.InsertProject(data.Project{Name: "Survivor", Slug: "survivor"})
+	projectID := p.ID.Hex()
+
+	if err := m.Insert(data.LogEntry{ProjectID: projectID, Name: "e", Data: "{}", Severity: "info", Tags: []string{}}); err != nil {
+		t.Fatalf("seed log: %v", err)
+	}
+	_, key, err := data.GenerateAPIKey(projectID)
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+	if err := m.SaveAPIKey(key); err != nil {
+		t.Fatalf("SaveAPIKey: %v", err)
+	}
+	if err := m.Settings.SetRetentionDays(projectID, 30); err != nil {
+		t.Fatalf("SetRetentionDays: %v", err)
+	}
+	if _, err := m.InsertProjectMember(data.ProjectMember{
+		ProjectID: p.ID, GithubLogin: "owner1", Role: data.RoleOwner,
+	}); err != nil {
+		t.Fatalf("InsertProjectMember: %v", err)
+	}
+
+	// Let three deletes through, then fail every one after with a non-transient
+	// error, so WithTransaction gives up instead of retrying.
+	setFailPoint(t, client, bson.M{"skip": 3}, bson.M{"failCommands": bson.A{"delete"}, "errorCode": 2})
+
+	err = m.DeleteProject(p.ID)
+	clearFailPoint(t, client)
+
+	if err == nil || !strings.Contains(err.Error(), "project_members") {
+		t.Fatalf("DeleteProject: want a failure at project_members, got %v", err)
+	}
+
+	for coll, filter := range map[string]bson.M{
+		"logs":            {"project_id": projectID},
+		"api_keys":        {"project_id": projectID},
+		"settings":        {"project_id": projectID},
+		"project_members": {"project_id": p.ID},
+		"projects":        {"_id": p.ID},
+	} {
+		if n := countDocs(t, db.Collection(coll), filter); n != 1 {
+			t.Errorf("%s: want the 1 seeded document back after the rollback, got %d", coll, n)
+		}
+	}
+}
+
+// setFailPoint turns on MongoDB's failCommand fail point, which makes the
+// server fail the commands named in data without running them.
+func setFailPoint(t *testing.T, client *mongo.Client, mode, data bson.M) {
+	t.Helper()
+
+	// Clear it even if the test stops early: a fail point left on would break
+	// every test after this one that shares the container.
+	t.Cleanup(func() { clearFailPoint(t, client) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := bson.D{
+		{Key: "configureFailPoint", Value: "failCommand"},
+		{Key: "mode", Value: mode},
+		{Key: "data", Value: data},
+	}
+	if err := client.Database("admin").RunCommand(ctx, cmd).Err(); err != nil {
+		t.Fatalf("configureFailPoint: %v", err)
+	}
+}
+
+func clearFailPoint(t *testing.T, client *mongo.Client) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := bson.D{{Key: "configureFailPoint", Value: "failCommand"}, {Key: "mode", Value: "off"}}
+	if err := client.Database("admin").RunCommand(ctx, cmd).Err(); err != nil {
+		t.Errorf("clear fail point: %v", err)
+	}
+}
+
 // The broker turns a slug collision into a 409 by matching "E11000" in the RPC
 // error string, so that substring is part of the contract this test pins down.
 func TestInsertProject_DuplicateSlug(t *testing.T) {
@@ -264,6 +355,64 @@ func TestRemoveProjectMember_RegularMember(t *testing.T) {
 
 	if err := m.RemoveProjectMember(p.ID, "bob"); err != nil {
 		t.Errorf("RemoveProjectMember member: %v", err)
+	}
+}
+
+// TestRemoveProjectMember_ConcurrentOwners removes both owners of a project at
+// the same moment. Each removal on its own is allowed — there is another owner —
+// but only one of them may win, or the project is left with nobody to own it.
+// A single round rarely hits the window, so it runs many.
+func TestRemoveProjectMember_ConcurrentOwners(t *testing.T) {
+	m := setupProjectModels(t)
+
+	for round := 0; round < 25; round++ {
+		p, err := m.InsertProject(data.Project{Name: "Race", Slug: fmt.Sprintf("race-%d", round)})
+		if err != nil {
+			t.Fatalf("round %d: InsertProject: %v", round, err)
+		}
+		owners := []string{"owner-a", "owner-b"}
+		for _, login := range owners {
+			if _, err := m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: login, Role: data.RoleOwner}); err != nil {
+				t.Fatalf("round %d: InsertProjectMember %s: %v", round, login, err)
+			}
+		}
+
+		start := make(chan struct{})
+		errs := make([]error, len(owners))
+		var wg sync.WaitGroup
+		for i, login := range owners {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs[i] = m.RemoveProjectMember(p.ID, login)
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		var removed, refused int
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				removed++
+			case errors.Is(err, data.ErrLastOwner):
+				refused++
+			default:
+				t.Fatalf("round %d: RemoveProjectMember: %v", round, err)
+			}
+		}
+		if removed != 1 || refused != 1 {
+			t.Fatalf("round %d: want one removal and one ErrLastOwner, got %d and %d", round, removed, refused)
+		}
+
+		members, err := m.GetProjectMembers(p.ID)
+		if err != nil {
+			t.Fatalf("round %d: GetProjectMembers: %v", round, err)
+		}
+		if len(members) != 1 || members[0].Role != data.RoleOwner {
+			t.Fatalf("round %d: want exactly one owner left, got %+v", round, members)
+		}
 	}
 }
 

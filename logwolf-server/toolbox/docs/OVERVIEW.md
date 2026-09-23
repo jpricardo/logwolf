@@ -55,6 +55,13 @@ Stores API key metadata: key value (hashed), label, created/last-used timestamps
 
 Manages per-project settings documents (currently: retention in days), keyed by `(project_id, key)`.
 
+### Projects and members (`project.go`)
+
+Two operations run in MongoDB transactions, so MongoDB must run as a replica set (a single member is enough, and that is how `docker-compose.yml` and the integration tests run it):
+
+- `DeleteProject` removes the project's logs, API keys, settings, members and the project itself as one unit. A failure part-way rolls the whole thing back.
+- `RemoveProjectMember` counts the owners and deletes the member in one transaction, and writes to the project document first (`members_updated_at`). A transaction on its own would still let two concurrent removals of different owners both pass the count. The write to a shared document forces a write conflict, `WithTransaction` retries the loser, and the retry sees `ErrLastOwner`.
+
 ### Startup migration (`migrate.go`)
 
 Adopts data written before projects existed. Logger calls it on every start; Broker and Listener never do.

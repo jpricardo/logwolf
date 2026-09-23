@@ -26,7 +26,7 @@ Managed as a Go workspace (`logwolf-server/go.work`):
 ### Infrastructure
 
 - RabbitMQ for async event ingestion
-- MongoDB for persistence
+- MongoDB for persistence, run as a single-member replica set (`rs0`) because the data layer uses transactions. Compose's `mongo` healthcheck initiates the set the first time it runs, including on existing standalone volumes
 - Caddy as reverse proxy (TLS termination)
 - Full stack via `logwolf-server/docker-compose.yml`
 

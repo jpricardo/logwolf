@@ -27,6 +27,9 @@ services:
       context: .
       dockerfile: ./broker/broker.dockerfile
     restart: always
+    depends_on:
+      mongo:
+        condition: service_healthy
     deploy:
       mode: replicated
       replicas: 1
@@ -41,6 +44,9 @@ services:
       context: .
       dockerfile: ./logger/logger.dockerfile
     restart: always
+    depends_on:
+      mongo:
+        condition: service_healthy
     deploy:
       mode: replicated
       replicas: 1
@@ -71,6 +77,43 @@ services:
       MONGO_INITDB_DATABASE: logs
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
+    # MongoDB runs as a single-member replica set because the data layer uses
+    # transactions, which a standalone mongod refuses. A replica set with auth
+    # needs a keyfile; the only member it authenticates to is itself, so a fresh
+    # one on every start is fine.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        head -c 756 /dev/urandom | base64 > /tmp/mongo-keyfile
+        chown mongodb:mongodb /tmp/mongo-keyfile
+        chmod 400 /tmp/mongo-keyfile
+        exec docker-entrypoint.sh "$$@"
+      - --
+    command: ['mongod', '--replSet', 'rs0', '--keyFile', '/tmp/mongo-keyfile', '--bind_ip_all']
+    # The healthcheck also initiates the replica set the first time it finds one
+    # that isn't, which covers new volumes and existing standalone ones alike.
+    # Healthy means this node is primary and takes writes.
+    healthcheck:
+      test:
+        - CMD
+        - mongo
+        - --quiet
+        - --username=admin
+        - --password=password
+        - --authenticationDatabase=admin
+        - --eval
+        - >-
+          var s = rs.status();
+          if (s.codeName === 'NotYetInitialized') {
+            rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] });
+            s = rs.status();
+          }
+          quit(s.ok === 1 && db.isMaster().ismaster ? 0 : 1);
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
     volumes:
       - ./db-data/mongo/:/data/db
     networks:

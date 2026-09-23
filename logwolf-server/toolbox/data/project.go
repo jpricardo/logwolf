@@ -220,63 +220,103 @@ func (m *Models) UpdateProject(id primitive.ObjectID, name, slug string) (*Proje
 }
 
 // DeleteProject removes a project and all of its associated data (logs, API keys,
-// settings, and members) in dependency order.
+// settings, and members) in one transaction: either every collection loses the
+// project's documents or none does, so a failure part-way leaves nothing to
+// clean up by hand. Transactions need MongoDB to run as a replica set.
 func (m *Models) DeleteProject(id primitive.ObjectID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	session, err := m.client.StartSession()
+	if err != nil {
+		return fmt.Errorf("DeleteProject start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
 	projectIDStr := id.Hex()
 	db := m.client.Database("logs")
 
-	if _, err := db.Collection("logs").DeleteMany(ctx, bson.M{"project_id": projectIDStr}); err != nil {
-		return fmt.Errorf("DeleteProject logs: %w", err)
-	}
-	if _, err := db.Collection("api_keys").DeleteMany(ctx, bson.M{"project_id": projectIDStr}); err != nil {
-		return fmt.Errorf("DeleteProject api_keys: %w", err)
-	}
-	if _, err := db.Collection("settings").DeleteMany(ctx, bson.M{"project_id": projectIDStr}); err != nil {
-		return fmt.Errorf("DeleteProject settings: %w", err)
-	}
-	if _, err := db.Collection("project_members").DeleteMany(ctx, bson.M{"project_id": id}); err != nil {
-		return fmt.Errorf("DeleteProject project_members: %w", err)
-	}
-	if _, err := db.Collection("projects").DeleteOne(ctx, bson.M{"_id": id}); err != nil {
-		return fmt.Errorf("DeleteProject project: %w", err)
-	}
-	return nil
+	// WithTransaction may run the callback more than once on a transient error;
+	// every step is a delete by filter, so a rerun is harmless.
+	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
+		if _, err := db.Collection("logs").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
+			return nil, fmt.Errorf("DeleteProject logs: %w", err)
+		}
+		if _, err := db.Collection("api_keys").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
+			return nil, fmt.Errorf("DeleteProject api_keys: %w", err)
+		}
+		if _, err := db.Collection("settings").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
+			return nil, fmt.Errorf("DeleteProject settings: %w", err)
+		}
+		if _, err := db.Collection("project_members").DeleteMany(sc, bson.M{"project_id": id}); err != nil {
+			return nil, fmt.Errorf("DeleteProject project_members: %w", err)
+		}
+		if _, err := db.Collection("projects").DeleteOne(sc, bson.M{"_id": id}); err != nil {
+			return nil, fmt.Errorf("DeleteProject project: %w", err)
+		}
+		return nil, nil
+	})
+	return err
 }
 
 // RemoveProjectMember removes a member from a project. Returns ErrLastOwner if
 // the member is the sole remaining owner.
+//
+// The owner count and the delete run in one transaction, but that alone is not
+// enough: two requests removing two different owners would each read two owners
+// from their own snapshot, delete different documents, never conflict, and
+// leave the project with none. So each transaction first writes to the
+// project's own document. The second one to get there hits a write conflict,
+// WithTransaction retries it, and the retry counts the owners after the first
+// removal has committed.
 func (m *Models) RemoveProjectMember(projectID primitive.ObjectID, githubLogin string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	coll := m.client.Database("logs").Collection("project_members")
-
-	var target ProjectMember
-	if err := coll.FindOne(ctx, bson.M{"project_id": projectID, "github_login": githubLogin}).Decode(&target); err != nil {
-		return fmt.Errorf("RemoveProjectMember: %w", err)
-	}
-
-	if target.Role == RoleOwner {
-		n, err := coll.CountDocuments(ctx, bson.M{"project_id": projectID, "role": RoleOwner})
-		if err != nil {
-			return fmt.Errorf("RemoveProjectMember count owners: %w", err)
-		}
-		if n <= 1 {
-			return ErrLastOwner
-		}
-	}
-
-	result, err := coll.DeleteOne(ctx, bson.M{"project_id": projectID, "github_login": githubLogin})
+	session, err := m.client.StartSession()
 	if err != nil {
-		return fmt.Errorf("RemoveProjectMember delete: %w", err)
+		return fmt.Errorf("RemoveProjectMember start session: %w", err)
 	}
-	if result.DeletedCount == 0 {
-		return fmt.Errorf("RemoveProjectMember: %w", mongo.ErrNoDocuments)
-	}
-	return nil
+	defer session.EndSession(ctx)
+
+	db := m.client.Database("logs")
+	coll := db.Collection("project_members")
+
+	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
+		// A membership row can outlive its project; with no project document to
+		// write to there is nothing to serialize on, and no owner left to protect.
+		if _, err := db.Collection("projects").UpdateOne(sc,
+			bson.M{"_id": projectID},
+			bson.M{"$currentDate": bson.M{"members_updated_at": true}},
+		); err != nil {
+			return nil, fmt.Errorf("RemoveProjectMember lock project: %w", err)
+		}
+
+		var target ProjectMember
+		if err := coll.FindOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin}).Decode(&target); err != nil {
+			return nil, fmt.Errorf("RemoveProjectMember: %w", err)
+		}
+
+		if target.Role == RoleOwner {
+			n, err := coll.CountDocuments(sc, bson.M{"project_id": projectID, "role": RoleOwner})
+			if err != nil {
+				return nil, fmt.Errorf("RemoveProjectMember count owners: %w", err)
+			}
+			if n <= 1 {
+				return nil, ErrLastOwner
+			}
+		}
+
+		result, err := coll.DeleteOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin})
+		if err != nil {
+			return nil, fmt.Errorf("RemoveProjectMember delete: %w", err)
+		}
+		if result.DeletedCount == 0 {
+			return nil, fmt.Errorf("RemoveProjectMember: %w", mongo.ErrNoDocuments)
+		}
+		return nil, nil
+	})
+	return err
 }
 
 func (m *Models) IsMember(projectID primitive.ObjectID, githubLogin string) (bool, error) {

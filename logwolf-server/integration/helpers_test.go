@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,8 +31,9 @@ import (
 const (
 	testProjectID = "integration"
 
-	mongoUser = "admin"
-	mongoPass = "password"
+	mongoUser  = "admin"
+	mongoPass  = "password"
+	replicaSet = "rs0"
 
 	// internalSecret is what the Broker is started with, so dashboard-style
 	// requests in these tests can reach the internal routes.
@@ -79,6 +81,17 @@ func TestMain(m *testing.M) {
 // startMongo launches a MongoDB container with the credentials the services
 // expect and returns its connection URI. The container lives until the package
 // finishes.
+//
+// It runs as a single-member replica set, as it does in docker-compose.yml,
+// because the data layer uses transactions and a standalone mongod refuses them.
+// The testcontainers mongodb module can do this too, but not for this image:
+// its readiness check waits for a log line that MongoDB 4.2 spells in lower
+// case, and it may run rs.initiate against the entrypoint's temporary init
+// server rather than the real one. Initiating from here instead, over the
+// mapped port, only ever reaches the real server.
+//
+// Test commands are enabled so tests can inject failures with the failCommand
+// fail point.
 func startMongo() (string, error) {
 	ctx := context.Background()
 
@@ -89,6 +102,15 @@ func startMongo() (string, error) {
 			Env: map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": mongoUser,
 				"MONGO_INITDB_ROOT_PASSWORD": mongoPass,
+			},
+			// A replica set with auth needs a keyfile. The only member it
+			// authenticates to is itself, so a fresh one per container is fine.
+			Entrypoint: []string{"bash", "-c", `head -c 756 /dev/urandom | base64 > /tmp/keyfile &&
+				chown mongodb:mongodb /tmp/keyfile && chmod 400 /tmp/keyfile &&
+				exec docker-entrypoint.sh "$@"`, "--"},
+			Cmd: []string{
+				"mongod", "--replSet", replicaSet, "--keyFile", "/tmp/keyfile", "--bind_ip_all",
+				"--setParameter", "enableTestCommands=1",
 			},
 			WaitingFor: wait.ForLog("waiting for connections on port 27017"),
 		},
@@ -108,7 +130,61 @@ func startMongo() (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("mongodb://%s:%s@%s:%s", mongoUser, mongoPass, host, port.Port()), nil
+	// The member is registered as localhost:27017, which only means something
+	// inside the container, so clients must not go looking for it: they talk to
+	// the mapped port directly.
+	uri := fmt.Sprintf("mongodb://%s:%s@%s:%s/?directConnection=true", mongoUser, mongoPass, host, port.Port())
+
+	if err := initiateReplicaSet(uri, 60*time.Second); err != nil {
+		return "", err
+	}
+	return uri, nil
+}
+
+// initiateReplicaSet turns the single mongod at uri into a replica set and waits
+// until it has elected itself primary, which is when it starts accepting writes.
+func initiateReplicaSet(uri string, timeout time.Duration) error {
+	client, err := connectMongo(uri)
+	if err != nil {
+		return fmt.Errorf("replica set: connect: %w", err)
+	}
+	defer client.Disconnect(context.Background())
+
+	admin := client.Database("admin")
+	config := bson.M{
+		"_id":     replicaSet,
+		"members": bson.A{bson.M{"_id": 0, "host": "localhost:27017"}},
+	}
+
+	var lastErr error
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		lastErr = admin.RunCommand(ctx, bson.D{{Key: "replSetInitiate", Value: config}}).Err()
+		cancel()
+
+		var cmdErr mongo.CommandError
+		if lastErr == nil || errors.As(lastErr, &cmdErr) && cmdErr.Name == "AlreadyInitialized" {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	for time.Now().Before(deadline) {
+		var hello struct {
+			IsMaster bool `bson:"ismaster"`
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		lastErr = admin.RunCommand(ctx, bson.D{{Key: "isMaster", Value: 1}}).Decode(&hello)
+		cancel()
+
+		if lastErr == nil && hello.IsMaster {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	return fmt.Errorf("replica set: no primary after %s (last error: %v)", timeout, lastErr)
 }
 
 func startRabbit() (string, error) {
