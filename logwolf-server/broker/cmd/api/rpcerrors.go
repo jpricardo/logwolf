@@ -27,7 +27,8 @@ func classifyRPCError(err error) rpcErrorKind {
 	case strings.Contains(msg, "E11000"):
 		return rpcErrDuplicate
 	// A malformed id is not found either: no document can have it.
-	case strings.Contains(msg, "no documents in result"), strings.Contains(msg, "not a valid ObjectID"):
+	case strings.Contains(msg, "no documents in result"), strings.Contains(msg, "not a valid ObjectID"),
+		strings.Contains(msg, data.ErrKeyNotFound.Error()):
 		return rpcErrNotFound
 	case strings.Contains(msg, data.ErrLastOwner.Error()):
 		return rpcErrLastOwner
@@ -54,6 +55,10 @@ var projectNotFound = rpcErrorMessages{rpcErrNotFound: "project not found"}
 // logNotFound covers a log id that names nothing in the project, including one
 // that belongs to another project.
 var logNotFound = rpcErrorMessages{rpcErrNotFound: "log not found"}
+
+// keyNotFound covers an API key id that names nothing, including, on revoke,
+// one that belongs to another project.
+var keyNotFound = rpcErrorMessages{rpcErrNotFound: "key not found"}
 
 // rpcErrorJSON answers a failed logger call with the status its kind maps to.
 // Anything unclassified is a 500: the logger or the database failed, not the

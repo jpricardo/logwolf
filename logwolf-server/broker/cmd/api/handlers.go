@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"logwolf-toolbox/data"
 	"logwolf-toolbox/event"
@@ -197,9 +196,9 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keys, err := app.Models.ListAPIKeysByProject(projectID)
-	if err != nil {
-		app.errorJSON(w, err)
+	var keys []data.APIKey
+	if err := client.Call("RPCServer.ListAPIKeys", &data.ProjectArgs{ProjectID: projectID}, &keys); err != nil {
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -250,14 +249,10 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plaintext, key, err := data.GenerateAPIKey(body.ProjectID, scopes)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	if err := app.Models.SaveAPIKey(key); err != nil {
-		app.errorJSON(w, err)
+	var created data.RPCCreateAPIKeyReply
+	args := data.RPCCreateAPIKeyArgs{ProjectID: body.ProjectID, Scopes: scopes}
+	if err := client.Call("RPCServer.CreateAPIKey", &args, &created); err != nil {
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -266,10 +261,10 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		Error:   false,
 		Message: "API key created. Copy it now — it will not be shown again.",
 		Data: map[string]any{
-			"key":    plaintext,
-			"prefix": key.Prefix,
-			"id":     key.ID.Hex(),
-			"scopes": key.Scopes,
+			"key":    created.Plaintext,
+			"prefix": created.Key.Prefix,
+			"id":     created.Key.ID.Hex(),
+			"scopes": created.Key.Scopes,
 		},
 	})
 }
@@ -277,22 +272,18 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	key, err := app.Models.GetAPIKeyByID(id)
-	if errors.Is(err, data.ErrKeyNotFound) {
-		app.errorJSON(w, fmt.Errorf("key not found"), http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
 	client, err := rpc.Dial("tcp", loggerRPCAddr())
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 	defer client.Close()
+
+	var key data.APIKey
+	if err := client.Call("RPCServer.GetAPIKey", &data.RPCAPIKeyIDArgs{ID: id}, &key); err != nil {
+		app.rpcErrorJSON(w, err, keyNotFound)
+		return
+	}
 
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, key.ProjectID, userLogin)
@@ -305,8 +296,10 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := app.Models.RevokeAPIKey(id); err != nil {
-		app.errorJSON(w, err)
+	var reply string
+	args := data.RPCRevokeAPIKeyArgs{ProjectID: key.ProjectID, ID: id}
+	if err := client.Call("RPCServer.RevokeAPIKey", &args, &reply); err != nil {
+		app.rpcErrorJSON(w, err, keyNotFound)
 		return
 	}
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Key revoked."})

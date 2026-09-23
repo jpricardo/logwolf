@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"logwolf-toolbox/data"
 	"logwolf-toolbox/rabbitmq"
 	"net/http"
 	"os"
@@ -13,8 +12,6 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
@@ -23,15 +20,9 @@ const (
 
 type Config struct {
 	Rabbit *amqp.Connection
-	Models data.Models
 }
 
 func main() {
-	mongoClient, err := connectToMongo()
-	if err != nil {
-		log.Panic(err)
-	}
-
 	// RabbitMQ
 	conn, err := rabbitmq.ConnectToRabbitMQ(rabbitConnectionString())
 	if err != nil {
@@ -41,7 +32,6 @@ func main() {
 
 	app := Config{
 		Rabbit: conn,
-		Models: data.New(mongoClient),
 	}
 
 	srv := &http.Server{
@@ -73,19 +63,6 @@ func main() {
 	}
 
 	log.Println("Shutdown complete.")
-}
-
-func connectToMongo() (*mongo.Client, error) {
-	clientOptions := options.Client().ApplyURI(mongoConnectionString())
-	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
-	return mongo.Connect(context.TODO(), clientOptions)
-}
-
-func mongoConnectionString() string {
-	if u := os.Getenv("MONGO_URL"); u != "" {
-		return u
-	}
-	return "mongodb://mongo:27017"
 }
 
 func rabbitConnectionString() string {

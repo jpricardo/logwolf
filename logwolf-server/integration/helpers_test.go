@@ -305,7 +305,6 @@ func buildStack() (*testStack, error) {
 	}
 
 	if err := spawn("../broker/cmd/api", map[string]string{
-		"MONGO_URL":           mongoURI,
 		"RABBITMQ_URL":        rabbitURI,
 		"LOGGER_RPC_ADDR":     loggerRPCAddr,
 		"BROKER_PORT":         portOf(brokerHTTPAddr),

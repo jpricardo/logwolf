@@ -107,7 +107,7 @@ Entry point: `cmd/api/main.go`. Key files: `routes.go`, `handlers.go`, `middlewa
 - `POST /logs`, `POST /logs/batch` — enqueue events (async, 202)
 - `GET /logs`, `DELETE /logs` — proxy to Logger RPC
 - Internal routes (`X-Internal-Secret` + `X-User-Login`): `/keys`, `/settings/retention`, `/metrics`, `/projects/...` — including `/projects/{id}/logs`, the dashboard's project-scoped read/write path for events
-- `requireAPIKey` middleware caches key lookups; `requireInternalSecret` guards dashboard routes
+- `requireAPIKey` middleware validates keys over logger RPC and caches the result; `requireInternalSecret` guards dashboard routes. The broker has no MongoDB client: key storage (`/keys`) goes through logger RPC too
 
 ### Listener (`logwolf-server/listener`)
 
@@ -123,6 +123,7 @@ RPC methods (Go stdlib `net/rpc`):
 - `RPCServer.GetLogs` — query with pagination/filtering
 - `RPCServer.GetLog` — fetch one event by id within a project
 - `RPCServer.DeleteLog` — delete by filter, returns count
+- `RPCServer.ValidateAPIKey`, `ListAPIKeys`, `CreateAPIKey`, `GetAPIKey`, `RevokeAPIKey` — API key storage for the broker; replies never carry the hash, and revoke matches the project as well as the id
 
 ### Toolbox (`logwolf-server/toolbox`)
 
@@ -173,7 +174,7 @@ Per-service env vars:
 
 | Variable                         | Service          | Default                       | Description                                                            |
 | -------------------------------- | ---------------- | ----------------------------- | ---------------------------------------------------------------------- |
-| `MONGO_URL`                      | broker, logger   | `mongodb://mongo:27017`       | MongoDB connection                                                     |
+| `MONGO_URL`                      | logger           | `mongodb://mongo:27017`       | MongoDB connection                                                     |
 | `RABBITMQ_URL`                   | broker, listener | `amqp://guest:guest@rabbitmq` | RabbitMQ connection                                                    |
 | `BROKER_PORT`                    | broker           | `80`                          | HTTP listen port                                                       |
 | `LOGGER_RPC_PORT`                | logger           | `5001`                        | RPC listen port                                                        |

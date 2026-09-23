@@ -47,6 +47,46 @@ var AllScopes = []string{ScopeIngest, ScopeRead, ScopeDelete}
 // delete them.
 var DefaultScopes = []string{ScopeIngest}
 
+// The logger's API key RPC methods take and return these. The broker never
+// sees a key's hash: the logger clears it before replying.
+
+// RPCValidateAPIKeyArgs carries a plaintext key to RPCServer.ValidateAPIKey.
+type RPCValidateAPIKeyArgs struct {
+	Plaintext string
+}
+
+// RPCValidateAPIKeyReply is what RPCServer.ValidateAPIKey answers. Key is the
+// zero value unless Valid.
+type RPCValidateAPIKeyReply struct {
+	Valid bool
+	Key   APIKey
+}
+
+// RPCCreateAPIKeyArgs asks RPCServer.CreateAPIKey for a key in ProjectID.
+// Scopes goes through NormalizeScopes, so an empty list yields DefaultScopes.
+type RPCCreateAPIKeyArgs struct {
+	ProjectID string
+	Scopes    []string
+}
+
+// RPCCreateAPIKeyReply carries the new key and its plaintext, which exists
+// nowhere else once the reply is sent.
+type RPCCreateAPIKeyReply struct {
+	Plaintext string
+	Key       APIKey
+}
+
+// RPCAPIKeyIDArgs names a key by id, for RPCServer.GetAPIKey.
+type RPCAPIKeyIDArgs struct {
+	ID string
+}
+
+// RPCRevokeAPIKeyArgs names a key of a project, for RPCServer.RevokeAPIKey.
+type RPCRevokeAPIKeyArgs struct {
+	ProjectID string
+	ID        string
+}
+
 type APIKey struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	ProjectID string             `bson:"project_id" json:"project_id"`
@@ -181,22 +221,31 @@ func (m *Models) EnsureAPIKeyIndexes() error {
 	return nil
 }
 
-func (m *Models) RevokeAPIKey(id string) error {
+// RevokeAPIKey deactivates the key id of projectID. The project is part of the
+// filter, so an id belonging to another project is ErrKeyNotFound, the same as
+// one that never existed.
+func (m *Models) RevokeAPIKey(projectID, id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	collection := m.client.Database("logs").Collection("api_keys")
 	docID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return err
 	}
 
+	collection := m.client.Database("logs").Collection("api_keys")
 	now := time.Now()
-	_, err = collection.UpdateOne(ctx,
-		bson.M{"_id": docID},
+	result, err := collection.UpdateOne(ctx,
+		bson.M{"_id": docID, "project_id": projectID},
 		bson.M{"$set": bson.M{"active": false, "revoked_at": now}},
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrKeyNotFound
+	}
+	return nil
 }
 
 func (m *Models) GetAPIKeyByID(id string) (*APIKey, error) {
@@ -242,7 +291,8 @@ func (m *Models) ListAPIKeysByProject(projectID string) ([]APIKey, error) {
 	return keys, nil
 }
 
-func (m *Models) SaveAPIKey(key APIKey) error {
+// SaveAPIKey inserts key and sets its ID to the one the database assigned.
+func (m *Models) SaveAPIKey(key *APIKey) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

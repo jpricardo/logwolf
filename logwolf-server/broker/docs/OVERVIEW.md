@@ -84,6 +84,7 @@ the handler's choosing:
 | ------------------------------------------------------ | ------ | ------------------------------------------------------------------------- |
 | Unique index violation (`E11000`)                      | 409    | Adding an existing member; renaming to a slug another project already has |
 | No document matched, or the id is not a valid ObjectID | 404    | A malformed project id on any project-scoped route                        |
+| `data.ErrKeyNotFound`                                  | 404    | Revoking a key that does not exist                                        |
 | `data.ErrLastOwner`                                    | 400    | Removing or demoting the last owner                                       |
 | Anything else                                          | 500    | The logger or MongoDB failed                                              |
 
@@ -100,7 +101,7 @@ called. A missing `days` is a 400 as well, rather than 0 (keep forever).
 
 Two middleware layers:
 
-- **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token; keys are cached with TTL + rate limiting to avoid hot-path DB reads.
+- **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token through the logger (`RPCServer.ValidateAPIKey`); results are cached with TTL + rate limiting so the hot path does not make an RPC call per request.
   - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too, so like revocation, nothing about a key changes for up to 60 seconds.
 - **`requireInternalSecret`** — validates the `X-Internal-Secret` header; used exclusively by the dashboard backend.
 
@@ -110,7 +111,7 @@ Two middleware layers:
 Client → POST /logs → requireAPIKey → publish to RabbitMQ → 202 Accepted
 ```
 
-Events are published to the `logs_topic` exchange with routing key `log.<SEVERITY>`. The broker never writes to MongoDB directly.
+Events are published to the `logs_topic` exchange with routing key `log.<SEVERITY>`. The broker has no MongoDB client at all: API keys, like everything else it stores or reads, go through the logger's RPC methods.
 
 ## Read path
 
@@ -121,11 +122,12 @@ Dashboard → GET /projects/{id}/logs     → membership check    → RPC call t
 
 ## Environment variables
 
-| Variable       | Default                       | Description                |
-| -------------- | ----------------------------- | -------------------------- |
-| `MONGO_URL`    | `mongodb://mongo:27017`       | MongoDB connection string  |
-| `RABBITMQ_URL` | `amqp://guest:guest@rabbitmq` | RabbitMQ connection string |
-| `BROKER_PORT`  | `80`                          | HTTP listen port           |
+| Variable              | Default                       | Description                    |
+| --------------------- | ----------------------------- | ------------------------------ |
+| `RABBITMQ_URL`        | `amqp://guest:guest@rabbitmq` | RabbitMQ connection string     |
+| `BROKER_PORT`         | `80`                          | HTTP listen port               |
+| `LOGGER_RPC_ADDR`     | `logger:5001`                 | Logger RPC address             |
+| `INTERNAL_API_SECRET` | —                             | Shared secret for `/keys` etc. |
 
 ## Key dependencies
 
@@ -134,7 +136,6 @@ Dashboard → GET /projects/{id}/logs     → membership check    → RPC call t
 | `go-chi/chi`          | HTTP router                     |
 | `go-chi/cors`         | CORS middleware                 |
 | `rabbitmq/amqp091-go` | RabbitMQ producer               |
-| `mongo-driver`        | API key + settings storage      |
 | `logwolf-toolbox`     | Shared models and queue helpers |
 
 ## Development
@@ -152,6 +153,6 @@ cd logwolf-server/broker && go test ./cmd/api/... -v
 | Service  | Relationship                                        |
 | -------- | --------------------------------------------------- |
 | RabbitMQ | Broker publishes events here on write               |
-| Logger   | Broker calls Logger via RPC on read/delete          |
+| Logger   | Broker calls Logger via RPC on read/delete and keys |
 | Caddy    | Reverse-proxies public traffic to Broker            |
 | Frontend | Calls internal routes using the shared `API_SECRET` |

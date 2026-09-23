@@ -55,6 +55,8 @@ Stores API key metadata: project ID, bcrypt hash, the key's first 10 characters 
 
 `ValidateAPIKey` refuses anything not shaped like that without a query. For the rest, it fetches only the active keys that share the prefix, normally exactly one, and bcrypts those. Its cost does not grow with the number of keys across projects. `EnsureAPIKeyIndexes` creates the `prefix` index that lookup uses; Logger calls it on startup.
 
+`SaveAPIKey` sets the key's `ID` to the one it was stored under. `RevokeAPIKey` takes the project as well as the id and matches both, so an id from another project is `ErrKeyNotFound`, the same as one that never existed. Only Logger calls these; the Broker reaches them over RPC with the `RPC*APIKey*` argument types.
+
 ### `Settings`
 
 Manages per-project settings documents (currently: retention in days), keyed by `(project_id, key)`.
