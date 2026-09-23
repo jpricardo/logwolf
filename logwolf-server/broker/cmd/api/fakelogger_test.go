@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/rpc"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -31,6 +32,8 @@ type fakeLogger struct {
 	logs      map[string][]data.LogEntry      // project id hex -> logs
 	retention map[string]int                  // project id hex -> days
 	metrics   map[string]data.Metrics         // project id hex -> metrics
+	keys      map[string]data.APIKey          // key id hex -> key
+	plaintext map[string]string               // plaintext key -> key id hex
 
 	// Recorded calls, for asserting what the broker forwarded.
 	getLogsParams   []data.QueryParams
@@ -42,6 +45,7 @@ type fakeLogger struct {
 	addedMembers    []data.RPCAddMemberArgs
 	removedMembers  []data.RPCRemoveMemberArgs
 	roleChanges     []data.RPCUpdateMemberRoleArgs
+	revokedKeys     []data.RPCRevokeAPIKeyArgs
 
 	// Failure injection.
 	duplicateSlug  string // CreateProject returns an E11000 error for this slug
@@ -75,6 +79,8 @@ func newFakeLogger() *fakeLogger {
 		logs:      map[string][]data.LogEntry{},
 		retention: map[string]int{},
 		metrics:   map[string]data.Metrics{},
+		keys:      map[string]data.APIKey{},
+		plaintext: map[string]string{},
 	}
 }
 
@@ -340,7 +346,102 @@ func (f *fakeLogger) GetMetrics(args *data.ProjectArgs, reply *data.Metrics) err
 	return nil
 }
 
+func (f *fakeLogger) ValidateAPIKey(args *data.RPCValidateAPIKeyArgs, reply *data.RPCValidateAPIKeyReply) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	id, ok := f.plaintext[args.Plaintext]
+	if !ok || !f.keys[id].Active {
+		return nil
+	}
+	reply.Valid = true
+	reply.Key = f.keys[id]
+	return nil
+}
+
+func (f *fakeLogger) ListAPIKeys(args *data.ProjectArgs, reply *[]data.APIKey) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var out []data.APIKey
+	for _, k := range f.keys {
+		if k.ProjectID == args.ProjectID {
+			out = append(out, k)
+		}
+	}
+	*reply = out
+	return nil
+}
+
+func (f *fakeLogger) CreateAPIKey(args *data.RPCCreateAPIKeyArgs, reply *data.RPCCreateAPIKeyReply) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	scopes, err := data.NormalizeScopes(args.Scopes)
+	if err != nil {
+		return fmt.Errorf("CreateAPIKey: %w", err)
+	}
+	reply.Plaintext, reply.Key = f.storeKey(args.ProjectID, scopes)
+	return nil
+}
+
+func (f *fakeLogger) GetAPIKey(args *data.RPCAPIKeyIDArgs, reply *data.APIKey) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if _, err := primitive.ObjectIDFromHex(args.ID); err != nil {
+		return err
+	}
+	k, ok := f.keys[args.ID]
+	if !ok {
+		return data.ErrKeyNotFound
+	}
+	*reply = k
+	return nil
+}
+
+func (f *fakeLogger) RevokeAPIKey(args *data.RPCRevokeAPIKeyArgs, reply *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.revokedKeys = append(f.revokedKeys, *args)
+	k, ok := f.keys[args.ID]
+	if !ok || k.ProjectID != args.ProjectID {
+		return data.ErrKeyNotFound
+	}
+	k.Active = false
+	f.keys[args.ID] = k
+	*reply = "ok"
+	return nil
+}
+
 // --- test-side helpers (unexported, so net/rpc ignores them) ---
+
+var keySeq atomic.Int64
+
+// storeKey mints a key the way the logger would, minus the hashing, and keeps
+// its plaintext so ValidateAPIKey can find it. The caller holds f.mu.
+func (f *fakeLogger) storeKey(projectID string, scopes []string) (string, data.APIKey) {
+	n := keySeq.Add(1)
+	id := fmt.Sprintf("eeeeeeeeeeeeeeeeeeee%04d", n)
+	plaintext := fmt.Sprintf("lw_fakelogger%033d", n)
+	k := data.APIKey{
+		ID:        mustObjectID(id),
+		ProjectID: projectID,
+		Prefix:    plaintext[:10],
+		Scopes:    scopes,
+		Active:    true,
+	}
+	f.keys[id] = k
+	f.plaintext[plaintext] = id
+	return plaintext, k
+}
+
+func (f *fakeLogger) addKey(projectID string, scopes ...string) (plaintext string, key data.APIKey) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.storeKey(projectID, scopes)
+}
 
 func (f *fakeLogger) addProject(id, name, slug string) {
 	f.mu.Lock()

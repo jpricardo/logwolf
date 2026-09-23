@@ -30,6 +30,18 @@ The RPC server is exposed via Go's standard `net/rpc` package on TCP port 5001.
 | `RPCServer.GetLog`    | `RPCLogEntryFilter` | `LogEntry`   | Fetch one entry by id within a project             |
 | `RPCServer.DeleteLog` | `RPCLogEntryFilter` | `int64`      | Delete matching log entries; returns count deleted |
 
+API keys live here too, so the Broker needs no database of its own:
+
+| Method                     | Input                   | Output                   | Description                                                      |
+| -------------------------- | ----------------------- | ------------------------ | ---------------------------------------------------------------- |
+| `RPCServer.ValidateAPIKey` | `RPCValidateAPIKeyArgs` | `RPCValidateAPIKeyReply` | Resolve a plaintext key; unknown or revoked is `Valid` false     |
+| `RPCServer.ListAPIKeys`    | `ProjectArgs`           | `[]APIKey`               | A project's keys, newest first                                   |
+| `RPCServer.CreateAPIKey`   | `RPCCreateAPIKeyArgs`   | `RPCCreateAPIKeyReply`   | Generate and store a key; the plaintext is returned once         |
+| `RPCServer.GetAPIKey`      | `RPCAPIKeyIDArgs`       | `APIKey`                 | Fetch a key by id, for the Broker's membership check             |
+| `RPCServer.RevokeAPIKey`   | `RPCRevokeAPIKeyArgs`   | `string`                 | Revoke a key of a project; another project's is `ErrKeyNotFound` |
+
+Replies never carry a key's bcrypt hash. `gob` sends every exported field whatever its `json` tag says, so the logger clears it first.
+
 ## HTTP interface
 
 | Method | Path    | Description                   |
@@ -133,7 +145,7 @@ The project-scoped RPC methods are covered end to end by the integration suite
 
 | Service  | Relationship                                                  |
 | -------- | ------------------------------------------------------------- |
-| Broker   | Calls Logger RPC for reads and deletes                        |
+| Broker   | Calls Logger RPC for reads, deletes and API keys              |
 | Listener | Calls Logger RPC to persist events from the queue             |
 | MongoDB  | Logger is the sole consumer — no other service touches the DB |
 

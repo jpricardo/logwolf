@@ -131,8 +131,29 @@ type keyValidator interface {
 	ValidateAPIKey(plaintext string) (bool, *data.APIKey, error)
 }
 
+// loggerKeyValidator validates keys through the logger, which owns the
+// api_keys collection.
+type loggerKeyValidator struct{}
+
+func (loggerKeyValidator) ValidateAPIKey(plaintext string) (bool, *data.APIKey, error) {
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		return false, nil, err
+	}
+	defer client.Close()
+
+	var reply data.RPCValidateAPIKeyReply
+	if err := client.Call("RPCServer.ValidateAPIKey", &data.RPCValidateAPIKeyArgs{Plaintext: plaintext}, &reply); err != nil {
+		return false, nil, err
+	}
+	if !reply.Valid {
+		return false, nil, nil
+	}
+	return true, &reply.Key, nil
+}
+
 func (app *Config) requireAPIKey(next http.Handler) http.Handler {
-	return app.requireAPIKeyWith(&app.Models, next)
+	return app.requireAPIKeyWith(loggerKeyValidator{}, next)
 }
 
 func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Handler {

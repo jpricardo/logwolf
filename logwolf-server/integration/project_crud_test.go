@@ -145,7 +145,7 @@ func TestDeleteProject_Cascade(t *testing.T) {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
 	_ = plaintext
-	if err := m.SaveAPIKey(key); err != nil {
+	if err := m.SaveAPIKey(&key); err != nil {
 		t.Fatalf("SaveAPIKey: %v", err)
 	}
 	if err := m.Settings.SetRetentionDays(p.ID.Hex(), 30); err != nil {
@@ -226,7 +226,7 @@ func TestDeleteProject_RollsBackOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
-	if err := m.SaveAPIKey(key); err != nil {
+	if err := m.SaveAPIKey(&key); err != nil {
 		t.Fatalf("SaveAPIKey: %v", err)
 	}
 	if err := m.Settings.SetRetentionDays(projectID, 30); err != nil {

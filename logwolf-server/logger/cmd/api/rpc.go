@@ -314,3 +314,84 @@ func (r *RPCServer) ListMembers(args *data.ProjectArgs, reply *[]data.ProjectMem
 	*reply = members
 	return nil
 }
+
+// --- API keys ---
+//
+// The broker authenticates SDK clients and manages keys for the dashboard, but
+// only the logger touches MongoDB, so every key operation is one of these.
+// Replies never carry a key's hash: gob sends every exported field, whatever
+// its json tag says.
+
+// ValidateAPIKey resolves a plaintext key to the active key it belongs to. An
+// unknown or revoked key is not an error: it is Valid false.
+func (r *RPCServer) ValidateAPIKey(args *data.RPCValidateAPIKeyArgs, reply *data.RPCValidateAPIKeyReply) error {
+	valid, key, err := r.models.ValidateAPIKey(args.Plaintext)
+	if err != nil {
+		log.Println("Error validating API key:", err)
+		return err
+	}
+	reply.Valid = valid
+	if key != nil {
+		reply.Key = withoutHash(*key)
+	}
+	return nil
+}
+
+func (r *RPCServer) ListAPIKeys(args *data.ProjectArgs, reply *[]data.APIKey) error {
+	log.Printf("Listing API keys for project: %s", args.ProjectID)
+	keys, err := r.models.ListAPIKeysByProject(args.ProjectID)
+	if err != nil {
+		log.Println("Error listing API keys:", err)
+		return err
+	}
+	for i := range keys {
+		keys[i] = withoutHash(keys[i])
+	}
+	*reply = keys
+	return nil
+}
+
+// CreateAPIKey generates a key for the project and stores it. The plaintext
+// goes back to the caller once and is never stored.
+func (r *RPCServer) CreateAPIKey(args *data.RPCCreateAPIKeyArgs, reply *data.RPCCreateAPIKeyReply) error {
+	log.Printf("Creating API key for project: %s", args.ProjectID)
+	plaintext, key, err := data.GenerateAPIKey(args.ProjectID, args.Scopes)
+	if err != nil {
+		return fmt.Errorf("CreateAPIKey: %w", err)
+	}
+	if err := r.models.SaveAPIKey(&key); err != nil {
+		log.Println("Error saving API key:", err)
+		return err
+	}
+	reply.Plaintext = plaintext
+	reply.Key = withoutHash(key)
+	return nil
+}
+
+// GetAPIKey fetches a key by id alone, so the broker can learn its project and
+// check the caller's membership before revoking it. A miss is data.ErrKeyNotFound.
+func (r *RPCServer) GetAPIKey(args *data.RPCAPIKeyIDArgs, reply *data.APIKey) error {
+	key, err := r.models.GetAPIKeyByID(args.ID)
+	if err != nil {
+		return err
+	}
+	*reply = withoutHash(*key)
+	return nil
+}
+
+// RevokeAPIKey deactivates a key of a project. An id that names no key of that
+// project is data.ErrKeyNotFound.
+func (r *RPCServer) RevokeAPIKey(args *data.RPCRevokeAPIKeyArgs, reply *string) error {
+	log.Printf("Revoking API key %s of project %s", args.ID, args.ProjectID)
+	if err := r.models.RevokeAPIKey(args.ProjectID, args.ID); err != nil {
+		log.Println("Error revoking API key:", err)
+		return err
+	}
+	*reply = "ok"
+	return nil
+}
+
+func withoutHash(key data.APIKey) data.APIKey {
+	key.Hash = ""
+	return key
+}

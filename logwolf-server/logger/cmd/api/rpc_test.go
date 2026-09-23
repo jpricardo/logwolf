@@ -104,3 +104,51 @@ func TestRequestPurge_NeverBlocks(t *testing.T) {
 		t.Errorf("full queue: now holds %q, want the earlier %q", got, "earlier")
 	}
 }
+
+// The API key methods refuse input that could never name a key before they
+// touch the database, so the zero-value server answers these.
+
+func TestValidateAPIKey_MalformedKeyIsInvalid(t *testing.T) {
+	srv := &RPCServer{}
+
+	var reply data.RPCValidateAPIKeyReply
+	if err := srv.ValidateAPIKey(&data.RPCValidateAPIKeyArgs{Plaintext: "lw_short"}, &reply); err != nil {
+		t.Fatalf("ValidateAPIKey: %v", err)
+	}
+	if reply.Valid {
+		t.Error("a malformed key was accepted")
+	}
+}
+
+func TestCreateAPIKey_UnknownScope(t *testing.T) {
+	srv := &RPCServer{}
+
+	var reply data.RPCCreateAPIKeyReply
+	err := srv.CreateAPIKey(&data.RPCCreateAPIKeyArgs{ProjectID: "p", Scopes: []string{"admin"}}, &reply)
+	if !errors.Is(err, data.ErrInvalidScope) {
+		t.Errorf("CreateAPIKey with an unknown scope: want ErrInvalidScope, got %v", err)
+	}
+	if reply.Plaintext != "" {
+		t.Error("a key was handed out despite the error")
+	}
+}
+
+func TestAPIKeyMethods_MalformedID(t *testing.T) {
+	srv := &RPCServer{}
+
+	var key data.APIKey
+	if err := srv.GetAPIKey(&data.RPCAPIKeyIDArgs{ID: "not-an-id"}, &key); err == nil {
+		t.Error("GetAPIKey accepted a malformed id")
+	}
+	var reply string
+	if err := srv.RevokeAPIKey(&data.RPCRevokeAPIKeyArgs{ProjectID: "p", ID: "not-an-id"}, &reply); err == nil {
+		t.Error("RevokeAPIKey accepted a malformed id")
+	}
+}
+
+func TestWithoutHash(t *testing.T) {
+	key := data.APIKey{Prefix: "lw_abcdefg", Hash: "$2a$10$secret"}
+	if got := withoutHash(key); got.Hash != "" || got.Prefix != key.Prefix {
+		t.Errorf("withoutHash = %+v, want the key minus its hash", got)
+	}
+}
