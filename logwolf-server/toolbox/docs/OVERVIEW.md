@@ -49,7 +49,9 @@ Represents a single log record in MongoDB. Key fields: `Name`, `Data`, `Severity
 
 ### `APIKey`
 
-Stores API key metadata: key value (hashed), label, created/last-used timestamps. Key generation uses `golang.org/x/crypto` for secure randomness.
+Stores API key metadata: project ID, bcrypt hash, the key's first 10 characters in clear as `prefix` (`lw_` + 7), active flag, and created/revoked timestamps. `GenerateAPIKey` builds `lw_` + 32 random bytes in base64url, 46 characters in all.
+
+`ValidateAPIKey` refuses anything not shaped like that without a query. For the rest, it fetches only the active keys that share the prefix, normally exactly one, and bcrypts those. Its cost does not grow with the number of keys across projects. `EnsureAPIKeyIndexes` creates the `prefix` index that lookup uses; Logger calls it on startup.
 
 ### `Settings`
 

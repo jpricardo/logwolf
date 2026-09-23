@@ -3,10 +3,10 @@ package data
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,6 +14,15 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	apiKeyScheme = "lw_"
+	// apiKeyPrefixLength is how much of a key is stored in clear as its prefix:
+	// "lw_" + 7 chars — enough to identify, not enough to brute-force.
+	apiKeyPrefixLength = 10
+	// apiKeyLength is the length of every key GenerateAPIKey returns.
+	apiKeyLength = len(apiKeyScheme) + 43 // base64.RawURLEncoding of 32 bytes
 )
 
 // ErrKeyNotFound is returned when an API key is looked up by ID but does not exist.
@@ -37,8 +46,8 @@ func GenerateAPIKey(projectID string) (plaintext string, key APIKey, err error) 
 	}
 
 	encoded := base64.RawURLEncoding.EncodeToString(raw)
-	plaintext = fmt.Sprintf("lw_%s", encoded)
-	prefix := plaintext[:10] // "lw_" + 7 chars — enough to identify, not enough to brute-force
+	plaintext = apiKeyScheme + encoded
+	prefix := plaintext[:apiKeyPrefixLength]
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
 	if err != nil {
@@ -55,15 +64,22 @@ func GenerateAPIKey(projectID string) (plaintext string, key APIKey, err error) 
 	return
 }
 
+// ValidateAPIKey resolves a plaintext key to the active APIKey it belongs to.
+//
+// It looks candidates up by prefix, and bcrypts only those — normally exactly
+// one — so the cost does not grow with the number of keys across projects.
+// A key GenerateAPIKey could not have produced is refused without touching the
+// database.
 func (m *Models) ValidateAPIKey(plaintext string) (bool, *APIKey, error) {
+	if len(plaintext) != apiKeyLength || !strings.HasPrefix(plaintext, apiKeyScheme) {
+		return false, nil, nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	collection := m.client.Database("logs").Collection("api_keys")
-
-	// Pull all active keys — the collection will be small in practice.
-	// The in-memory cache in the middleware means this is rarely hit.
-	cursor, err := collection.Find(ctx, bson.M{"active": true})
+	cursor, err := collection.Find(ctx, bson.M{"active": true, "prefix": plaintext[:apiKeyPrefixLength]})
 	if err != nil {
 		return false, nil, err
 	}
@@ -74,17 +90,28 @@ func (m *Models) ValidateAPIKey(plaintext string) (bool, *APIKey, error) {
 		if err := cursor.Decode(&key); err != nil {
 			continue
 		}
-
-		err := bcrypt.CompareHashAndPassword([]byte(key.Hash), []byte(plaintext))
-		if err == nil {
-			// Double-check with constant-time compare on the prefix as an extra guard
-			if subtle.ConstantTimeCompare([]byte(key.Prefix), []byte(plaintext[:10])) == 1 {
-				return true, &key, nil
-			}
+		if bcrypt.CompareHashAndPassword([]byte(key.Hash), []byte(plaintext)) == nil {
+			return true, &key, nil
 		}
 	}
 
-	return false, nil, nil
+	return false, nil, cursor.Err()
+}
+
+// EnsureAPIKeyIndexes creates the index ValidateAPIKey looks keys up by.
+// Safe to call on startup — CreateOne is idempotent for identical index definitions.
+func (m *Models) EnsureAPIKeyIndexes() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	coll := m.client.Database("logs").Collection("api_keys")
+	if _, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "prefix", Value: 1}},
+		Options: options.Index().SetName("prefix"),
+	}); err != nil {
+		return fmt.Errorf("EnsureAPIKeyIndexes: %w", err)
+	}
+	return nil
 }
 
 func (m *Models) RevokeAPIKey(id string) error {

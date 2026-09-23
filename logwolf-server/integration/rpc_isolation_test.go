@@ -11,8 +11,8 @@ import (
 func TestProjectIsolation_GetLogs(t *testing.T) {
 	stack := sharedStack(t)
 
-	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "project-alpha"), "lw_alphakey0000000001")
-	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "project-beta0"), "lw_betakey00000000001")
+	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "project-alpha"), "lw_alphakey00000000000000000000000000000000001")
+	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "project-beta0"), "lw_betakey000000000000000000000000000000000001")
 
 	postLog(t, stack.brokerURL, keyA, "alpha-event")
 	postLog(t, stack.brokerURL, keyB, "beta-event")
@@ -48,8 +48,8 @@ func TestProjectIsolation_GetLogs(t *testing.T) {
 func TestProjectIsolation_DeleteLog(t *testing.T) {
 	stack := sharedStack(t)
 
-	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "del-alpha"), "lw_delalpha0000000001")
-	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "del-beta00"), "lw_delbeta00000000001")
+	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "del-alpha"), "lw_delalpha00000000000000000000000000000000001")
+	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "del-beta00"), "lw_delbeta000000000000000000000000000000000001")
 
 	postLog(t, stack.brokerURL, keyA, "del-alpha-event")
 	postLog(t, stack.brokerURL, keyB, "del-beta-event")
@@ -83,8 +83,8 @@ func TestProjectIsolation_DeleteLog(t *testing.T) {
 func TestProjectIsolation_CrossDelete(t *testing.T) {
 	stack := sharedStack(t)
 
-	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xdel-alpha"), "lw_xdelattempt000001")
-	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xdel-beta0"), "lw_xdelvictim000001")
+	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xdel-alpha"), "lw_xdelattempt00000000000000000000000000000001")
+	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xdel-beta0"), "lw_xdelvictim000000000000000000000000000000001")
 
 	postLog(t, stack.brokerURL, keyB, "xdel-victim-event")
 	waitForLog(t, stack.mongoURI, "xdel-victim-event")
@@ -111,8 +111,8 @@ func TestProjectIsolation_CrossDelete(t *testing.T) {
 func TestProjectIsolation_CrossReadByID(t *testing.T) {
 	stack := sharedStack(t)
 
-	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xread-alpha"), "lw_xreadalpha000001")
-	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xread-beta0"), "lw_xreadbeta0000001")
+	keyA := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xread-alpha"), "lw_xreadalpha000000000000000000000000000000001")
+	keyB := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "xread-beta0"), "lw_xreadbeta0000000000000000000000000000000001")
 
 	postLog(t, stack.brokerURL, keyB, "xread-private-event")
 	waitForLog(t, stack.mongoURI, "xread-private-event")

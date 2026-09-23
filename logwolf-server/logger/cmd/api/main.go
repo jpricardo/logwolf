@@ -57,6 +57,9 @@ func main() {
 	if err := app.Models.EnsureProjectIndexes(); err != nil {
 		log.Printf("Warning: could not ensure project indexes: %v", err)
 	}
+	if err := app.Models.EnsureAPIKeyIndexes(); err != nil {
+		log.Printf("Warning: could not ensure api key indexes: %v", err)
+	}
 
 	// Adopt any data that predates projects before the RPC server comes up, so no
 	// caller ever reads a half-migrated database.

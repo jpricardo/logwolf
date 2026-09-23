@@ -359,7 +359,7 @@ func testAPIKey(t *testing.T, mongoURI string) (key, projectID string) {
 	t.Helper()
 
 	projectID = seedProject(t, mongoURI, "integration")
-	return seedAPIKey(t, mongoURI, projectID, "lw_integrationtestkey0000000001"), projectID
+	return seedAPIKey(t, mongoURI, projectID, "lw_integrationtestkey0000000000000000000000001"), projectID
 }
 
 // seedProject inserts a project with the given slug and returns its id. Logger
@@ -577,7 +577,7 @@ func waitHTTP(url string, timeout time.Duration) error {
 func waitForPipeline(mongoURI, brokerURL string, timeout time.Duration) error {
 	const (
 		canaryProject = "stack-canary"
-		canaryKey     = "lw_stackcanary000000001"
+		canaryKey     = "lw_stackcanary00000000000000000000000000000001"
 		canaryEvent   = "stack-canary-event"
 	)
 
