@@ -4,13 +4,10 @@ package integration
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -26,7 +23,7 @@ import (
 // matters: the migration finishes before any caller can read.
 func TestStartupMigration(t *testing.T) {
 	ctx := context.Background()
-	mongoURI, client := startMongo(t)
+	mongoURI, client := migrationMongo(t)
 	db := client.Database("logs")
 
 	// --- Seed pre-multi-tenancy data ---
@@ -122,7 +119,7 @@ func TestStartupMigration(t *testing.T) {
 // no data means no orphans, so no Default project is invented.
 func TestStartupMigration_CleanDatabase(t *testing.T) {
 	ctx := context.Background()
-	mongoURI, client := startMongo(t)
+	mongoURI, client := migrationMongo(t)
 	db := client.Database("logs")
 
 	startLogger(t, mongoURI, "alice")
@@ -143,7 +140,7 @@ func TestStartupMigration_CleanDatabase(t *testing.T) {
 // one the migration adopted it into.
 func TestStartupMigration_LegacyDataReadableThroughBroker(t *testing.T) {
 	ctx := context.Background()
-	mongoURI, client := startMongo(t)
+	mongoURI, client := migrationMongo(t)
 	db := client.Database("logs")
 
 	legacy := []interface{}{
@@ -163,7 +160,7 @@ func TestStartupMigration_LegacyDataReadableThroughBroker(t *testing.T) {
 	t.Cleanup(func() { rabbitC.Terminate(context.Background()) })
 	rabbitURI, _ := rabbitC.AmqpURL(ctx)
 
-	brokerURL := startStack(t, mongoURI, rabbitURI)
+	brokerURL := startMigrationStack(t, mongoURI, rabbitURI)
 
 	names := getLogs(t, brokerURL, legacyKey)
 	for _, want := range []string{"legacy-event-a", "legacy-event-b"} {
@@ -175,46 +172,19 @@ func TestStartupMigration_LegacyDataReadableThroughBroker(t *testing.T) {
 
 // --- helpers ---
 
-// startMongo launches a throwaway MongoDB with the credentials Logger expects
-// and returns its URI plus a connected client for seeding and assertions.
-func startMongo(t *testing.T) (string, *mongo.Client) {
+// migrationMongo gives the test a MongoDB of its own — the migration only runs
+// against a database no Logger has booted on yet — plus a client for seeding
+// and assertions.
+func migrationMongo(t *testing.T) (string, *mongo.Client) {
 	t.Helper()
-	ctx := context.Background()
 
-	mongoC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "mongo:4.2.16-bionic",
-			ExposedPorts: []string{"27017/tcp"},
-			Env: map[string]string{
-				"MONGO_INITDB_ROOT_USERNAME": "admin",
-				"MONGO_INITDB_ROOT_PASSWORD": "password",
-			},
-			WaitingFor: wait.ForLog("waiting for connections on port 27017"),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("mongo container: %v", err)
-	}
-	t.Cleanup(func() { mongoC.Terminate(context.Background()) })
-
-	host, _ := mongoC.Host(ctx)
-	port, _ := mongoC.MappedPort(ctx, "27017")
-	uri := fmt.Sprintf("mongodb://admin:password@%s:%s", host, port.Port())
-
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri).
-		SetAuth(options.Credential{Username: "admin", Password: "password"}))
-	if err != nil {
-		t.Fatalf("mongo connect: %v", err)
-	}
-	t.Cleanup(func() { client.Disconnect(context.Background()) })
-
-	return uri, client
+	uri := dedicatedMongo(t)
+	return uri, testMongo(t, uri)
 }
 
-// startLogger boots Logger and returns once its RPC port accepts connections,
-// which only happens after the startup migration has run.
-func startLogger(t *testing.T, mongoURI, allowedUsers string) {
+// startLogger boots Logger and returns its RPC address once the port accepts
+// connections, which only happens after the startup migration has run.
+func startLogger(t *testing.T, mongoURI, allowedUsers string) string {
 	t.Helper()
 
 	rpcAddr := freeAddr(t)
@@ -230,6 +200,35 @@ func startLogger(t *testing.T, mongoURI, allowedUsers string) {
 	})
 
 	waitForTCP(t, rpcAddr, 60*time.Second)
+	return rpcAddr
+}
+
+// startMigrationStack boots Logger, Listener and Broker against mongoURI for
+// this test alone and returns the Broker's base URL. The shared stack cannot
+// stand in: its Logger has long since run its migration on a different database.
+func startMigrationStack(t *testing.T, mongoURI, rabbitURI string) string {
+	t.Helper()
+
+	loggerRPCAddr := startLogger(t, mongoURI, "")
+	brokerHTTPAddr := freeAddr(t)
+
+	startProcess(t, "../listener/cmd/api", map[string]string{
+		"RABBITMQ_URL":    rabbitURI,
+		"LOGGER_RPC_ADDR": loggerRPCAddr,
+	})
+	startProcess(t, "../broker/cmd/api", map[string]string{
+		"MONGO_URL":           mongoURI,
+		"RABBITMQ_URL":        rabbitURI,
+		"LOGGER_RPC_ADDR":     loggerRPCAddr,
+		"BROKER_PORT":         portOf(brokerHTTPAddr),
+		"INTERNAL_API_SECRET": internalSecret,
+	})
+
+	brokerURL := "http://" + brokerHTTPAddr
+	if err := waitHTTP(brokerURL+"/ping", 60*time.Second); err != nil {
+		t.Fatalf("broker: %v", err)
+	}
+	return brokerURL
 }
 
 func requireDefaultProject(t *testing.T, db *mongo.Database) data.Project {

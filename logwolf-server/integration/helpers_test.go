@@ -54,7 +54,8 @@ func onTeardown(fn func()) {
 // TestMain tears down the fixtures that outlive individual tests. Containers
 // and service processes are shared across the package rather than rebuilt per
 // test — standing a stack up costs the better part of a minute — so they cannot
-// hang off any one test's t.Cleanup.
+// hang off any one test's t.Cleanup. The binaries built for the run go last,
+// once nothing is still executing them.
 func TestMain(m *testing.M) {
 	code := m.Run()
 
@@ -64,6 +65,10 @@ func TestMain(m *testing.M) {
 
 	for i := len(fns) - 1; i >= 0; i-- {
 		fns[i]()
+	}
+
+	if binDir != "" {
+		os.RemoveAll(binDir)
 	}
 
 	os.Exit(code)
@@ -323,7 +328,12 @@ func insertAPIKey(mongoURI, projectID, plaintext string) error {
 // Output goes nowhere unless LOGWOLF_TEST_VERBOSE is set — a shared stack that
 // fails to come up takes every test with it, so the escape hatch is worth having.
 func spawn(pkgPath string, env map[string]string) error {
-	cmd := exec.Command("go", "run", pkgPath)
+	bin, err := buildService(pkgPath)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(), envSlice(env)...)
 
 	if os.Getenv("LOGWOLF_TEST_VERBOSE") != "" {
@@ -343,42 +353,31 @@ func spawn(pkgPath string, env map[string]string) error {
 	return nil
 }
 
-// startProcess is spawn scoped to a single test.
-// TestMain deletes the binaries built for the run once every test has finished.
-func TestMain(m *testing.M) {
-	code := m.Run()
-	if binDir != "" {
-		os.RemoveAll(binDir)
-	}
-	os.Exit(code)
-}
-
 var (
 	binMu   sync.Mutex
 	binDir  string
 	binPath = map[string]string{}
 )
 
-// serviceBinary compiles a service package once per run and returns the path to
-// the binary. Tests execute that binary directly rather than going through
+// buildService compiles a service package once per run and returns the path to
+// the binary. Services run from that binary directly rather than through
 // `go run`, which is what makes cleanup reliable: `go run` starts the service as
 // a child of its own, so killing `go run` leaves the service running. On Windows
 // it survives the whole session, and a stray Listener that reconnects to a
 // recycled RabbitMQ port will consume the messages a later test is waiting for.
-func serviceBinary(t *testing.T, pkgPath string) string {
-	t.Helper()
-
+// TestMain deletes the binaries once every test has finished.
+func buildService(pkgPath string) (string, error) {
 	binMu.Lock()
 	defer binMu.Unlock()
 
 	if path, ok := binPath[pkgPath]; ok {
-		return path
+		return path, nil
 	}
 
 	if binDir == "" {
 		dir, err := os.MkdirTemp("", "logwolf-integration")
 		if err != nil {
-			t.Fatalf("serviceBinary: temp dir: %v", err)
+			return "", fmt.Errorf("build %s: temp dir: %w", pkgPath, err)
 		}
 		binDir = dir
 	}
@@ -389,17 +388,23 @@ func serviceBinary(t *testing.T, pkgPath string) string {
 	}
 
 	if output, err := exec.Command("go", "build", "-o", out, pkgPath).CombinedOutput(); err != nil {
-		t.Fatalf("serviceBinary %s: build failed: %v: %s", pkgPath, err, output)
+		return "", fmt.Errorf("build %s: %w: %s", pkgPath, err, output)
 	}
 
 	binPath[pkgPath] = out
-	return out
+	return out, nil
 }
 
+// startProcess is spawn scoped to a single test.
 func startProcess(t *testing.T, pkgPath string, env map[string]string) {
 	t.Helper()
 
-	cmd := exec.Command(serviceBinary(t, pkgPath))
+	bin, err := buildService(pkgPath)
+	if err != nil {
+		t.Fatalf("startProcess: %v", err)
+	}
+
+	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(), envSlice(env)...)
 
 	if os.Getenv("LOGWOLF_TEST_VERBOSE") != "" {
