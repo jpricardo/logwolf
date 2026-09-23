@@ -619,8 +619,9 @@ func TestCreateProject_RollsBackWhenOwnerCannotBeAttached(t *testing.T) {
 
 	w := do(handler, internalRequest(http.MethodPost, "/projects", "newcomer",
 		map[string]string{"name": "Orphan", "slug": "orphan"}))
-	if w.Code < http.StatusBadRequest {
-		t.Fatalf("create project with failing AddMember: got %d, want an error status", w.Code)
+	// Nothing the caller sent was wrong, so this is the server's failure.
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("create project with failing AddMember: got %d, want 500", w.Code)
 	}
 
 	fake.snapshot(func(f *fakeLogger) {

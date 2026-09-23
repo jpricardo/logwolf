@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
 	"logwolf-toolbox/data"
 )
 
@@ -51,6 +53,21 @@ type fakeLogger struct {
 // misses. The broker only sees the message, so the wording is the contract.
 var errNoDocuments = errors.New("mongo: no documents in result set")
 
+// checkObjectID refuses a malformed id the way the logger's RPC methods do,
+// before they touch the database.
+func checkObjectID(op, id string) error {
+	if _, err := primitive.ObjectIDFromHex(id); err != nil {
+		return fmt.Errorf("%s: invalid project ID: %w", op, err)
+	}
+	return nil
+}
+
+// errDuplicateKey mirrors the driver's unique-index violation, which the broker
+// recognizes by its E11000 code.
+func errDuplicateKey(index string) error {
+	return fmt.Errorf("E11000 duplicate key error collection: logs index: %s", index)
+}
+
 func newFakeLogger() *fakeLogger {
 	return &fakeLogger{
 		projects:  map[string]data.Project{},
@@ -67,6 +84,9 @@ func (f *fakeLogger) GetProject(args *data.RPCProjectIDArgs, reply *data.Project
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if err := checkObjectID("GetProject", args.ID); err != nil {
+		return err
+	}
 	p, ok := f.projects[args.ID]
 	if !ok {
 		return errNoDocuments
@@ -81,7 +101,7 @@ func (f *fakeLogger) CreateProject(args *data.RPCCreateProjectArgs, reply *data.
 
 	f.createdProjects = append(f.createdProjects, *args)
 	if args.Slug == f.duplicateSlug {
-		return fmt.Errorf("E11000 duplicate key error collection: logs.projects index: slug_1")
+		return errDuplicateKey("slug_1")
 	}
 
 	id := nextProjectID()
@@ -96,9 +116,17 @@ func (f *fakeLogger) UpdateProject(args *data.RPCUpdateProjectArgs, reply *data.
 	defer f.mu.Unlock()
 
 	f.updatedProjects = append(f.updatedProjects, *args)
+	if err := checkObjectID("UpdateProject", args.ID); err != nil {
+		return err
+	}
 	p, ok := f.projects[args.ID]
 	if !ok {
 		return errNoDocuments
+	}
+	for id, other := range f.projects {
+		if id != args.ID && other.Slug == args.Slug {
+			return errDuplicateKey("slug_1")
+		}
 	}
 	p.Name, p.Slug = args.Name, args.Slug
 	f.projects[args.ID] = p
@@ -110,6 +138,9 @@ func (f *fakeLogger) DeleteProject(args *data.RPCProjectIDArgs, reply *string) e
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if err := checkObjectID("DeleteProject", args.ID); err != nil {
+		return err
+	}
 	f.deletedProjects = append(f.deletedProjects, args.ID)
 	delete(f.projects, args.ID)
 	delete(f.members, args.ID)
@@ -142,6 +173,9 @@ func (f *fakeLogger) ListMembers(args *data.ProjectArgs, reply *[]data.ProjectMe
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if err := checkObjectID("ListMembers", args.ProjectID); err != nil {
+		return err
+	}
 	*reply = append([]data.ProjectMember(nil), f.members[args.ProjectID]...)
 	return nil
 }
@@ -150,6 +184,9 @@ func (f *fakeLogger) CheckMembership(args *data.RPCCheckMembershipArgs, reply *b
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if err := checkObjectID("CheckMembership", args.ProjectID); err != nil {
+		return err
+	}
 	for _, m := range f.members[args.ProjectID] {
 		if m.GithubLogin == args.GithubLogin {
 			*reply = true
@@ -167,6 +204,14 @@ func (f *fakeLogger) AddMember(args *data.RPCAddMemberArgs, reply *string) error
 	f.addedMembers = append(f.addedMembers, *args)
 	if f.failAddMember {
 		return fmt.Errorf("AddMember: injected failure")
+	}
+	if err := checkObjectID("AddMember", args.ProjectID); err != nil {
+		return err
+	}
+	for _, m := range f.members[args.ProjectID] {
+		if m.GithubLogin == args.GithubLogin {
+			return fmt.Errorf("InsertProjectMember: %w", errDuplicateKey("unique_project_member"))
+		}
 	}
 	f.members[args.ProjectID] = append(f.members[args.ProjectID], data.ProjectMember{
 		ProjectID:   mustObjectID(args.ProjectID),
@@ -192,6 +237,9 @@ func (f *fakeLogger) RemoveMember(args *data.RPCRemoveMemberArgs, reply *string)
 		if m.GithubLogin != args.GithubLogin {
 			kept = append(kept, m)
 		}
+	}
+	if len(kept) == len(f.members[args.ProjectID]) {
+		return fmt.Errorf("RemoveProjectMember: %w", errNoDocuments)
 	}
 	f.members[args.ProjectID] = kept
 	*reply = "ok"
@@ -275,6 +323,9 @@ func (f *fakeLogger) UpdateRetention(args *data.RetentionArgs, reply *string) er
 	defer f.mu.Unlock()
 
 	f.retentionArgs = append(f.retentionArgs, *args)
+	if !data.ValidRetentionDays[args.Days] {
+		return fmt.Errorf("SetRetentionDays: %d is not a valid retention value", args.Days)
+	}
 	f.retention[args.ProjectID] = args.Days
 	*reply = "ok"
 	return nil

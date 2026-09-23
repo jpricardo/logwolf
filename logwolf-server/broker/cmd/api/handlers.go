@@ -11,7 +11,6 @@ import (
 	"net/rpc"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -190,7 +189,7 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, projectID, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if !isMember {
@@ -235,7 +234,7 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, body.ProjectID, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if !isMember {
@@ -285,7 +284,7 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, key.ProjectID, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if !isMember {
@@ -321,7 +320,7 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, projectID, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if !isMember {
@@ -332,7 +331,7 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 	var days int
 	args := data.RetentionArgs{ProjectID: projectID}
 	if err := client.Call("RPCServer.GetRetention", &args, &days); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -342,7 +341,8 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		ProjectID string `json:"project_id"`
-		Days      int    `json:"days"`
+		// A pointer, because a missing days would otherwise read as 0: forever.
+		Days *int `json:"days"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -352,6 +352,16 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 
 	if payload.ProjectID == "" {
 		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
+		return
+	}
+	if payload.Days == nil {
+		app.errorJSON(w, fmt.Errorf("days is required"), http.StatusBadRequest)
+		return
+	}
+	// The logger refuses these too, but checking here spares the round trip and
+	// the string matching to tell its refusal apart from a failure.
+	if !data.ValidRetentionDays[*payload.Days] {
+		app.errorJSON(w, fmt.Errorf("invalid retention: %d days", *payload.Days), http.StatusBadRequest)
 		return
 	}
 
@@ -365,7 +375,7 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, payload.ProjectID, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if !isMember {
@@ -373,14 +383,14 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := data.RetentionArgs{ProjectID: payload.ProjectID, Days: payload.Days}
+	args := data.RetentionArgs{ProjectID: payload.ProjectID, Days: *payload.Days}
 	var reply string
 	if err := client.Call("RPCServer.UpdateRetention", &args, &reply); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
-	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Data: retentionResponse{Days: payload.Days}})
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Data: retentionResponse{Days: *payload.Days}})
 }
 
 func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
@@ -400,7 +410,7 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	userLogin := userLoginFromContext(r)
 	isMember, err := checkProjectMembership(client, projectID, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if !isMember {
@@ -411,7 +421,7 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	args := data.ProjectArgs{ProjectID: projectID}
 	var result data.Metrics
 	if err := client.Call("RPCServer.GetMetrics", &args, &result); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -486,11 +496,7 @@ func (app *Config) denyProjectAccess(w http.ResponseWriter, client *rpc.Client, 
 		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
 		return
 	}
-	if strings.Contains(err.Error(), "no documents in result") {
-		app.errorJSON(w, fmt.Errorf("project not found"), http.StatusNotFound)
-		return
-	}
-	app.errorJSON(w, err)
+	app.rpcErrorJSON(w, err, projectNotFound)
 }
 
 func (app *Config) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -506,7 +512,7 @@ func (app *Config) ListProjects(w http.ResponseWriter, r *http.Request) {
 	args := data.RPCUserProjectsArgs{GithubLogin: userLogin}
 	var projects []data.UserProject
 	if err := client.Call("RPCServer.ListUserProjects", &args, &projects); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -548,13 +554,8 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 	var project data.Project
 	if err := client.Call("RPCServer.CreateProject", &data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug}, &project); err != nil {
 		// Slugs are globally unique, so a collision is a client mistake, not a
-		// server fault. net/rpc flattens errors to strings, so the Mongo
-		// duplicate-key code is the only thing left to match on.
-		if strings.Contains(err.Error(), "E11000") {
-			app.errorJSON(w, fmt.Errorf("a project with that slug already exists"), http.StatusConflict)
-			return
-		}
-		app.errorJSON(w, err)
+		// server fault.
+		app.rpcErrorJSON(w, err, rpcErrorMessages{rpcErrDuplicate: "a project with that slug already exists"})
 		return
 	}
 
@@ -567,7 +568,7 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 		// Best-effort rollback: project must not exist without an owner.
 		var rollbackReply string
 		_ = client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: project.ID.Hex()}, &rollbackReply)
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -587,7 +588,7 @@ func (app *Config) GetProject(w http.ResponseWriter, r *http.Request) {
 
 	role, err := getProjectRole(client, id, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if role == "" {
@@ -597,7 +598,7 @@ func (app *Config) GetProject(w http.ResponseWriter, r *http.Request) {
 
 	var project data.Project
 	if err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &project); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 
@@ -635,7 +636,7 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	role, err := getProjectRole(client, id, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if role == "" {
@@ -649,7 +650,10 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	var project data.Project
 	if err := client.Call("RPCServer.UpdateProject", &data.RPCUpdateProjectArgs{ID: id, Name: body.Name, Slug: body.Slug}, &project); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, rpcErrorMessages{
+			rpcErrDuplicate: "a project with that slug already exists",
+			rpcErrNotFound:  "project not found",
+		})
 		return
 	}
 
@@ -669,7 +673,7 @@ func (app *Config) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	role, err := getProjectRole(client, id, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if role == "" {
@@ -683,7 +687,7 @@ func (app *Config) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	var reply string
 	if err := client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: id}, &reply); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 
@@ -705,7 +709,7 @@ func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	args := data.ProjectArgs{ProjectID: id}
 	var members []data.ProjectMember
 	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 
@@ -756,7 +760,7 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 
 	role, err := getProjectRole(client, id, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if role == "" {
@@ -774,7 +778,11 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 		GithubLogin: login,
 		Role:        body.Role,
 	}, &reply); err != nil {
-		app.errorJSON(w, err)
+		// A login is unique within a project, so a second add collides.
+		app.rpcErrorJSON(w, err, rpcErrorMessages{
+			rpcErrDuplicate: fmt.Sprintf("%s is already a member of this project", login),
+			rpcErrNotFound:  "project not found",
+		})
 		return
 	}
 
@@ -795,7 +803,7 @@ func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 
 	role, err := getProjectRole(client, id, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if role == "" {
@@ -812,13 +820,10 @@ func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 		ProjectID:   id,
 		GithubLogin: login,
 	}, &reply); err != nil {
-		// net/rpc transmits errors as strings, so errors.Is won't work across the
-		// wire — string matching is the only way to detect data.ErrLastOwner here.
-		if strings.Contains(err.Error(), "last owner") {
-			app.errorJSON(w, fmt.Errorf("cannot remove the last owner"), http.StatusBadRequest)
-			return
-		}
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, rpcErrorMessages{
+			rpcErrLastOwner: "cannot remove the last owner",
+			rpcErrNotFound:  "member not found",
+		})
 		return
 	}
 
@@ -854,7 +859,7 @@ func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Reques
 
 	role, err := getProjectRole(client, id, userLogin)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 	if role == "" {
@@ -872,15 +877,10 @@ func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Reques
 		GithubLogin: login,
 		Role:        body.Role,
 	}, &reply); err != nil {
-		// Matched as a string for the same reason as in RemoveProjectMember.
-		switch {
-		case strings.Contains(err.Error(), "last owner"):
-			app.errorJSON(w, fmt.Errorf("cannot demote the last owner"), http.StatusBadRequest)
-		case strings.Contains(err.Error(), "no documents in result"):
-			app.errorJSON(w, fmt.Errorf("member not found"), http.StatusNotFound)
-		default:
-			app.errorJSON(w, err)
-		}
+		app.rpcErrorJSON(w, err, rpcErrorMessages{
+			rpcErrLastOwner: "cannot demote the last owner",
+			rpcErrNotFound:  "member not found",
+		})
 		return
 	}
 
@@ -901,7 +901,7 @@ func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Reques
 func (app *Config) requireProjectAccess(w http.ResponseWriter, r *http.Request, client *rpc.Client, projectID string) bool {
 	isMember, err := checkProjectMembership(client, projectID, userLoginFromContext(r))
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return false
 	}
 	if !isMember {
@@ -910,14 +910,6 @@ func (app *Config) requireProjectAccess(w http.ResponseWriter, r *http.Request, 
 	}
 
 	return true
-}
-
-// logNotFound reports whether an RPC error means "this project has no such log".
-// net/rpc flattens errors into strings, so the cause has to be read back out of
-// the message. A malformed id is not found either — it cannot name a document.
-func logNotFound(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "no documents in result") || strings.Contains(msg, "not a valid ObjectID")
 }
 
 func (app *Config) ListProjectLogs(w http.ResponseWriter, r *http.Request) {
@@ -940,7 +932,7 @@ func (app *Config) ListProjectLogs(w http.ResponseWriter, r *http.Request) {
 		Pagination: paginationFromQuery(r.URL.Query()),
 	}, &result)
 	if err != nil {
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, nil)
 		return
 	}
 
@@ -969,11 +961,7 @@ func (app *Config) GetProjectLog(w http.ResponseWriter, r *http.Request) {
 
 	var entry data.LogEntry
 	if err := client.Call("RPCServer.GetLog", filter, &entry); err != nil {
-		if logNotFound(err) {
-			app.errorJSON(w, fmt.Errorf("log not found"), http.StatusNotFound)
-			return
-		}
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, logNotFound)
 		return
 	}
 
@@ -1044,11 +1032,7 @@ func (app *Config) DeleteProjectLog(w http.ResponseWriter, r *http.Request) {
 
 	var deleted int64
 	if err := client.Call("RPCServer.DeleteLog", filter, &deleted); err != nil {
-		if logNotFound(err) {
-			app.errorJSON(w, fmt.Errorf("log not found"), http.StatusNotFound)
-			return
-		}
-		app.errorJSON(w, err)
+		app.rpcErrorJSON(w, err, logNotFound)
 		return
 	}
 
