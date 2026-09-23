@@ -90,7 +90,7 @@ func TestDeletedProject_LateEventsAreDropped(t *testing.T) {
 		// The Broker still had the key cached and queued the event. The Listener
 		// hands events over one at a time, in order, so once an event queued after
 		// it has been written, this one has been dealt with too.
-		liveKey := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "late-events-live"), "lw_lateeventslive0001")
+		liveKey := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "late-events-live"), "lw_lateeventslive00000000000000000000000000001")
 		postLog(t, stack.brokerURL, liveKey, "late-barrier")
 		waitForLog(t, stack.mongoURI, "late-barrier")
 	case http.StatusUnauthorized:

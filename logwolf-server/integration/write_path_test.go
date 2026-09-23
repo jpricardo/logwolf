@@ -78,7 +78,7 @@ func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
 	stack := sharedStack(t)
 	batchProject := seedProject(t, stack.mongoURI, "batch-project")
 	victimProject := seedProject(t, stack.mongoURI, "victim-project")
-	apiKey := seedAPIKey(t, stack.mongoURI, batchProject, "lw_batchkey0000000001")
+	apiKey := seedAPIKey(t, stack.mongoURI, batchProject, "lw_batchkey00000000000000000000000000000000001")
 
 	batch := []map[string]interface{}{
 		{"name": "batch-event-1", "data": "{}", "severity": "info", "tags": []string{}},

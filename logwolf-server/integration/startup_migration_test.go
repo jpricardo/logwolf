@@ -144,7 +144,7 @@ func TestStartupMigration_LegacyDataReadableThroughBroker(t *testing.T) {
 		t.Fatalf("seed logs: %v", err)
 	}
 
-	legacyKey := seedLegacyAPIKey(t, db, "lw_legacykey00000000001")
+	legacyKey := seedLegacyAPIKey(t, db, "lw_legacykey0000000000000000000000000000000001")
 
 	rabbitC, err := rabbitmq.Run(ctx, "rabbitmq:3.9-alpine")
 	if err != nil {

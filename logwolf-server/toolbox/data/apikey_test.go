@@ -2,6 +2,7 @@ package data
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,5 +92,52 @@ func TestGenerateAPIKey_ProjectID(t *testing.T) {
 	}
 	if len(key.Prefix) < 3 {
 		t.Errorf("key prefix too short: %q", key.Prefix)
+	}
+}
+
+// TestGenerateAPIKey_Shape verifies generated keys have the shape ValidateAPIKey
+// accepts, and that the stored prefix is the head of the plaintext.
+func TestGenerateAPIKey_Shape(t *testing.T) {
+	plaintext, key, err := GenerateAPIKey("proj-unit-test")
+	if err != nil {
+		t.Fatalf("GenerateAPIKey failed: %v", err)
+	}
+	if len(plaintext) != apiKeyLength {
+		t.Errorf("len(plaintext) = %d, want %d", len(plaintext), apiKeyLength)
+	}
+	if !strings.HasPrefix(plaintext, apiKeyScheme) {
+		t.Errorf("plaintext %q does not start with %q", plaintext, apiKeyScheme)
+	}
+	if key.Prefix != plaintext[:apiKeyPrefixLength] {
+		t.Errorf("Prefix = %q, want %q", key.Prefix, plaintext[:apiKeyPrefixLength])
+	}
+}
+
+// TestValidateAPIKey_RejectsMalformed verifies a key GenerateAPIKey could not
+// have produced is refused before the database is touched. The zero Models has
+// no client, so reaching the query would panic.
+func TestValidateAPIKey_RejectsMalformed(t *testing.T) {
+	valid, _, err := GenerateAPIKey("proj-unit-test")
+	if err != nil {
+		t.Fatalf("GenerateAPIKey failed: %v", err)
+	}
+
+	cases := map[string]string{
+		"empty":        "",
+		"prefix only":  valid[:apiKeyPrefixLength],
+		"too short":    valid[:len(valid)-1],
+		"too long":     valid + "x",
+		"wrong scheme": "sk_" + valid[3:],
+		"no separator": "lwx" + valid[3:],
+	}
+
+	var m Models
+	for name, plaintext := range cases {
+		t.Run(name, func(t *testing.T) {
+			ok, key, err := m.ValidateAPIKey(plaintext)
+			if ok || key != nil || err != nil {
+				t.Errorf("ValidateAPIKey(%q) = %v, %v, %v; want false, nil, nil", plaintext, ok, key, err)
+			}
+		})
 	}
 }
