@@ -435,6 +435,175 @@ func TestRemoveProjectMember_NotFound(t *testing.T) {
 	}
 }
 
+// memberRoles maps each member of the project to their role.
+func memberRoles(t *testing.T, m data.Models, projectID primitive.ObjectID) map[string]string {
+	t.Helper()
+
+	members, err := m.GetProjectMembers(projectID)
+	if err != nil {
+		t.Fatalf("GetProjectMembers: %v", err)
+	}
+	roles := make(map[string]string, len(members))
+	for _, mb := range members {
+		roles[mb.GithubLogin] = mb.Role
+	}
+	return roles
+}
+
+// TestUpdateProjectMemberRole_TransferOwnership walks the handover the role
+// change exists for: promote the new owner, then step down.
+func TestUpdateProjectMemberRole_TransferOwnership(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Handover", Slug: "handover"})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "old-owner", Role: data.RoleOwner})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "heir", Role: data.RoleMember})
+
+	if err := m.UpdateProjectMemberRole(p.ID, "heir", data.RoleOwner); err != nil {
+		t.Fatalf("promote heir: %v", err)
+	}
+	if err := m.UpdateProjectMemberRole(p.ID, "old-owner", data.RoleMember); err != nil {
+		t.Fatalf("demote old-owner: %v", err)
+	}
+
+	roles := memberRoles(t, m, p.ID)
+	if roles["heir"] != data.RoleOwner || roles["old-owner"] != data.RoleMember {
+		t.Errorf("after the handover: got %v", roles)
+	}
+}
+
+func TestUpdateProjectMemberRole_LastOwner(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Solo", Slug: "solo"})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "only-owner", Role: data.RoleOwner})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "bob", Role: data.RoleMember})
+
+	err := m.UpdateProjectMemberRole(p.ID, "only-owner", data.RoleMember)
+	if !errors.Is(err, data.ErrLastOwner) {
+		t.Errorf("demote last owner: want ErrLastOwner, got %v", err)
+	}
+	if roles := memberRoles(t, m, p.ID); roles["only-owner"] != data.RoleOwner {
+		t.Errorf("refused demotion still changed the role: %v", roles)
+	}
+
+	// Setting the role the last owner already holds is not a demotion.
+	if err := m.UpdateProjectMemberRole(p.ID, "only-owner", data.RoleOwner); err != nil {
+		t.Errorf("owner to owner: %v", err)
+	}
+}
+
+// Memberships are stored lowercase, so the login a caller passes in any casing
+// has to find the row.
+func TestUpdateProjectMemberRole_CaseInsensitiveLogin(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Case", Slug: "case"})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "owner", Role: data.RoleOwner})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "jdoe", Role: data.RoleMember})
+
+	if err := m.UpdateProjectMemberRole(p.ID, "JDoe", data.RoleOwner); err != nil {
+		t.Fatalf("promote JDoe: %v", err)
+	}
+	if roles := memberRoles(t, m, p.ID); roles["jdoe"] != data.RoleOwner {
+		t.Errorf("after promoting JDoe: got %v", roles)
+	}
+}
+
+func TestUpdateProjectMemberRole_NotFound(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "NF", Slug: "nf"})
+
+	err := m.UpdateProjectMemberRole(p.ID, "ghost", data.RoleOwner)
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		t.Errorf("UpdateProjectMemberRole missing: want mongo.ErrNoDocuments, got %v", err)
+	}
+}
+
+func TestUpdateProjectMemberRole_InvalidRole(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Bad", Slug: "bad"})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "bob", Role: data.RoleMember})
+
+	if err := m.UpdateProjectMemberRole(p.ID, "bob", "admin"); err == nil {
+		t.Error("UpdateProjectMemberRole admin: expected an error, got nil")
+	}
+	if roles := memberRoles(t, m, p.ID); roles["bob"] != data.RoleMember {
+		t.Errorf("invalid role still changed the member: %v", roles)
+	}
+}
+
+// TestUpdateProjectMemberRole_ConcurrentDemotion demotes both owners of a
+// project at the same moment, and in the other half of the rounds demotes one
+// while removing the other. Each change on its own is allowed, but only one of
+// them may win, or the project is left with nobody to own it. A single round
+// rarely hits the window, so it runs many.
+func TestUpdateProjectMemberRole_ConcurrentDemotion(t *testing.T) {
+	m := setupProjectModels(t)
+
+	for round := 0; round < 50; round++ {
+		p, err := m.InsertProject(data.Project{Name: "Race", Slug: fmt.Sprintf("demote-race-%d", round)})
+		if err != nil {
+			t.Fatalf("round %d: InsertProject: %v", round, err)
+		}
+		owners := []string{"owner-a", "owner-b"}
+		for _, login := range owners {
+			if _, err := m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: login, Role: data.RoleOwner}); err != nil {
+				t.Fatalf("round %d: InsertProjectMember %s: %v", round, login, err)
+			}
+		}
+
+		changes := []func() error{
+			func() error { return m.UpdateProjectMemberRole(p.ID, "owner-a", data.RoleMember) },
+			func() error { return m.UpdateProjectMemberRole(p.ID, "owner-b", data.RoleMember) },
+		}
+		if round%2 == 1 {
+			changes[1] = func() error { return m.RemoveProjectMember(p.ID, "owner-b") }
+		}
+
+		start := make(chan struct{})
+		errs := make([]error, len(changes))
+		var wg sync.WaitGroup
+		for i, change := range changes {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs[i] = change()
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		var applied, refused int
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				applied++
+			case errors.Is(err, data.ErrLastOwner):
+				refused++
+			default:
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		if applied != 1 || refused != 1 {
+			t.Fatalf("round %d: want one change and one ErrLastOwner, got %d and %d", round, applied, refused)
+		}
+
+		var ownersLeft int
+		for _, role := range memberRoles(t, m, p.ID) {
+			if role == data.RoleOwner {
+				ownersLeft++
+			}
+		}
+		if ownersLeft != 1 {
+			t.Fatalf("round %d: want exactly one owner left, got %d", round, ownersLeft)
+		}
+	}
+}
+
 func TestGetProjectMembers(t *testing.T) {
 	m := setupProjectModels(t)
 

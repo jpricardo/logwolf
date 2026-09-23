@@ -825,6 +825,68 @@ func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Member removed."})
 }
 
+// UpdateProjectMemberRole promotes or demotes an existing member. Together with
+// a self-demotion it is how an owner hands a project over, so demoting yourself
+// is allowed as long as another owner remains.
+func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	login := data.NormalizeGithubLogin(chi.URLParam(r, "login"))
+	userLogin := userLoginFromContext(r)
+
+	var body struct {
+		Role string `json:"role"`
+	}
+	if err := app.readJSON(w, r, &body); err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if !data.ValidRole(body.Role) {
+		app.errorJSON(w, fmt.Errorf("invalid role"), http.StatusBadRequest)
+		return
+	}
+
+	client, err := rpc.Dial("tcp", loggerRPCAddr())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer client.Close()
+
+	role, err := getProjectRole(client, id, userLogin)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	if role == "" {
+		app.denyProjectAccess(w, client, id)
+		return
+	}
+	if role != data.RoleOwner {
+		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+		return
+	}
+
+	var reply string
+	if err := client.Call("RPCServer.UpdateMemberRole", &data.RPCUpdateMemberRoleArgs{
+		ProjectID:   id,
+		GithubLogin: login,
+		Role:        body.Role,
+	}, &reply); err != nil {
+		// Matched as a string for the same reason as in RemoveProjectMember.
+		switch {
+		case strings.Contains(err.Error(), "last owner"):
+			app.errorJSON(w, fmt.Errorf("cannot demote the last owner"), http.StatusBadRequest)
+		case strings.Contains(err.Error(), "no documents in result"):
+			app.errorJSON(w, fmt.Errorf("member not found"), http.StatusNotFound)
+		default:
+			app.errorJSON(w, err)
+		}
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Role updated."})
+}
+
 // --- Project-scoped log access ---
 
 // The dashboard reads and writes events through the routes below instead of the

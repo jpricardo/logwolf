@@ -21,12 +21,14 @@ type Props = { members: ProjectMember[]; currentUser: string; canManage: boolean
 export function MembersSection({ members, currentUser, canManage }: Props) {
 	const csrfToken = useCsrfToken();
 
-	// Adding and removing get their own fetchers so a pending removal doesn't
-	// grey out the add form, and each reports its own error where it happened.
+	// Adding, changing roles and removing get their own fetchers so a pending
+	// removal doesn't grey out the add form, and each reports its own error.
 	const addFetcher = useFetcher<SettingsActionResult>();
+	const roleFetcher = useFetcher<SettingsActionResult>();
 	const removeFetcher = useFetcher<SettingsActionResult>();
 
 	useSuccessToast(addFetcher.data);
+	useSuccessToast(roleFetcher.data);
 	useSuccessToast(removeFetcher.data);
 
 	const addFormRef = useRef<HTMLFormElement>(null);
@@ -37,17 +39,29 @@ export function MembersSection({ members, currentUser, canManage }: Props) {
 		if (addFetcher.data?.success) addFormRef.current?.reset();
 	}, [addFetcher.data]);
 
-	// A project must always keep one owner, so the last one has no Remove button.
-	// The broker refuses the call too; this only saves the round trip.
+	// A project must always keep one owner, so the last one can be neither
+	// removed nor demoted. The broker refuses both too; this only saves the
+	// round trip.
 	const ownerCount = members.filter((m) => m.role === 'owner').length;
 	const removing = removeFetcher.formData?.get('login')?.toString();
+
+	// While a role change is in flight, show the role it asked for rather than
+	// snapping back to the old one until the table revalidates.
+	const changingRole = roleFetcher.formData?.get('login')?.toString();
+	const pendingRole = roleFetcher.formData?.get('role')?.toString();
+
+	function changeRole(login: string, role: string) {
+		roleFetcher.submit({ _csrf: csrfToken, intent: 'change-role', login, role }, { method: 'post' });
+	}
+
+	const error = addFetcher.data?.error ?? roleFetcher.data?.error ?? removeFetcher.data?.error;
 
 	return (
 		<Section title='Members'>
 			<div className='flex flex-col gap-2'>
-				{(addFetcher.data?.error || removeFetcher.data?.error) && (
+				{error && (
 					<Alert variant='destructive'>
-						<AlertTitle>{addFetcher.data?.error ?? removeFetcher.data?.error}</AlertTitle>
+						<AlertTitle>{error}</AlertTitle>
 					</Alert>
 				)}
 
@@ -77,7 +91,24 @@ export function MembersSection({ members, currentUser, canManage }: Props) {
 											</TableCell>
 
 											<TableCell>
-												<Badge variant={member.role === 'owner' ? 'default' : 'secondary'}>{member.role}</Badge>
+												{canManage && !isLastOwner ? (
+													<Select
+														value={changingRole === member.github_login ? pendingRole : member.role}
+														onValueChange={(role) => changeRole(member.github_login, role)}
+														disabled={changingRole === member.github_login}
+													>
+														<SelectTrigger size='sm' className='w-28' aria-label={`Role of ${member.github_login}`}>
+															<SelectValue />
+														</SelectTrigger>
+
+														<SelectContent>
+															<SelectItem value='member'>member</SelectItem>
+															<SelectItem value='owner'>owner</SelectItem>
+														</SelectContent>
+													</Select>
+												) : (
+													<Badge variant={member.role === 'owner' ? 'default' : 'secondary'}>{member.role}</Badge>
+												)}
 											</TableCell>
 
 											<TableCell className='text-muted-foreground'>

@@ -270,6 +270,23 @@ func (r *RPCServer) RemoveMember(args *data.RPCRemoveMemberArgs, reply *string) 
 	return nil
 }
 
+func (r *RPCServer) UpdateMemberRole(args *data.RPCUpdateMemberRoleArgs, reply *string) error {
+	if !data.ValidRole(args.Role) {
+		return fmt.Errorf("UpdateMemberRole: invalid role %q", args.Role)
+	}
+	log.Printf("Setting role of member %s in project %s to %s", args.GithubLogin, args.ProjectID, args.Role)
+	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)
+	if err != nil {
+		return fmt.Errorf("UpdateMemberRole: invalid project ID: %w", err)
+	}
+	if err := r.models.UpdateProjectMemberRole(projectID, args.GithubLogin, args.Role); err != nil {
+		log.Println("Error updating member role:", err)
+		return err
+	}
+	*reply = "ok"
+	return nil
+}
+
 func (r *RPCServer) CheckMembership(args *data.RPCCheckMembershipArgs, reply *bool) error {
 	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)
 	if err != nil {

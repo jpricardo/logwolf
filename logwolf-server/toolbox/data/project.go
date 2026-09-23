@@ -14,7 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ErrLastOwner is returned when an operation would remove the last owner of a project.
+// ErrLastOwner is returned when an operation would remove or demote the last
+// owner of a project.
 var ErrLastOwner = errors.New("cannot remove the last owner of a project")
 
 // ErrProjectExists is returned by PurgeProjectLogs for a project that has not
@@ -87,6 +88,13 @@ type RPCAddMemberArgs struct {
 type RPCRemoveMemberArgs struct {
 	ProjectID   string
 	GithubLogin string
+}
+
+// RPCUpdateMemberRoleArgs is the RPC argument for UpdateMemberRole.
+type RPCUpdateMemberRoleArgs struct {
+	ProjectID   string
+	GithubLogin string
+	Role        string
 }
 
 // RPCCheckMembershipArgs is the RPC argument for CheckMembership.
@@ -296,27 +304,84 @@ func (m *Models) DeleteProject(id primitive.ObjectID) error {
 
 // RemoveProjectMember removes a member from a project. Returns ErrLastOwner if
 // the member is the sole remaining owner.
-//
-// The owner count and the delete run in one transaction, but that alone is not
-// enough: two requests removing two different owners would each read two owners
-// from their own snapshot, delete different documents, never conflict, and
-// leave the project with none. So each transaction first writes to the
-// project's own document. The second one to get there hits a write conflict,
-// WithTransaction retries it, and the retry counts the owners after the first
-// removal has committed.
 func (m *Models) RemoveProjectMember(projectID primitive.ObjectID, githubLogin string) error {
+	githubLogin = NormalizeGithubLogin(githubLogin)
+
+	return m.changeMembers("RemoveProjectMember", projectID, func(sc mongo.SessionContext, coll *mongo.Collection) error {
+		var target ProjectMember
+		if err := coll.FindOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin}).Decode(&target); err != nil {
+			return fmt.Errorf("RemoveProjectMember: %w", err)
+		}
+
+		if target.Role == RoleOwner {
+			if err := refuseLastOwner(sc, coll, projectID); err != nil {
+				return fmt.Errorf("RemoveProjectMember: %w", err)
+			}
+		}
+
+		result, err := coll.DeleteOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin})
+		if err != nil {
+			return fmt.Errorf("RemoveProjectMember delete: %w", err)
+		}
+		if result.DeletedCount == 0 {
+			return fmt.Errorf("RemoveProjectMember: %w", mongo.ErrNoDocuments)
+		}
+		return nil
+	})
+}
+
+// UpdateProjectMemberRole gives an existing member a new role. Returns
+// ErrLastOwner if that would demote the sole remaining owner, and
+// mongo.ErrNoDocuments if the login is not a member. Setting the role a member
+// already holds changes nothing.
+func (m *Models) UpdateProjectMemberRole(projectID primitive.ObjectID, githubLogin, role string) error {
+	if !ValidRole(role) {
+		return fmt.Errorf("UpdateProjectMemberRole: invalid role %q", role)
+	}
+	githubLogin = NormalizeGithubLogin(githubLogin)
+
+	return m.changeMembers("UpdateProjectMemberRole", projectID, func(sc mongo.SessionContext, coll *mongo.Collection) error {
+		var target ProjectMember
+		if err := coll.FindOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin}).Decode(&target); err != nil {
+			return fmt.Errorf("UpdateProjectMemberRole: %w", err)
+		}
+		if target.Role == role {
+			return nil
+		}
+
+		if target.Role == RoleOwner {
+			if err := refuseLastOwner(sc, coll, projectID); err != nil {
+				return fmt.Errorf("UpdateProjectMemberRole: %w", err)
+			}
+		}
+
+		if _, err := coll.UpdateOne(sc, bson.M{"_id": target.ID}, bson.M{"$set": bson.M{"role": role}}); err != nil {
+			return fmt.Errorf("UpdateProjectMemberRole update: %w", err)
+		}
+		return nil
+	})
+}
+
+// changeMembers runs fn, a change to a project's members that must never leave
+// it without an owner, in one transaction.
+//
+// A transaction alone is not enough: two requests removing or demoting two
+// different owners would each read two owners from their own snapshot, write
+// different documents, never conflict, and leave the project with none. So the
+// transaction first writes to the project's own document. The second one to get
+// there hits a write conflict, WithTransaction retries it, and the retry counts
+// the owners after the first change has committed.
+func (m *Models) changeMembers(op string, projectID primitive.ObjectID, fn func(sc mongo.SessionContext, coll *mongo.Collection) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	session, err := m.client.StartSession()
 	if err != nil {
-		return fmt.Errorf("RemoveProjectMember start session: %w", err)
+		return fmt.Errorf("%s start session: %w", op, err)
 	}
 	defer session.EndSession(ctx)
 
 	db := m.client.Database("logs")
-	coll := db.Collection("project_members")
-	githubLogin = NormalizeGithubLogin(githubLogin)
 
 	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
 		// A membership row can outlive its project; with no project document to
@@ -325,34 +390,25 @@ func (m *Models) RemoveProjectMember(projectID primitive.ObjectID, githubLogin s
 			bson.M{"_id": projectID},
 			bson.M{"$currentDate": bson.M{"members_updated_at": true}},
 		); err != nil {
-			return nil, fmt.Errorf("RemoveProjectMember lock project: %w", err)
+			return nil, fmt.Errorf("%s lock project: %w", op, err)
 		}
-
-		var target ProjectMember
-		if err := coll.FindOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin}).Decode(&target); err != nil {
-			return nil, fmt.Errorf("RemoveProjectMember: %w", err)
-		}
-
-		if target.Role == RoleOwner {
-			n, err := coll.CountDocuments(sc, bson.M{"project_id": projectID, "role": RoleOwner})
-			if err != nil {
-				return nil, fmt.Errorf("RemoveProjectMember count owners: %w", err)
-			}
-			if n <= 1 {
-				return nil, ErrLastOwner
-			}
-		}
-
-		result, err := coll.DeleteOne(sc, bson.M{"project_id": projectID, "github_login": githubLogin})
-		if err != nil {
-			return nil, fmt.Errorf("RemoveProjectMember delete: %w", err)
-		}
-		if result.DeletedCount == 0 {
-			return nil, fmt.Errorf("RemoveProjectMember: %w", mongo.ErrNoDocuments)
-		}
-		return nil, nil
+		return nil, fn(sc, db.Collection("project_members"))
 	})
 	return err
+}
+
+// refuseLastOwner returns ErrLastOwner unless the project has an owner besides
+// the one about to be removed or demoted. The count is only safe from concurrent
+// changes inside changeMembers.
+func refuseLastOwner(sc mongo.SessionContext, coll *mongo.Collection, projectID primitive.ObjectID) error {
+	n, err := coll.CountDocuments(sc, bson.M{"project_id": projectID, "role": RoleOwner})
+	if err != nil {
+		return fmt.Errorf("count owners: %w", err)
+	}
+	if n <= 1 {
+		return ErrLastOwner
+	}
+	return nil
 }
 
 func (m *Models) IsMember(projectID primitive.ObjectID, githubLogin string) (bool, error) {
