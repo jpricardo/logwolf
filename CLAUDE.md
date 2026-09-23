@@ -87,6 +87,7 @@ docker compose up
 
 - SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting (in broker middleware)
 - Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations
+- GitHub logins are case-insensitive: memberships store them lowercase and every lookup normalizes with `data.NormalizeGithubLogin` (the broker does it once, in `requireUserLogin`). The session keeps GitHub's casing for display
 
 **Reading vs. writing:** Broker handles writes asynchronously (via RabbitMQ) and reads synchronously (via RPC to logger). Do not add direct DB calls to broker or listener. This holds for both entry points: SDK clients scoped by API key, and the dashboard scoped by project id + membership.
 
@@ -94,7 +95,7 @@ docker compose up
 
 **Data retention:** Retention is per project (default 90 days; supported values are 30/60/90/180/365, or 0 for forever). A cleanup loop in Logger deletes expired logs project by project every `CLEANUP_INTERVAL`, each project under its own timeout so a large one cannot starve the rest. Logs of a deleted project never persist. `DeleteProject` leaves them out of its transaction, so a project with millions of logs still deletes at once, and hands them to this loop, which purges them in batches. `LogInfo` refuses events whose project does not exist, and each pass also sweeps logs whose `project_id` matches no project, which finishes a purge that failed. The global TTL index used before multi-tenancy is dropped on startup.
 
-**Startup migration:** Logger adopts pre-multi-tenancy `logs`, `api_keys`, and `settings` (documents with no `project_id`) into a project named `Default` before it serves traffic, making every login in `LOGWOLF_ALLOWED_GITHUB_USERS` and `LOGWOLF_DEFAULT_PROJECT_OWNERS` an owner. On every start, whatever the orphan count, it also gives an ownerless `Default` those owners. That covers a failed owner step, owners configured after the upgrade, and org-only deployments. It is idempotent and silent when there is nothing to do. See `toolbox/data/migrate.go` and `logger/cmd/api/migrate.go`.
+**Startup migration:** Logger adopts pre-multi-tenancy `logs`, `api_keys`, and `settings` (documents with no `project_id`) into a project named `Default` before it serves traffic, making every login in `LOGWOLF_ALLOWED_GITHUB_USERS` and `LOGWOLF_DEFAULT_PROJECT_OWNERS` an owner. On every start, whatever the orphan count, it also gives an ownerless `Default` those owners. That covers a failed owner step, owners configured after the upgrade, and org-only deployments. Before any of that it rewrites `project_members` logins to lowercase, merging case-only duplicates and keeping the higher role. It is idempotent and silent when there is nothing to do. See `toolbox/data/migrate.go` and `logger/cmd/api/migrate.go`.
 
 ## Service details
 

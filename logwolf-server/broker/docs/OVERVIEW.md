@@ -54,7 +54,8 @@ cmd/api/
 | `DELETE` | `/projects/{id}/logs/{logID}`    | Delete one event                            |
 
 Internal routes also require `X-User-Login`; project access is checked against
-that login on every call.
+that login on every call. `requireUserLogin` lowercases it first, as memberships
+are stored: GitHub logins are case-insensitive.
 
 The `/projects/{id}/logs` routes are the dashboard's way into events. They do the
 same work as the public `/logs` routes, but take the project from the path and

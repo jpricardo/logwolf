@@ -502,6 +502,42 @@ func TestIsMember(t *testing.T) {
 	}
 }
 
+// TestProjectMembers_CaseInsensitiveLogin: an owner types "jdoe" on the settings
+// page, GitHub signs the user in as "JDoe". GitHub logins are case-insensitive,
+// so every membership lookup must treat the two as the same person — and the
+// unique index must not admit them as two members.
+func TestProjectMembers_CaseInsensitiveLogin(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, _ := m.InsertProject(data.Project{Name: "Case", Slug: "case"})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "owner", Role: data.RoleOwner})
+	if _, err := m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "jdoe", Role: data.RoleMember}); err != nil {
+		t.Fatalf("InsertProjectMember: %v", err)
+	}
+
+	ok, err := m.IsMember(p.ID, "JDoe")
+	if err != nil || !ok {
+		t.Errorf("IsMember JDoe: ok=%v err=%v, want the membership added as jdoe", ok, err)
+	}
+
+	projects, err := m.GetProjectsForUser("JDoe")
+	if err != nil || len(projects) != 1 {
+		t.Errorf("GetProjectsForUser JDoe: got %d projects, err=%v, want 1", len(projects), err)
+	}
+
+	_, err = m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "JDOE", Role: data.RoleOwner})
+	if !mongo.IsDuplicateKeyError(err) {
+		t.Errorf("InsertProjectMember JDOE next to jdoe: err=%v, want a duplicate key error", err)
+	}
+
+	if err := m.RemoveProjectMember(p.ID, "JDoe"); err != nil {
+		t.Fatalf("RemoveProjectMember JDoe: %v", err)
+	}
+	if ok, _ := m.IsMember(p.ID, "jdoe"); ok {
+		t.Error("jdoe is still a member after removing JDoe")
+	}
+}
+
 func TestGetProjectsForUser(t *testing.T) {
 	m := setupProjectModels(t)
 

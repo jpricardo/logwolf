@@ -165,6 +165,29 @@ func TestRequireUserLogin_PresentHeader(t *testing.T) {
 	}
 }
 
+// TestRequireUserLogin_NormalizesCase: the dashboard forwards the login in
+// GitHub's casing, and memberships are stored lowercase, so the handlers' role
+// checks only match if the middleware folds case first.
+func TestRequireUserLogin_NormalizesCase(t *testing.T) {
+	app := newApp()
+
+	var gotLogin string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLogin = userLoginFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := app.requireUserLogin(capture)
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("X-User-Login", "JPRicardo")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if gotLogin != "jpricardo" {
+		t.Errorf("userLoginFromContext = %q, want %q", gotLogin, "jpricardo")
+	}
+}
+
 func TestRequireUserLogin_EmptyHeaderValue(t *testing.T) {
 	app := newApp()
 	handler := app.requireUserLogin(http.HandlerFunc(okHandler))

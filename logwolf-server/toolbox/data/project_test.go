@@ -52,6 +52,22 @@ func TestValidRole(t *testing.T) {
 	}
 }
 
+func TestNormalizeGithubLogin(t *testing.T) {
+	cases := map[string]string{
+		"jdoe":     "jdoe",
+		"JDoe":     "jdoe",
+		"JDOE":     "jdoe",
+		" JDoe ":   "jdoe",
+		"j-doe-42": "j-doe-42",
+		"":         "",
+	}
+	for in, want := range cases {
+		if got := NormalizeGithubLogin(in); got != want {
+			t.Errorf("NormalizeGithubLogin(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestProjectStruct(t *testing.T) {
 	id := primitive.NewObjectID()
 	now := time.Now()

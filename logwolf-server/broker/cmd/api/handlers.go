@@ -737,7 +737,8 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Login == "" {
+	login := data.NormalizeGithubLogin(body.Login)
+	if login == "" {
 		app.errorJSON(w, fmt.Errorf("login is required"), http.StatusBadRequest)
 		return
 	}
@@ -770,7 +771,7 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 	var reply string
 	if err := client.Call("RPCServer.AddMember", &data.RPCAddMemberArgs{
 		ProjectID:   id,
-		GithubLogin: body.Login,
+		GithubLogin: login,
 		Role:        body.Role,
 	}, &reply); err != nil {
 		app.errorJSON(w, err)
@@ -782,7 +783,7 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 
 func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	login := chi.URLParam(r, "login")
+	login := data.NormalizeGithubLogin(chi.URLParam(r, "login"))
 	userLogin := userLoginFromContext(r)
 
 	client, err := rpc.Dial("tcp", loggerRPCAddr())

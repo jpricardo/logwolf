@@ -19,7 +19,7 @@ func TestParseGithubLogins(t *testing.T) {
 		{"trims spaces", " alice , bob ", []string{"alice", "bob"}},
 		{"drops blanks", "alice,,bob,", []string{"alice", "bob"}},
 		{"drops duplicates", "alice,bob,alice", []string{"alice", "bob"}},
-		{"preserves case", "JPRicardo", []string{"JPRicardo"}},
+		{"lowercases", "JPRicardo", []string{"jpricardo"}},
 	}
 
 	for _, tt := range tests {
@@ -37,14 +37,13 @@ func TestParseGithubLogins(t *testing.T) {
 	}
 }
 
-// TestParseGithubLogins_CaseIsSignificant guards the reason case is preserved:
-// project_members lookups match the login GitHub returns at sign-in exactly, so
-// folding case here would leave a mixed-case user locked out of the project the
-// migration created for them.
-func TestParseGithubLogins_CaseIsSignificant(t *testing.T) {
+// TestParseGithubLogins_CaseInsensitive guards against case-only duplicates:
+// GitHub treats Alice and alice as one account, so the allowlist must yield one
+// owner, stored the way membership lookups normalize the signed-in login.
+func TestParseGithubLogins_CaseInsensitive(t *testing.T) {
 	got := ParseGithubLogins("Alice,alice")
-	if len(got) != 2 {
-		t.Fatalf("ParseGithubLogins should treat differently-cased logins as distinct, got %v", got)
+	if len(got) != 1 || got[0] != "alice" {
+		t.Fatalf("ParseGithubLogins(%q) = %v, want [alice]", "Alice,alice", got)
 	}
 }
 

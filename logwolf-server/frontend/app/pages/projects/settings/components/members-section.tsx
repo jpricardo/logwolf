@@ -71,7 +71,7 @@ export function MembersSection({ members, currentUser, canManage }: Props) {
 										<TableRow key={member.id}>
 											<TableCell className='font-medium'>
 												{member.github_login}
-												{member.github_login === currentUser && (
+												{member.github_login === currentUser.toLowerCase() && (
 													<span className='ml-2 text-xs text-muted-foreground'>(you)</span>
 												)}
 											</TableCell>
