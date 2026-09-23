@@ -42,10 +42,9 @@ func (s *Settings) collection() *mongo.Collection {
 	return s.client.Database("logs").Collection("settings")
 }
 
-func (s *Settings) GetRetentionDays(projectID string) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+// GetRetentionDays returns a project's retention in days, or the default if it
+// has none set. ctx bounds the lookup; the caller picks the deadline.
+func (s *Settings) GetRetentionDays(ctx context.Context, projectID string) (int, error) {
 	var doc settingsDoc
 	err := s.collection().FindOne(ctx, bson.M{"project_id": projectID, "key": "retention_days"}).Decode(&doc)
 	if err == mongo.ErrNoDocuments {

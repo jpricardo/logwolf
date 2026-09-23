@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"logwolf-toolbox/data"
 	"os"
 	"time"
 )
@@ -83,38 +84,81 @@ func (app *Config) cleanupOrphanedLogs(ctx context.Context) {
 	}
 }
 
-func (app *Config) cleanupExpiredLogs(ctx context.Context) {
-	passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+const (
+	// projectListTimeout bounds reading the project list at the start of a pass.
+	projectListTimeout = 30 * time.Second
 
-	projects, err := app.Models.GetAllProjects(passCtx)
+	// projectCleanupTimeout bounds the retention cleanup of one project. Each
+	// project gets its own, so a project with a huge expired set can only use up
+	// its own time, never that of the projects after it. What it has not deleted
+	// by then is left for the next pass; DeleteExpiredLogs deletes in batches, so
+	// the progress is kept.
+	projectCleanupTimeout = 2 * time.Minute
+)
+
+// retentionStore is what the retention cleanup needs from the database.
+type retentionStore interface {
+	GetAllProjects(ctx context.Context) ([]data.Project, error)
+	GetRetentionDays(ctx context.Context, projectID string) (int, error)
+	DeleteExpiredLogs(ctx context.Context, projectID string, before time.Time) (int64, error)
+}
+
+// modelsRetentionStore is the retentionStore of a running Logger. data.Models
+// keeps the retention lookup on its Settings field; this puts it alongside the
+// rest.
+type modelsRetentionStore struct {
+	*data.Models
+}
+
+func (s modelsRetentionStore) GetRetentionDays(ctx context.Context, projectID string) (int, error) {
+	return s.Settings.GetRetentionDays(ctx, projectID)
+}
+
+func (app *Config) cleanupExpiredLogs(ctx context.Context) {
+	expireLogs(ctx, modelsRetentionStore{&app.Models}, projectCleanupTimeout)
+}
+
+// expireLogs deletes the expired logs of every project, giving each one
+// projectTimeout of its own. ctx stops the pass on shutdown.
+func expireLogs(ctx context.Context, store retentionStore, projectTimeout time.Duration) {
+	listCtx, cancel := context.WithTimeout(ctx, projectListTimeout)
+	projects, err := store.GetAllProjects(listCtx)
+	cancel()
 	if err != nil {
 		log.Printf("Retention cleanup: error fetching projects: %v", err)
 		return
 	}
 
 	for _, p := range projects {
-		projectID := p.ID.Hex()
-
-		days, err := app.Models.Settings.GetRetentionDays(projectID)
-		if err != nil {
-			log.Printf("Retention cleanup: project %s: error reading retention: %v", projectID, err)
-			continue
+		if ctx.Err() != nil {
+			return
 		}
+		expireProjectLogs(ctx, store, p.ID.Hex(), projectTimeout)
+	}
+}
 
-		if days == 0 {
-			continue
-		}
+func expireProjectLogs(ctx context.Context, store retentionStore, projectID string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
-		threshold := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
-		deleted, err := app.Models.DeleteExpiredLogs(passCtx, projectID, threshold)
-		if err != nil {
-			log.Printf("Retention cleanup: project %s: error deleting: %v", projectID, err)
-			continue
-		}
+	days, err := store.GetRetentionDays(ctx, projectID)
+	if err != nil {
+		log.Printf("Retention cleanup: project %s: error reading retention: %v", projectID, err)
+		return
+	}
 
-		if deleted > 0 {
-			log.Printf("Retention cleanup: project %s: deleted %d expired logs (retention=%dd)", projectID, deleted, days)
-		}
+	if days == 0 {
+		return
+	}
+
+	threshold := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	deleted, err := store.DeleteExpiredLogs(ctx, projectID, threshold)
+	if err != nil {
+		log.Printf("Retention cleanup: project %s: error after deleting %d expired logs, the rest are left for the next pass: %v", projectID, deleted, err)
+		return
+	}
+
+	if deleted > 0 {
+		log.Printf("Retention cleanup: project %s: deleted %d expired logs (retention=%dd)", projectID, deleted, days)
 	}
 }

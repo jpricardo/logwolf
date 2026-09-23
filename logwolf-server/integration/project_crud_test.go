@@ -198,7 +198,7 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	}
 	// Settings must be gone — GetRetentionDays falls back to the default (90)
 	// when no document exists, so verify directly that no settings doc survives.
-	days, err := m.Settings.GetRetentionDays(p.ID.Hex())
+	days, err := m.Settings.GetRetentionDays(context.Background(), p.ID.Hex())
 	if err != nil {
 		t.Fatalf("GetRetentionDays after delete: %v", err)
 	}

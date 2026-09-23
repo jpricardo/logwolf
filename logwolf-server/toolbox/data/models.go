@@ -150,15 +150,22 @@ func (m *Models) EnsureLogsIndexes() error {
 	return nil
 }
 
+// DeleteExpiredLogs deletes a project's logs created before the given time, and
+// returns how many it deleted, including when it stops on an error.
+//
+// It deletes in batches (see deleteLogsInBatches), so a project that has just
+// shortened its retention, or never had it enforced, can be cut off by ctx
+// part-way without losing the progress: the batches already deleted stay
+// deleted, and the next call carries on from there.
 func (m *Models) DeleteExpiredLogs(ctx context.Context, projectID string, before time.Time) (int64, error) {
-	result, err := m.client.Database("logs").Collection("logs").DeleteMany(ctx, bson.M{
+	n, err := m.deleteLogsInBatches(ctx, bson.M{
 		"project_id": projectID,
 		"created_at": bson.M{"$lt": before},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("DeleteExpiredLogs: %w", err)
+		return n, fmt.Errorf("DeleteExpiredLogs: %w", err)
 	}
-	return result.DeletedCount, nil
+	return n, nil
 }
 
 // orphanGrace keeps DeleteOrphanedLogs away from logs written in the last
