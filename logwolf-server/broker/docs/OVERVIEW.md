@@ -16,6 +16,7 @@ cmd/api/
 ├── routes.go        # Route registration (chi)
 ├── handlers.go      # Request handlers
 ├── middleware.go    # Auth middleware (Bearer token, internal secret)
+├── rpcerrors.go     # Maps the logger's RPC errors to HTTP statuses
 └── helpers.go       # JSON read/write utilities
 ```
 
@@ -69,6 +70,23 @@ same work as the public `/logs` routes, but take the project from the path and
 check the caller's membership instead of reading it off an API key — the
 dashboard authenticates as a user and has no key of its own to scope it. An id
 that belongs to another project is a 404, never another project's event.
+
+### Errors from the logger
+
+`net/rpc` turns the logger's errors into plain strings, so `rpcerrors.go` reads
+the cause back out of the message in one place (`classifyRPCError`) and
+`rpcErrorJSON` maps it to a status, replacing Mongo's wording with a message of
+the handler's choosing:
+
+| Cause                                                  | Status | Example                                                                   |
+| ------------------------------------------------------ | ------ | ------------------------------------------------------------------------- |
+| Unique index violation (`E11000`)                      | 409    | Adding an existing member; renaming to a slug another project already has |
+| No document matched, or the id is not a valid ObjectID | 404    | A malformed project id on any project-scoped route                        |
+| `data.ErrLastOwner`                                    | 400    | Removing or demoting the last owner                                       |
+| Anything else                                          | 500    | The logger or MongoDB failed                                              |
+
+Retention days are checked against `data.ValidRetentionDays` before the logger is
+called. A missing `days` is a 400 as well, rather than 0 (keep forever).
 
 ### Health
 
