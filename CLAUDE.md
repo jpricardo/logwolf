@@ -92,7 +92,7 @@ docker compose up
 
 **RabbitMQ topology:** Topic exchange `logs_topic`; routing keys `log.INFO`, `log.WARNING`, `log.ERROR`. Queue declarations live in `toolbox/event/event.go`.
 
-**Data retention:** Retention is per project (default 90 days; supported values are 30/60/90/180/365, or 0 for forever). A cleanup loop in Logger deletes expired logs project by project every `CLEANUP_INTERVAL`. The global TTL index used before multi-tenancy is dropped on startup.
+**Data retention:** Retention is per project (default 90 days; supported values are 30/60/90/180/365, or 0 for forever). A cleanup loop in Logger deletes expired logs project by project every `CLEANUP_INTERVAL`. Logs of a deleted project never persist: `LogInfo` refuses events whose project does not exist, and the same loop sweeps logs whose `project_id` matches no project. The global TTL index used before multi-tenancy is dropped on startup.
 
 **Startup migration:** Logger adopts pre-multi-tenancy `logs`, `api_keys`, and `settings` (documents with no `project_id`) into a project named `Default` before it serves traffic, making every login in `LOGWOLF_ALLOWED_GITHUB_USERS` and `LOGWOLF_DEFAULT_PROJECT_OWNERS` an owner. On every start, whatever the orphan count, it also gives an ownerless `Default` those owners. That covers a failed owner step, owners configured after the upgrade, and org-only deployments. It is idempotent and silent when there is nothing to do. See `toolbox/data/migrate.go` and `logger/cmd/api/migrate.go`.
 
@@ -113,11 +113,11 @@ Entry point: `cmd/api/main.go`. No external dependencies beyond toolbox. Pure co
 
 ### Logger (`logwolf-server/logger`)
 
-Entry point: `cmd/api/main.go`. Key files: `rpc.go`, `routes.go`, `migrate.go`, `cleanup.go`.
+Entry point: `cmd/api/main.go`. Key files: `rpc.go`, `routes.go`, `migrate.go`, `cleanup.go`, `projects.go`.
 
 RPC methods (Go stdlib `net/rpc`):
 
-- `RPCServer.LogInfo` — insert event
+- `RPCServer.LogInfo` — insert event (refused if its project does not exist)
 - `RPCServer.GetLogs` — query with pagination/filtering
 - `RPCServer.GetLog` — fetch one event by id within a project
 - `RPCServer.DeleteLog` — delete by filter, returns count

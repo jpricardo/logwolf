@@ -13,8 +13,9 @@ import (
 )
 
 // TestRetentionCleanup verifies that the logger's background cleanup goroutine
-// deletes expired log entries while leaving unexpired ones intact, and that
-// projects configured for infinite retention (days=0) are not touched.
+// deletes expired log entries while leaving unexpired ones intact, that
+// projects configured for infinite retention (days=0) are not touched, and that
+// logs of a project that no longer exists are deleted whatever their age.
 func TestRetentionCleanup(t *testing.T) {
 	ctx := context.Background()
 
@@ -58,6 +59,7 @@ func TestRetentionCleanup(t *testing.T) {
 	expiredLogName := "expired-log-project-a"
 	freshLogName := "fresh-log-project-a"
 	oldLogName := "old-log-project-b-forever"
+	orphanLogName := "log-of-deleted-project"
 
 	_, err = db.Collection("logs").InsertMany(ctx, []interface{}{
 		bson.M{
@@ -87,6 +89,17 @@ func TestRetentionCleanup(t *testing.T) {
 			"created_at": time.Now().Add(-365 * 24 * time.Hour),
 			"updated_at": time.Now().Add(-365 * 24 * time.Hour),
 		},
+		// Its project is in no collection — deleted after this event passed the
+		// Logger's check. Not expired by any retention setting; deleted anyway.
+		bson.M{
+			"project_id": primitive.NewObjectID().Hex(),
+			"name":       orphanLogName,
+			"data":       "{}",
+			"severity":   "info",
+			"tags":       bson.A{},
+			"created_at": time.Now().Add(-time.Hour),
+			"updated_at": time.Now().Add(-time.Hour),
+		},
 	})
 	if err != nil {
 		t.Fatalf("insert logs: %v", err)
@@ -111,6 +124,7 @@ func TestRetentionCleanup(t *testing.T) {
 
 	// The cleanup runs immediately at startup; poll until the expired log disappears.
 	waitForLogGone(t, coll, expiredLogName, 10*time.Second)
+	waitForLogGone(t, coll, orphanLogName, 10*time.Second)
 
 	// The fresh log must remain.
 	n, err := coll.CountDocuments(ctx, bson.M{"name": freshLogName})

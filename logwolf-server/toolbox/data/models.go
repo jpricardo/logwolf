@@ -161,6 +161,69 @@ func (m *Models) DeleteExpiredLogs(ctx context.Context, projectID string, before
 	return result.DeletedCount, nil
 }
 
+// orphanGrace keeps DeleteOrphanedLogs away from logs written in the last
+// minute, so clock skew between Logger instances cannot make a log look older
+// than the project list it is checked against.
+const orphanGrace = time.Minute
+
+// DeleteOrphanedLogs deletes logs filed under a project id that matches no
+// project, and returns how many it deleted per project id. They come from events
+// that were already on their way when their project was deleted; no user can
+// see them and the per-project retention cleanup never visits them.
+//
+// Only logs older than the moment the project list is read are considered. A
+// log is written after its project exists, so an old enough log whose project
+// is missing from that list belongs to a deleted project — never to one created
+// while the sweep runs.
+//
+// Logs with no project_id, or an empty one, are left alone: they predate
+// projects, and the startup migration adopts them.
+func (m *Models) DeleteOrphanedLogs(ctx context.Context) (map[string]int64, error) {
+	cutoff := time.Now().Add(-orphanGrace)
+	db := m.client.Database("logs")
+
+	logged, err := db.Collection("logs").Distinct(ctx, "project_id", bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("DeleteOrphanedLogs distinct: %w", err)
+	}
+
+	cursor, err := db.Collection("projects").Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, fmt.Errorf("DeleteOrphanedLogs projects: %w", err)
+	}
+	var projects []struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &projects); err != nil {
+		return nil, fmt.Errorf("DeleteOrphanedLogs projects decode: %w", err)
+	}
+
+	live := make(map[string]bool, len(projects))
+	for _, p := range projects {
+		live[p.ID.Hex()] = true
+	}
+
+	deleted := map[string]int64{}
+	for _, v := range logged {
+		projectID, ok := v.(string)
+		if !ok || projectID == "" || live[projectID] {
+			continue
+		}
+
+		result, err := db.Collection("logs").DeleteMany(ctx, bson.M{
+			"project_id": projectID,
+			"created_at": bson.M{"$lt": cutoff},
+		})
+		if err != nil {
+			return deleted, fmt.Errorf("DeleteOrphanedLogs project %s: %w", projectID, err)
+		}
+		if result.DeletedCount > 0 {
+			deleted[projectID] = result.DeletedCount
+		}
+	}
+	return deleted, nil
+}
+
 func (m *Models) DropLogsCollection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

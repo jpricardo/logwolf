@@ -1,21 +1,48 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"logwolf-toolbox/data"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// errUnknownProject is what LogInfo answers for an event whose project does not
+// exist — usually one that was deleted while the event sat in RabbitMQ.
+var errUnknownProject = errors.New("project does not exist")
+
 type RPCServer struct {
-	models data.Models
+	models   data.Models
+	projects *projectCache
 }
 
+func (r *RPCServer) projectExists(projectID string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return r.models.ProjectExists(ctx, projectID)
+}
+
+// LogInfo inserts an event. One filed under a project that does not exist is
+// dropped with an error instead: nothing could ever read it, and the retention
+// cleanup, which goes project by project, would never delete it.
 func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	log.Printf("Logging info: %s", p.Name)
 
-	err := r.models.Insert(data.LogEntry{
+	exists, err := r.projects.exists(p.ProjectID, r.projectExists)
+	if err != nil {
+		log.Println("Error checking the event's project:", err)
+		return err
+	}
+	if !exists {
+		log.Printf("Dropping event %q: project %q does not exist", p.Name, p.ProjectID)
+		return fmt.Errorf("LogInfo: %w: %q", errUnknownProject, p.ProjectID)
+	}
+
+	err = r.models.Insert(data.LogEntry{
 		ProjectID: p.ProjectID,
 		Name:      p.Name,
 		Data:      p.Data,
@@ -169,6 +196,7 @@ func (r *RPCServer) DeleteProject(args *data.RPCProjectIDArgs, reply *string) er
 		log.Println("Error deleting project:", err)
 		return err
 	}
+	r.projects.forget(args.ID)
 	*reply = "ok"
 	return nil
 }

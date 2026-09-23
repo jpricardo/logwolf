@@ -62,6 +62,8 @@ Two operations run in MongoDB transactions, so MongoDB must run as a replica set
 - `DeleteProject` removes the project's logs, API keys, settings, members and the project itself as one unit. A failure part-way rolls the whole thing back.
 - `RemoveProjectMember` counts the owners and deletes the member in one transaction, and writes to the project document first (`members_updated_at`). A transaction on its own would still let two concurrent removals of different owners both pass the count. The write to a shared document forces a write conflict, `WithTransaction` retries the loser, and the retry sees `ErrLastOwner`.
 
+`ProjectExists` answers whether a hex id names a project; a string that is not an ObjectID is simply `false`. Logger uses it to refuse events for deleted projects, and `DeleteOrphanedLogs` (in `models.go`) removes the ones that got through: logs whose `project_id` matches no project and that are older than a minute, so it never races a project being created. It skips logs with no or an empty `project_id`, which belong to the startup migration.
+
 ### Startup migration (`migrate.go`)
 
 Adopts data written before projects existed. Logger calls it on every start; Broker and Listener never do.

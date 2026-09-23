@@ -13,7 +13,8 @@ The only Logwolf service with direct MongoDB access. All reads, writes, and dele
 cmd/api/
 ├── main.go     # MongoDB setup, indexes, startup migration, dual-server startup, graceful shutdown
 ├── migrate.go  # Startup migration of pre-multi-tenancy data into the Default project
-├── cleanup.go  # Background per-project retention cleanup loop
+├── cleanup.go  # Background per-project retention cleanup loop, plus the sweep of deleted projects' logs
+├── projects.go # Short-lived cache of project ids known to exist, used by LogInfo
 ├── routes.go   # HTTP route handlers (health check only)
 └── rpc.go      # RPCServer type and all RPC method implementations
 ```
@@ -24,7 +25,7 @@ The RPC server is exposed via Go's standard `net/rpc` package on TCP port 5001.
 
 | Method                | Input               | Output       | Description                                        |
 | --------------------- | ------------------- | ------------ | -------------------------------------------------- |
-| `RPCServer.LogInfo`   | `RPCLogPayload`     | `string`     | Insert a single log entry into MongoDB             |
+| `RPCServer.LogInfo`   | `RPCLogPayload`     | `string`     | Insert one log entry, unless its project is gone   |
 | `RPCServer.GetLogs`   | `QueryParams`       | `[]LogEntry` | Query logs with optional filtering and pagination  |
 | `RPCServer.GetLog`    | `RPCLogEntryFilter` | `LogEntry`   | Fetch one entry by id within a project             |
 | `RPCServer.DeleteLog` | `RPCLogEntryFilter` | `int64`      | Delete matching log entries; returns count deleted |
@@ -54,6 +55,13 @@ Each log entry stored in MongoDB contains:
 ## Retention
 
 Retention is a per-project setting (default 90 days; supported values 30, 60, 90, 180, 365, or 0 for forever). A background loop deletes expired logs project by project every `CLEANUP_INTERVAL`.
+
+### Logs of deleted projects
+
+Deleting a project does not stop every event already addressed to it: the Broker caches API keys for 60 seconds, and events can be waiting in RabbitMQ. Nobody could read those logs, and the retention loop, which walks the existing projects, would never delete them. Two things keep them from piling up:
+
+- `LogInfo` checks that the event's project exists and drops the event with a `project does not exist` error if not. The Listener logs the error and moves on. Project ids seen to exist are cached for a minute, and `DeleteProject` evicts its project from the cache at once, so the check is rarely a database round trip.
+- Each cleanup pass also deletes logs whose `project_id` names no project (`DeleteOrphanedLogs`). That catches an event that passed the check just before its project was deleted, or one accepted by another Logger instance whose cache has not expired. Logs with no `project_id`, or an empty one, are left for the startup migration.
 
 Pre-multi-tenancy builds enforced retention with a single global TTL index on `logs.created_at`. That index is dropped on startup — left in place it would keep expiring logs on the old global schedule, overriding whatever each project now has configured.
 
@@ -90,7 +98,7 @@ The HTTP server has a 15-second shutdown timeout. The RPC server closes its TCP 
 | `MONGO_URL`                      | `mongodb://mongo:27017` | MongoDB connection string                                                                 |
 | `LOGGER_RPC_PORT`                | `5001`                  | TCP port for the RPC server                                                               |
 | `LOGGER_HTTP_PORT`               | `80`                    | HTTP port for health checks                                                               |
-| `CLEANUP_INTERVAL`               | `1h`                    | How often the per-project retention cleanup runs                                          |
+| `CLEANUP_INTERVAL`               | `1h`                    | How often the per-project retention cleanup (and the deleted-project sweep) runs          |
 | `LOGWOLF_ALLOWED_GITHUB_USERS`   | —                       | Comma-separated logins made owners of `Default` by the startup migration                  |
 | `LOGWOLF_DEFAULT_PROJECT_OWNERS` | —                       | More comma-separated owners of `Default`, for org-only deployments; merged with the above |
 

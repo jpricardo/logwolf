@@ -66,7 +66,7 @@ func main() {
 }
 
 func (app *Config) serve(ctx context.Context) {
-	err := rpc.Register(&RPCServer{models: app.Models})
+	err := rpc.Register(&RPCServer{models: app.Models, projects: newProjectCache(projectCacheTTL)})
 	if err != nil {
 		log.Panic(err)
 	}
