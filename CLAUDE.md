@@ -66,6 +66,7 @@ npm run typecheck # tsc --noEmit
 ```bash
 npm run dev       # Vite dev server
 npm run build     # react-router build
+npm test          # vitest (single run)
 npm run typecheck # react-router typegen + tsc
 npm run lint      # oxlint
 ```
@@ -87,7 +88,7 @@ docker compose up
 
 - SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting (in broker middleware)
 - API keys carry scopes: `ingest` (`POST /logs`, `/logs/batch`), `read` (`GET /logs`), `delete` (`DELETE /logs`). `requireScope` answers 403 without the route's scope. New keys get `ingest` alone unless the creator picks more, because keys ship in browser bundles. Keys stored before scopes existed have none and are read back with all three (`Legacy`), so they keep working
-- Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations
+- Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations. Sign-in is deny-by-default: a login must be in `LOGWOLF_ALLOWED_GITHUB_USERS` or belong to an org in `LOGWOLF_ALLOWED_GITHUB_ORGS`; with both empty nobody gets in (`app/lib/allowlist.server.ts`)
 - GitHub logins are case-insensitive: memberships store them lowercase and every lookup normalizes with `data.NormalizeGithubLogin` (the broker does it once, in `requireUserLogin`). The session keeps GitHub's casing for display
 
 **Reading vs. writing:** Broker handles writes asynchronously (via RabbitMQ) and reads synchronously (via RPC to logger). Do not add direct DB calls to broker or listener. This holds for both entry points: SDK clients scoped by API key, and the dashboard scoped by project id + membership.
@@ -163,12 +164,13 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and all
 1. Go unit tests (broker + toolbox + logger)
 2. Integration tests
 3. JS SDK tests
+4. Frontend tests
 
 A separate workflow (`release-js-client.yml`) publishes the JS SDK to npm.
 
 ## Environment
 
-Copy `.env.example` to `.env` and fill in GitHub OAuth credentials before running the stack locally. Required vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ALLOWED_USERS` or `GITHUB_ALLOWED_ORGS`, `SESSION_SECRET`, `API_SECRET`.
+Copy `.env.example` to `.env` and fill in GitHub OAuth credentials before running the stack locally. Required vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `LOGWOLF_ALLOWED_GITHUB_USERS` or `LOGWOLF_ALLOWED_GITHUB_ORGS`, `SESSION_SECRET`, `API_SECRET`.
 
 Per-service env vars:
 
