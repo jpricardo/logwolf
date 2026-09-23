@@ -72,16 +72,15 @@ func orphanedFilter() bson.M {
 }
 
 // ParseGithubLogins splits a comma-separated allowlist (as used by
-// LOGWOLF_ALLOWED_GITHUB_USERS) into logins, dropping blanks and duplicates.
-//
-// Case is preserved: memberships are matched against the login GitHub returns
-// at sign-in, exactly as the dashboard allowlist compares it.
+// LOGWOLF_ALLOWED_GITHUB_USERS) into normalized logins, dropping blanks and
+// duplicates. Logins that differ only in case are duplicates: GitHub treats
+// them as one account.
 func ParseGithubLogins(raw string) []string {
 	var logins []string
 	seen := make(map[string]bool)
 
 	for _, part := range strings.Split(raw, ",") {
-		login := strings.TrimSpace(part)
+		login := NormalizeGithubLogin(part)
 		if login == "" || seen[login] {
 			continue
 		}
@@ -242,6 +241,7 @@ func (m *Models) ensureOwners(ctx context.Context, projectID primitive.ObjectID,
 	var changed int64
 
 	for _, login := range logins {
+		login = NormalizeGithubLogin(login)
 		update := bson.M{"$setOnInsert": bson.M{
 			"project_id":   projectID,
 			"github_login": login,
@@ -272,6 +272,137 @@ func (m *Models) ensureOwners(ctx context.Context, projectID primitive.ObjectID,
 	}
 
 	return changed, nil
+}
+
+// LoginNormalization summarises one run of NormalizeMemberLogins: how many
+// memberships it rewrote to their normalized login, and how many case-only
+// duplicates it merged into them.
+type LoginNormalization struct {
+	Normalized int64
+	Merged     int64
+}
+
+// NormalizeMemberLogins rewrites memberships stored before logins were
+// normalized, so the membership checks, which look logins up normalized, find
+// them again. Where a project holds the same login in several casings, the rows
+// merge into one that keeps the oldest join date and the highest role, so no one
+// loses access they had under either casing.
+//
+// It is idempotent and does nothing once every login is normalized, so it is
+// safe to run on every start. Each login is merged in its own transaction; a run
+// that fails partway leaves the rest for the next start.
+func (m *Models) NormalizeMemberLogins(ctx context.Context) (LoginNormalization, error) {
+	var report LoginNormalization
+	coll := m.client.Database("logs").Collection("project_members")
+
+	// The collection holds one row per user per project, so it is small enough
+	// to scan, and comparing in Go applies exactly the normalization new writes get.
+	cursor, err := coll.Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"project_id": 1, "github_login": 1}))
+	if err != nil {
+		return report, fmt.Errorf("NormalizeMemberLogins: %w", err)
+	}
+	var members []ProjectMember
+	if err := cursor.All(ctx, &members); err != nil {
+		return report, fmt.Errorf("NormalizeMemberLogins decode: %w", err)
+	}
+
+	type memberKey struct {
+		projectID primitive.ObjectID
+		login     string
+	}
+	var stale []memberKey
+	seen := make(map[memberKey]bool)
+	for _, mb := range members {
+		k := memberKey{mb.ProjectID, NormalizeGithubLogin(mb.GithubLogin)}
+		if mb.GithubLogin != k.login && !seen[k] {
+			seen[k] = true
+			stale = append(stale, k)
+		}
+	}
+	if len(stale) == 0 {
+		return report, nil
+	}
+
+	session, err := m.client.StartSession()
+	if err != nil {
+		return report, fmt.Errorf("NormalizeMemberLogins start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	for _, k := range stale {
+		merged, err := m.mergeMemberLogin(ctx, session, k.projectID, k.login)
+		if err != nil {
+			return report, err
+		}
+		report.Normalized++
+		report.Merged += merged
+	}
+	return report, nil
+}
+
+// mergeMemberLogin collapses every membership of projectID whose login
+// normalizes to login into a single row stored under login. Returns how many
+// rows it deleted.
+func (m *Models) mergeMemberLogin(ctx context.Context, session mongo.Session, projectID primitive.ObjectID, login string) (int64, error) {
+	coll := m.client.Database("logs").Collection("project_members")
+
+	merged, err := session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
+		cursor, err := coll.Find(sc, bson.M{"project_id": projectID})
+		if err != nil {
+			return int64(0), fmt.Errorf("mergeMemberLogin %s: %w", login, err)
+		}
+		var members []ProjectMember
+		if err := cursor.All(sc, &members); err != nil {
+			return int64(0), fmt.Errorf("mergeMemberLogin %s decode: %w", login, err)
+		}
+
+		var group []ProjectMember
+		for _, mb := range members {
+			if NormalizeGithubLogin(mb.GithubLogin) == login {
+				group = append(group, mb)
+			}
+		}
+		if len(group) == 0 {
+			return int64(0), nil
+		}
+
+		keep := group[0]
+		role := RoleMember
+		for _, mb := range group {
+			if mb.CreatedAt.Before(keep.CreatedAt) {
+				keep = mb
+			}
+			if mb.Role == RoleOwner {
+				role = RoleOwner
+			}
+		}
+
+		var drop []primitive.ObjectID
+		for _, mb := range group {
+			if mb.ID != keep.ID {
+				drop = append(drop, mb.ID)
+			}
+		}
+
+		// The duplicates go first: the unique (project_id, github_login) index
+		// would refuse the rename while a row already holds login.
+		if len(drop) > 0 {
+			if _, err := coll.DeleteMany(sc, bson.M{"_id": bson.M{"$in": drop}}); err != nil {
+				return int64(0), fmt.Errorf("mergeMemberLogin %s delete: %w", login, err)
+			}
+		}
+		if _, err := coll.UpdateOne(sc,
+			bson.M{"_id": keep.ID},
+			bson.M{"$set": bson.M{"github_login": login, "role": role}},
+		); err != nil {
+			return int64(0), fmt.Errorf("mergeMemberLogin %s update: %w", login, err)
+		}
+		return int64(len(drop)), nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return merged.(int64), nil
 }
 
 // DropLegacyTTLIndex removes the global TTL index that pre-multi-tenancy builds

@@ -21,9 +21,10 @@ func defaultProjectOwners() []string {
 	return data.ParseGithubLogins(os.Getenv("LOGWOLF_ALLOWED_GITHUB_USERS") + "," + os.Getenv("LOGWOLF_DEFAULT_PROJECT_OWNERS"))
 }
 
-// runStartupMigration adopts any pre-multi-tenancy data into the Default project
-// before the RPC server starts accepting connections, then makes sure that
-// project has an owner. It is silent when there is nothing to do.
+// runStartupMigration normalizes member logins and adopts any pre-multi-tenancy
+// data into the Default project before the RPC server starts accepting
+// connections, then makes sure that project has an owner. It is silent when
+// there is nothing to do.
 //
 // Failures are logged rather than fatal: the migration is idempotent, so a
 // crash-looping logger helps nobody when the next start would retry anyway.
@@ -35,6 +36,17 @@ func (app *Config) runStartupMigration() {
 		log.Printf("Migration: could not drop the legacy TTL index: %v", err)
 	} else if dropped {
 		log.Println("Migration: dropped the legacy global TTL index on logs — retention is per project now")
+	}
+
+	// Before the owner steps below: they look owners up by normalized login, and
+	// would otherwise add a second membership next to one stored in another casing.
+	logins, err := app.Models.NormalizeMemberLogins(ctx)
+	if err != nil {
+		log.Printf("Migration: FAILED to normalize member logins, will retry on the next start: %v", err)
+	}
+	if logins.Normalized > 0 {
+		log.Printf("Migration: normalized member logins to lowercase memberships=%d merged_duplicates=%d",
+			logins.Normalized, logins.Merged)
 	}
 
 	owners := defaultProjectOwners()

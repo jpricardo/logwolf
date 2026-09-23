@@ -64,6 +64,8 @@ Two operations run in MongoDB transactions, so MongoDB must run as a replica set
 - `DeleteProject` removes the project's API keys, settings, members and the project itself as one unit. A failure part-way rolls the whole thing back. The logs are left out, since a big project's would outlast the transaction; `PurgeProjectLogs` deletes them afterwards and refuses (`ErrProjectExists`) for a project that still exists.
 - `RemoveProjectMember` counts the owners and deletes the member in one transaction, and writes to the project document first (`members_updated_at`). A transaction on its own would still let two concurrent removals of different owners both pass the count. The write to a shared document forces a write conflict, `WithTransaction` retries the loser, and the retry sees `ErrLastOwner`.
 
+GitHub logins are case-insensitive, so `project_members` stores them normalized (`NormalizeGithubLogin`: trimmed, lowercase). `InsertProjectMember`, `RemoveProjectMember`, `IsMember` and `GetProjectsForUser` all normalize the login they are given. That lets a login typed in any casing match the one GitHub returns at sign-in, and the unique `(project_id, github_login)` index refuses case-only duplicates.
+
 `ProjectExists` answers whether a hex id names a project; a string that is not an ObjectID is simply `false`. Logger uses it to refuse events for deleted projects, and `DeleteOrphanedLogs` (in `models.go`) removes the ones that got through: logs whose `project_id` matches no project and that are older than a minute, so it never races a project being created. It skips logs with no or an empty `project_id`, which belong to the startup migration. It, `PurgeProjectLogs` and `DeleteExpiredLogs` all delete in batches of 10,000, each with its own 30s timeout, so a project with millions of logs is purged over as long as it takes rather than failing on one `DeleteMany`.
 
 ### Startup migration (`migrate.go`)
@@ -75,8 +77,9 @@ Adopts data written before projects existed. Logger calls it on every start; Bro
 | `CountOrphanedDocuments`         | Counts `logs`, `api_keys`, and `settings` documents with no project ID                  |
 | `MigrateOrphansToDefaultProject` | Adopts those documents into the `Default` project, creating it and its owners if needed |
 | `EnsureDefaultProjectOwners`     | Gives an ownerless `Default` project its owners, promoting existing members if listed   |
+| `NormalizeMemberLogins`          | Lowercases stored member logins, merging case-only duplicates into the higher role      |
 | `DropLegacyTTLIndex`             | Removes the global TTL index that predates per-project retention                        |
-| `ParseGithubLogins`              | Splits a comma-separated allowlist into logins (trimmed, deduplicated, case preserved)  |
+| `ParseGithubLogins`              | Splits a comma-separated allowlist into normalized logins (deduplicated ignoring case)  |
 
 `MigrateOrphansToDefaultProject` returns a nil `*MigrationReport` when there is nothing to adopt, which is what makes repeated runs a no-op.
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -104,6 +105,16 @@ func ValidRole(r string) bool {
 	return r == RoleOwner || r == RoleMember
 }
 
+// NormalizeGithubLogin returns the form a GitHub login is stored and compared
+// in. GitHub logins are case-insensitive, and GitHub hands back its own casing
+// at sign-in (JDoe) whatever an owner typed on the settings page (jdoe), so
+// every membership read and write goes through this: otherwise the two never
+// match, and the unique (project_id, github_login) index lets both in as
+// separate members.
+func NormalizeGithubLogin(login string) string {
+	return strings.ToLower(strings.TrimSpace(login))
+}
+
 // EnsureProjectIndexes creates the required indexes for projects and project_members.
 // Safe to call on startup — CreateOne is idempotent for identical index definitions.
 func (m *Models) EnsureProjectIndexes() error {
@@ -187,6 +198,7 @@ func (m *Models) InsertProjectMember(pm ProjectMember) (*ProjectMember, error) {
 	defer cancel()
 
 	pm.ID = primitive.NewObjectID()
+	pm.GithubLogin = NormalizeGithubLogin(pm.GithubLogin)
 	pm.CreatedAt = time.Now()
 
 	if _, err := m.client.Database("logs").Collection("project_members").InsertOne(ctx, pm); err != nil {
@@ -304,6 +316,7 @@ func (m *Models) RemoveProjectMember(projectID primitive.ObjectID, githubLogin s
 
 	db := m.client.Database("logs")
 	coll := db.Collection("project_members")
+	githubLogin = NormalizeGithubLogin(githubLogin)
 
 	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
 		// A membership row can outlive its project; with no project document to
@@ -348,7 +361,7 @@ func (m *Models) IsMember(projectID primitive.ObjectID, githubLogin string) (boo
 
 	n, err := m.client.Database("logs").Collection("project_members").CountDocuments(ctx, bson.M{
 		"project_id":   projectID,
-		"github_login": githubLogin,
+		"github_login": NormalizeGithubLogin(githubLogin),
 	})
 	if err != nil {
 		return false, fmt.Errorf("IsMember: %w", err)
@@ -376,7 +389,7 @@ func (m *Models) GetProjectsForUser(githubLogin string) ([]UserProject, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	memberCursor, err := m.client.Database("logs").Collection("project_members").Find(ctx, bson.M{"github_login": githubLogin})
+	memberCursor, err := m.client.Database("logs").Collection("project_members").Find(ctx, bson.M{"github_login": NormalizeGithubLogin(githubLogin)})
 	if err != nil {
 		return nil, fmt.Errorf("GetProjectsForUser members: %w", err)
 	}

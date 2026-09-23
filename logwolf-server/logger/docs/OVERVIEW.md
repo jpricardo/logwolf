@@ -71,7 +71,9 @@ Pre-multi-tenancy builds enforced retention with a single global TTL index on `l
 
 ## Startup migration
 
-Before the RPC server accepts connections, Logger adopts any data written by a pre-multi-tenancy build:
+Before the RPC server accepts connections, Logger rewrites any `project_members` login that is not lowercase. Membership lookups normalize the login (GitHub logins are case-insensitive), so a row stored as `JDoe` would never match again. Where a project holds one login in several casings, the rows merge into one that keeps the highest role and the oldest join date. Each login merges in its own transaction.
+
+Then it adopts any data written by a pre-multi-tenancy build:
 
 1. Count documents in `logs`, `api_keys`, and `settings` that carry no project ID. If there are none, nothing happens and nothing is logged.
 2. Otherwise, find or create a project named `Default` (slug `default`).

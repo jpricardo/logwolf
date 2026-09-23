@@ -85,8 +85,9 @@ func TestStartupMigration(t *testing.T) {
 		t.Errorf("retention_days = %d, want 30 (the pre-migration value)", retention.Value)
 	}
 
-	// Both allowlisted logins own the project, with their case preserved.
-	for _, login := range []string{"alice", "Bob"} {
+	// Both allowlisted logins own the project, stored lowercase as every
+	// membership is — GitHub logins are case-insensitive.
+	for _, login := range []string{"alice", "bob"} {
 		assertOwner(t, db, project, login)
 	}
 
@@ -250,6 +251,67 @@ func TestStartupMigration_OrgOnlyDeployment(t *testing.T) {
 	assertCount(t, db, "logs", bson.M{"project_id": project.ID.Hex()}, 1)
 	assertOwner(t, db, project, "dave")
 	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 1)
+}
+
+// TestStartupMigration_NormalizesMemberLogins seeds memberships written before
+// logins were normalized, including a login stored in two casings on one
+// project, and checks the first boot folds them into one lowercase row each,
+// keeping the higher role and the older join date.
+func TestStartupMigration_NormalizesMemberLogins(t *testing.T) {
+	ctx := context.Background()
+	mongoURI, client := migrationMongo(t)
+	db := client.Database("logs")
+	members := db.Collection("project_members")
+
+	p1, p2 := newOID(), newOID()
+	for _, p := range []bson.M{
+		{"_id": p1, "name": "One", "slug": "one", "created_at": time.Now()},
+		{"_id": p2, "name": "Two", "slug": "two", "created_at": time.Now()},
+	} {
+		if _, err := db.Collection("projects").InsertOne(ctx, p); err != nil {
+			t.Fatalf("seed project: %v", err)
+		}
+	}
+
+	joined := time.Now().Add(-72 * time.Hour).Truncate(time.Millisecond)
+	if _, err := members.InsertMany(ctx, []interface{}{
+		// A case-only duplicate: the older row is a plain member, the newer one
+		// an owner. The merge must keep both the ownership and the join date.
+		bson.M{"project_id": p1, "github_login": "JDoe", "role": data.RoleMember, "created_at": joined},
+		bson.M{"project_id": p1, "github_login": "jdoe", "role": data.RoleOwner, "created_at": time.Now()},
+		// Mixed case, no duplicate: just renamed.
+		bson.M{"project_id": p1, "github_login": "Erin", "role": data.RoleMember, "created_at": time.Now()},
+		// The same person on another project stays a separate membership.
+		bson.M{"project_id": p2, "github_login": "JDOE", "role": data.RoleOwner, "created_at": time.Now()},
+		// Already normalized: untouched.
+		bson.M{"project_id": p2, "github_login": "frank", "role": data.RoleMember, "created_at": time.Now()},
+	}); err != nil {
+		t.Fatalf("seed members: %v", err)
+	}
+
+	startLogger(t, mongoURI, "")
+
+	assertCount(t, db, "project_members", bson.M{}, 4)
+	assertCount(t, db, "project_members", bson.M{"project_id": p1, "github_login": "jdoe"}, 1)
+
+	var merged data.ProjectMember
+	if err := members.FindOne(ctx, bson.M{"project_id": p1, "github_login": "jdoe"}).Decode(&merged); err != nil {
+		t.Fatalf("merged member: %v", err)
+	}
+	if merged.Role != data.RoleOwner {
+		t.Errorf("merged role = %q, want %q", merged.Role, data.RoleOwner)
+	}
+	if !merged.CreatedAt.Equal(joined) {
+		t.Errorf("merged created_at = %v, want the older %v", merged.CreatedAt, joined)
+	}
+
+	assertCount(t, db, "project_members", bson.M{"project_id": p1, "github_login": "erin", "role": data.RoleMember}, 1)
+	assertCount(t, db, "project_members", bson.M{"project_id": p2, "github_login": "jdoe", "role": data.RoleOwner}, 1)
+	assertCount(t, db, "project_members", bson.M{"project_id": p2, "github_login": "frank"}, 1)
+
+	// Nothing left to do on the next boot.
+	startLogger(t, mongoURI, "")
+	assertCount(t, db, "project_members", bson.M{}, 4)
 }
 
 // --- helpers ---

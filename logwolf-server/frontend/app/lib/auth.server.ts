@@ -4,8 +4,11 @@ import { commitSession, destroySession, getSession } from './session.server';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!;
-const ALLOWED_GITHUB_USERS = process.env.LOGWOLF_ALLOWED_GITHUB_USERS?.split(',').map((s) => s.trim()) ?? [];
-const ALLOWED_GITHUB_ORGS = process.env.LOGWOLF_ALLOWED_GITHUB_ORGS?.split(',').map((s) => s.trim()) ?? [];
+// GitHub logins and org names are case-insensitive, and GitHub returns its own
+// casing at sign-in, so both sides of the allowlist check are compared lowercase.
+const normalizeLogin = (s: string) => s.trim().toLowerCase();
+const ALLOWED_GITHUB_USERS = process.env.LOGWOLF_ALLOWED_GITHUB_USERS?.split(',').map(normalizeLogin) ?? [];
+const ALLOWED_GITHUB_ORGS = process.env.LOGWOLF_ALLOWED_GITHUB_ORGS?.split(',').map(normalizeLogin) ?? [];
 
 export function getGitHubAuthURL() {
 	const params = new URLSearchParams({
@@ -31,21 +34,22 @@ export async function handleGitHubCallback(code: string, request: Request) {
 	const user = await userRes.json();
 
 	// Allow-list check by username
-	if (ALLOWED_GITHUB_USERS.length > 0 && !ALLOWED_GITHUB_USERS.includes(user.login)) {
+	if (ALLOWED_GITHUB_USERS.length > 0 && !ALLOWED_GITHUB_USERS.includes(normalizeLogin(user.login))) {
 		// Check org membership as fallback
 		if (ALLOWED_GITHUB_ORGS.length > 0) {
 			const orgsRes = await fetch('https://api.github.com/user/orgs', {
 				headers: { Authorization: `Bearer ${access_token}` },
 			});
 			const orgs: { login: string }[] = await orgsRes.json();
-			const memberOfAllowedOrg = orgs.some((o) => ALLOWED_GITHUB_ORGS.includes(o.login));
+			const memberOfAllowedOrg = orgs.some((o) => ALLOWED_GITHUB_ORGS.includes(normalizeLogin(o.login)));
 			if (!memberOfAllowedOrg) throw redirect('/auth?error=unauthorized');
 		} else {
 			throw redirect('/auth?error=unauthorized');
 		}
 	}
 
-	// Set session
+	// Set session. The login keeps GitHub's casing for display; the broker
+	// normalizes it before matching memberships.
 	const session = await getSession(request.headers.get('Cookie'));
 	session.set('githubUser', {
 		login: user.login,
