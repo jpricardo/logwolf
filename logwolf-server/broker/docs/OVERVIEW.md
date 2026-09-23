@@ -24,19 +24,21 @@ cmd/api/
 
 ### Public routes (Bearer token required)
 
-| Method   | Path          | Description                              |
-| -------- | ------------- | ---------------------------------------- |
-| `POST`   | `/logs`       | Submit a single log event (async, 202)   |
-| `POST`   | `/logs/batch` | Submit up to 1000 events at once         |
-| `GET`    | `/logs`       | Retrieve events (RPC → Logger → MongoDB) |
-| `DELETE` | `/logs`       | Delete matching events (RPC → Logger)    |
+| Method   | Path          | Scope    | Description                              |
+| -------- | ------------- | -------- | ---------------------------------------- |
+| `POST`   | `/logs`       | `ingest` | Submit a single log event (async, 202)   |
+| `POST`   | `/logs/batch` | `ingest` | Submit up to 1000 events at once         |
+| `GET`    | `/logs`       | `read`   | Retrieve events (RPC → Logger → MongoDB) |
+| `DELETE` | `/logs`       | `delete` | Delete matching events (RPC → Logger)    |
+
+A key without the route's scope gets 403.
 
 ### Internal routes (`X-Internal-Secret` header required)
 
 | Method   | Path                             | Description                                 |
 | -------- | -------------------------------- | ------------------------------------------- |
 | `GET`    | `/keys`                          | List API keys                               |
-| `POST`   | `/keys`                          | Create an API key                           |
+| `POST`   | `/keys`                          | Create an API key; `scopes` default: ingest |
 | `DELETE` | `/keys/{id}`                     | Revoke an API key                           |
 | `GET`    | `/settings/retention`            | Get retention setting                       |
 | `PATCH`  | `/settings/retention`            | Update retention TTL                        |
@@ -99,6 +101,7 @@ called. A missing `days` is a 400 as well, rather than 0 (keep forever).
 Two middleware layers:
 
 - **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token; keys are cached with TTL + rate limiting to avoid hot-path DB reads.
+  - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too, so like revocation, nothing about a key changes for up to 60 seconds.
 - **`requireInternalSecret`** — validates the `X-Internal-Secret` header; used exclusively by the dashboard backend.
 
 ## Write path

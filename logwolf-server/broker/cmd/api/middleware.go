@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,12 +21,20 @@ type contextKey string
 
 const projectIDKey contextKey = "projectID"
 const userLoginKey contextKey = "userLogin"
+const keyScopesKey contextKey = "keyScopes"
 
 func projectIDFromContext(r *http.Request) string {
 	if v, ok := r.Context().Value(projectIDKey).(string); ok {
 		return v
 	}
 	return ""
+}
+
+func keyScopesFromContext(r *http.Request) []string {
+	if v, ok := r.Context().Value(keyScopesKey).([]string); ok {
+		return v
+	}
+	return nil
 }
 
 func userLoginFromContext(r *http.Request) string {
@@ -38,6 +47,7 @@ func userLoginFromContext(r *http.Request) string {
 type cacheEntry struct {
 	valid     bool
 	projectID string
+	scopes    []string
 	expiresAt time.Time
 }
 
@@ -165,8 +175,7 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 			}
 			log.Printf(`{"event":"auth","outcome":"allow","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"cache"}`,
 				keyPrefix, r.Method, r.URL.Path, r.RemoteAddr)
-			ctx := context.WithValue(r.Context(), projectIDKey, entry.projectID)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, withKey(r, entry.projectID, entry.scopes))
 			return
 		}
 
@@ -180,13 +189,15 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 		}
 
 		projectID := ""
+		var scopes []string
 		if key != nil {
 			projectID = key.ProjectID
+			scopes = key.Scopes
 		}
 
 		// Write result to cache (keyed on hash).
 		keyCacheMu.Lock()
-		keyCache[cacheKey] = cacheEntry{valid: valid, projectID: projectID, expiresAt: time.Now().Add(cacheTTL)}
+		keyCache[cacheKey] = cacheEntry{valid: valid, projectID: projectID, scopes: scopes, expiresAt: time.Now().Add(cacheTTL)}
 		keyCacheMu.Unlock()
 
 		if !valid {
@@ -199,9 +210,36 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 
 		log.Printf(`{"event":"auth","outcome":"allow","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","source":"db"}`,
 			keyPrefix, r.Method, r.URL.Path, r.RemoteAddr)
-		ctx := context.WithValue(r.Context(), projectIDKey, projectID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, withKey(r, projectID, scopes))
 	})
+}
+
+// withKey stores what requireAPIKey learned about the key in the request
+// context: the project it belongs to and the scopes requireScope checks.
+func withKey(r *http.Request, projectID string, scopes []string) *http.Request {
+	ctx := context.WithValue(r.Context(), projectIDKey, projectID)
+	ctx = context.WithValue(ctx, keyScopesKey, scopes)
+	return r.WithContext(ctx)
+}
+
+// requireScope refuses with 403 a request whose API key does not grant scope.
+// It MUST run after requireAPIKey, which puts the key's scopes in the context;
+// without it there are none, and every request is refused.
+//
+// A failed scope check is not recorded against the IP rate limiter: the key is
+// genuine, and the caller learns nothing by retrying.
+func (app *Config) requireScope(scope string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !slices.Contains(keyScopesFromContext(r), scope) {
+				log.Printf(`{"event":"auth","outcome":"deny","reason":"missing_scope","scope":"%s","method":"%s","path":"%s","remote_addr":"%s"}`,
+					scope, r.Method, r.URL.Path, r.RemoteAddr)
+				app.errorJSON(w, fmt.Errorf("API key lacks the %q scope", scope), http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // safePrefix returns the first 10 chars of the key ("lw_" + 7 chars) for logging.

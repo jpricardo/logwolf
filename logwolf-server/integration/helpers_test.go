@@ -399,6 +399,10 @@ func insertProject(mongoURI, slug string) (string, error) {
 }
 
 // seedAPIKey inserts an API key scoped to projectID and returns the plaintext key.
+//
+// The document has no scopes field, like every key created before scopes
+// existed, so it has full access: the tests that read and delete through these
+// keys double as proof that such keys keep working.
 func seedAPIKey(t *testing.T, mongoURI, projectID, plaintext string) string {
 	t.Helper()
 

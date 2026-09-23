@@ -59,7 +59,7 @@ func TestValidateAPIKey_ManyKeysAcrossProjects(t *testing.T) {
 		})
 	}
 
-	plaintext, target, err := data.GenerateAPIKey(projects[1])
+	plaintext, target, err := data.GenerateAPIKey(projects[1], nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}

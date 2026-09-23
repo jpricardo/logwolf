@@ -14,14 +14,23 @@ type ApiResponse<T> = { message: string } & ({ error: true; data: never } | { er
  */
 export type EncodedEvent = z.input<typeof CreateLogwolfEventDTOSchema>;
 
+/** What a key may do on the public /logs routes. */
+export const API_KEY_SCOPES = ['ingest', 'read', 'delete'] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
 type ApiKey = {
 	id: string;
 	project_id: string;
 	prefix: string;
+	scopes: ApiKeyScope[];
+	/** Created before scopes existed: it keeps the full access it always had. */
+	legacy?: boolean;
 	active: boolean;
 	created_at: string;
 	revoked_at: string;
 };
+
+export type CreatedApiKey = { key: string; prefix: string; id: string; scopes: ApiKeyScope[] };
 
 export type Project = {
 	id: string;
@@ -66,7 +75,7 @@ export interface IApi {
 	updateMemberRole(projectId: string, login: string, role: ProjectRole): Promise<void>;
 	removeMember(projectId: string, login: string): Promise<void>;
 	getKeys(projectId: string): Promise<ApiKey[]>;
-	createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }>;
+	createKey(projectId: string, scopes: ApiKeyScope[]): Promise<CreatedApiKey>;
 	deleteKey(id: string): Promise<void>;
 	getRetention(projectId: string): Promise<{ days: RetentionDays }>;
 	updateRetention(projectId: string, days: number): Promise<{ days: RetentionDays }>;
@@ -192,17 +201,14 @@ export class Api implements IApi {
 		return json.data;
 	}
 
-	public async createKey(projectId: string): Promise<{ key: string; prefix: string; id: string }> {
+	/** An empty `scopes` leaves the choice to the broker, which gives the key ingest only. */
+	public async createKey(projectId: string, scopes: ApiKeyScope[]): Promise<CreatedApiKey> {
 		const res = await fetch(`${this.baseUrl}keys`, {
 			method: 'POST',
 			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ project_id: projectId }),
+			body: JSON.stringify({ project_id: projectId, scopes }),
 		});
-		const json = (await res.json()) as ApiResponse<{
-			key: string;
-			prefix: string;
-			id: string;
-		}>;
+		const json = (await res.json()) as ApiResponse<CreatedApiKey>;
 		if (json.error) throw new Error(json.message);
 
 		return json.data;

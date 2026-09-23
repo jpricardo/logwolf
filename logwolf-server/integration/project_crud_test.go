@@ -140,7 +140,7 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	if err := m.Insert(data.LogEntry{ProjectID: p.ID.Hex(), Name: "e", Data: "{}", Severity: "info", Tags: []string{}}); err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
-	plaintext, key, err := data.GenerateAPIKey(p.ID.Hex())
+	plaintext, key, err := data.GenerateAPIKey(p.ID.Hex(), nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestDeleteProject_RollsBackOnFailure(t *testing.T) {
 	if err := m.Insert(data.LogEntry{ProjectID: projectID, Name: "e", Data: "{}", Severity: "info", Tags: []string{}}); err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
-	_, key, err := data.GenerateAPIKey(projectID)
+	_, key, err := data.GenerateAPIKey(projectID, nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
