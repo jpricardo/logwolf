@@ -21,7 +21,7 @@ func TestWritePathRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	stack := sharedStack(t)
-	apiKey := testAPIKey(t, stack.mongoURI)
+	apiKey, projectID := testAPIKey(t, stack.mongoURI)
 
 	payload := map[string]interface{}{
 		"name":     "integration-test-event",
@@ -64,8 +64,8 @@ func TestWritePathRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("log entry never appeared in MongoDB: %v", err)
 	}
-	if doc.ProjectID != testProjectID {
-		t.Errorf("project_id = %q, want %q", doc.ProjectID, testProjectID)
+	if doc.ProjectID != projectID {
+		t.Errorf("project_id = %q, want %q", doc.ProjectID, projectID)
 	}
 }
 
@@ -76,14 +76,16 @@ func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
 	ctx := context.Background()
 
 	stack := sharedStack(t)
-	apiKey := seedAPIKey(t, stack.mongoURI, "batch-project", "lw_batchkey0000000001")
+	batchProject := seedProject(t, stack.mongoURI, "batch-project")
+	victimProject := seedProject(t, stack.mongoURI, "victim-project")
+	apiKey := seedAPIKey(t, stack.mongoURI, batchProject, "lw_batchkey0000000001")
 
 	batch := []map[string]interface{}{
 		{"name": "batch-event-1", "data": "{}", "severity": "info", "tags": []string{}},
 		{"name": "batch-event-2", "data": "{}", "severity": "warning", "tags": []string{}},
 		// This one claims to belong somewhere else. The Broker overwrites the
 		// field with the key's project rather than trusting the body.
-		{"name": "batch-event-3", "data": "{}", "severity": "error", "tags": []string{}, "project_id": "victim-project"},
+		{"name": "batch-event-3", "data": "{}", "severity": "error", "tags": []string{}, "project_id": victimProject},
 	}
 	body, _ := json.Marshal(batch)
 
@@ -105,14 +107,14 @@ func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
 
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		count, err := coll.CountDocuments(ctx, bson.M{"project_id": "batch-project"})
+		count, err := coll.CountDocuments(ctx, bson.M{"project_id": batchProject})
 		if err == nil && count == int64(len(batch)) {
 			break
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
 
-	count, err := coll.CountDocuments(ctx, bson.M{"project_id": "batch-project"})
+	count, err := coll.CountDocuments(ctx, bson.M{"project_id": batchProject})
 	if err != nil {
 		t.Fatalf("count batch entries: %v", err)
 	}
@@ -121,7 +123,7 @@ func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
 	}
 
 	// The forged project_id must not have created anything.
-	stray, err := coll.CountDocuments(ctx, bson.M{"project_id": "victim-project"})
+	stray, err := coll.CountDocuments(ctx, bson.M{"project_id": victimProject})
 	if err != nil {
 		t.Fatalf("count forged entries: %v", err)
 	}

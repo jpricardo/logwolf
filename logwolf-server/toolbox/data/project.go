@@ -150,6 +150,22 @@ func (m *Models) GetProject(id primitive.ObjectID) (*Project, error) {
 	return &p, nil
 }
 
+// ProjectExists reports whether a project with the given hex id exists. A string
+// that is not a valid ObjectID names no project, so it answers false rather than
+// an error — callers only ever want to know whether to accept data for it.
+func (m *Models) ProjectExists(ctx context.Context, projectID string) (bool, error) {
+	id, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return false, nil
+	}
+
+	n, err := m.client.Database("logs").Collection("projects").CountDocuments(ctx, bson.M{"_id": id}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("ProjectExists: %w", err)
+	}
+	return n > 0, nil
+}
+
 func (m *Models) GetProjectBySlug(slug string) (*Project, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

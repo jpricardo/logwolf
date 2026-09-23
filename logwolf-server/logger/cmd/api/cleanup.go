@@ -26,7 +26,7 @@ func (app *Config) runCleanup(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	app.cleanupExpiredLogs(ctx)
+	app.cleanupPass(ctx)
 
 	for {
 		select {
@@ -34,8 +34,30 @@ func (app *Config) runCleanup(ctx context.Context) {
 			log.Println("Retention cleanup: shutting down")
 			return
 		case <-ticker.C:
-			app.cleanupExpiredLogs(ctx)
+			app.cleanupPass(ctx)
 		}
+	}
+}
+
+func (app *Config) cleanupPass(ctx context.Context) {
+	app.cleanupExpiredLogs(ctx)
+	app.cleanupOrphanedLogs(ctx)
+}
+
+// cleanupOrphanedLogs deletes logs whose project no longer exists. LogInfo
+// refuses new ones, but an event can pass that check just before its project
+// is deleted, and those logs are invisible to everyone and outside every
+// project's retention.
+func (app *Config) cleanupOrphanedLogs(ctx context.Context) {
+	passCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	deleted, err := app.Models.DeleteOrphanedLogs(passCtx)
+	if err != nil {
+		log.Printf("Retention cleanup: error deleting logs of deleted projects: %v", err)
+	}
+	for projectID, n := range deleted {
+		log.Printf("Retention cleanup: project %s no longer exists: deleted %d logs", projectID, n)
 	}
 }
 

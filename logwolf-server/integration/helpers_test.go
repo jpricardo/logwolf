@@ -23,14 +23,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/rabbitmq"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	testProjectID = "integration"
-
 	mongoUser  = "admin"
 	mongoPass  = "password"
 	replicaSet = "rs0"
@@ -232,9 +231,10 @@ func sharedModelsMongo(t *testing.T) string {
 // --- shared service stack ---
 
 type testStack struct {
-	mongoURI  string
-	rabbitURI string
-	brokerURL string
+	mongoURI      string
+	rabbitURI     string
+	brokerURL     string
+	loggerRPCAddr string
 }
 
 var (
@@ -322,9 +322,10 @@ func buildStack() (*testStack, error) {
 	}
 
 	return &testStack{
-		mongoURI:  mongoURI,
-		rabbitURI: rabbitURI,
-		brokerURL: "http://" + brokerHTTPAddr,
+		mongoURI:      mongoURI,
+		rabbitURI:     rabbitURI,
+		brokerURL:     "http://" + brokerHTTPAddr,
+		loggerRPCAddr: loggerRPCAddr,
 	}, nil
 }
 
@@ -351,12 +352,50 @@ func testMongo(t *testing.T, uri string) *mongo.Client {
 	return client
 }
 
-// testAPIKey seeds a valid API key directly into MongoDB and returns the plaintext.
-// This bypasses the Broker so the integration test doesn't depend on key creation working.
-func testAPIKey(t *testing.T, mongoURI string) string {
+// testAPIKey seeds a project and a valid API key for it directly into MongoDB,
+// and returns the plaintext key and the project id. This bypasses the Broker so
+// the integration test doesn't depend on project or key creation working.
+func testAPIKey(t *testing.T, mongoURI string) (key, projectID string) {
 	t.Helper()
 
-	return seedAPIKey(t, mongoURI, testProjectID, "lw_integrationtestkey0000000001")
+	projectID = seedProject(t, mongoURI, "integration")
+	return seedAPIKey(t, mongoURI, projectID, "lw_integrationtestkey0000000001"), projectID
+}
+
+// seedProject inserts a project with the given slug and returns its id. Logger
+// drops events for a project that does not exist, so every key a test sends
+// events with has to belong to one.
+func seedProject(t *testing.T, mongoURI, slug string) string {
+	t.Helper()
+
+	id, err := insertProject(mongoURI, slug)
+	if err != nil {
+		t.Fatalf("seedProject: %v", err)
+	}
+	return id
+}
+
+func insertProject(mongoURI, slug string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	client, err := connectMongo(mongoURI)
+	if err != nil {
+		return "", fmt.Errorf("connect: %w", err)
+	}
+	defer client.Disconnect(context.Background())
+
+	id := primitive.NewObjectID()
+	_, err = client.Database("logs").Collection("projects").InsertOne(ctx, bson.M{
+		"_id":        id,
+		"name":       slug,
+		"slug":       slug,
+		"created_at": time.Now(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("insert: %w", err)
+	}
+	return id.Hex(), nil
 }
 
 // seedAPIKey inserts an API key scoped to projectID and returns the plaintext key.
@@ -542,7 +581,11 @@ func waitForPipeline(mongoURI, brokerURL string, timeout time.Duration) error {
 		canaryEvent   = "stack-canary-event"
 	)
 
-	if err := insertAPIKey(mongoURI, canaryProject, canaryKey); err != nil {
+	projectID, err := insertProject(mongoURI, canaryProject)
+	if err != nil {
+		return fmt.Errorf("pipeline probe: seed project: %w", err)
+	}
+	if err := insertAPIKey(mongoURI, projectID, canaryKey); err != nil {
 		return fmt.Errorf("pipeline probe: seed key: %w", err)
 	}
 

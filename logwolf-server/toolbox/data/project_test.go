@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -146,5 +147,21 @@ func TestGetProjectsForUser_EmptyResult(t *testing.T) {
 	}
 	if len(projects) != 0 {
 		t.Error("empty []Project must have length 0")
+	}
+}
+
+// TestProjectExists_InvalidID verifies that a string which is not an ObjectID
+// names no project, and is answered without touching the database.
+func TestProjectExists_InvalidID(t *testing.T) {
+	m := &Models{} // no client: reaching MongoDB would panic
+
+	for _, id := range []string{"", "integration", "not-a-hex-id"} {
+		found, err := m.ProjectExists(context.Background(), id)
+		if err != nil {
+			t.Errorf("ProjectExists(%q): unexpected error %v", id, err)
+		}
+		if found {
+			t.Errorf("ProjectExists(%q) = true, want false", id)
+		}
 	}
 }
