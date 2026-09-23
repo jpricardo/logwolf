@@ -40,6 +40,7 @@ app/
 │   ├── api.ts            # Dashboard API client (calls Broker internal routes)
 │   ├── logwolf.ts        # Logwolf SDK setup for client-side error tracking
 │   ├── auth.server.ts    # Server-side GitHub OAuth logic
+│   ├── allowlist.server.ts # Who may sign in (users/orgs allowlist, deny by default)
 │   ├── session.server.ts # iron-session cookie helpers
 │   ├── csrf.server.ts    # CSRF token generation + validation
 │   ├── format.ts         # Formatting utilities (dates, numbers)
@@ -111,7 +112,12 @@ one in session and returns to `/projects`, where the layout takes over.
 ## Authentication
 
 1. User initiates login via GitHub OAuth 2.0.
-2. On callback, the server checks the GitHub user against `GITHUB_ALLOWED_USERS` or `GITHUB_ALLOWED_ORGS`.
+2. On callback, the server checks the GitHub user against `LOGWOLF_ALLOWED_GITHUB_USERS` and
+   `LOGWOLF_ALLOWED_GITHUB_ORGS` (`lib/allowlist.server.ts`). Access is denied by default: the login
+   must be in the users list or belong to an org in the orgs list. With both lists empty nobody can
+   sign in, and the server logs an error at startup. Both lists are parsed like the logger's
+   `ParseGithubLogins` (trimmed, lowercased, blanks and duplicates dropped), and a failed org lookup
+   denies the sign-in.
 3. A signed iron-session cookie is issued for subsequent requests.
 4. All protected routes validate the session server-side before rendering.
 

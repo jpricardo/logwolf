@@ -60,3 +60,20 @@ jobs:
       - name: Run tests
         working-directory: logwolf-client/js
         run: npm test
+
+  test-frontend:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: logwolf-server/frontend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: logwolf-server/frontend
+        run: npm test

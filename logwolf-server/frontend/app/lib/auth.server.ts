@@ -1,14 +1,17 @@
 import { redirect } from 'react-router';
 
+import { allowlistFromEnv, isAllowed, isEmptyAllowlist, listGithubOrgs } from './allowlist.server';
 import { commitSession, destroySession, getSession } from './session.server';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!;
-// GitHub logins and org names are case-insensitive, and GitHub returns its own
-// casing at sign-in, so both sides of the allowlist check are compared lowercase.
-const normalizeLogin = (s: string) => s.trim().toLowerCase();
-const ALLOWED_GITHUB_USERS = process.env.LOGWOLF_ALLOWED_GITHUB_USERS?.split(',').map(normalizeLogin) ?? [];
-const ALLOWED_GITHUB_ORGS = process.env.LOGWOLF_ALLOWED_GITHUB_ORGS?.split(',').map(normalizeLogin) ?? [];
+const ALLOWLIST = allowlistFromEnv();
+
+if (isEmptyAllowlist(ALLOWLIST)) {
+	console.error(
+		'Neither LOGWOLF_ALLOWED_GITHUB_USERS nor LOGWOLF_ALLOWED_GITHUB_ORGS is set: nobody can sign in to the dashboard.',
+	);
+}
 
 export function getGitHubAuthURL() {
 	const params = new URLSearchParams({
@@ -33,20 +36,14 @@ export async function handleGitHubCallback(code: string, request: Request) {
 	});
 	const user = await userRes.json();
 
-	// Allow-list check by username
-	if (ALLOWED_GITHUB_USERS.length > 0 && !ALLOWED_GITHUB_USERS.includes(normalizeLogin(user.login))) {
-		// Check org membership as fallback
-		if (ALLOWED_GITHUB_ORGS.length > 0) {
-			const orgsRes = await fetch('https://api.github.com/user/orgs', {
-				headers: { Authorization: `Bearer ${access_token}` },
-			});
-			const orgs: { login: string }[] = await orgsRes.json();
-			const memberOfAllowedOrg = orgs.some((o) => ALLOWED_GITHUB_ORGS.includes(normalizeLogin(o.login)));
-			if (!memberOfAllowedOrg) throw redirect('/auth?error=unauthorized');
-		} else {
-			throw redirect('/auth?error=unauthorized');
-		}
+	// Deny by default: the login must be allowlisted or belong to an allowed org.
+	let allowed = false;
+	try {
+		allowed = await isAllowed(user.login, ALLOWLIST, () => listGithubOrgs(access_token));
+	} catch (err) {
+		console.error('Could not check the sign-in allowlist', err);
 	}
+	if (!allowed) throw redirect('/auth?error=unauthorized');
 
 	// Set session. The login keeps GitHub's casing for display; the broker
 	// normalizes it before matching memberships.
