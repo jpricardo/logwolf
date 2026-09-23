@@ -12,15 +12,18 @@ import (
 // takes a while to stamp, but startup must not hang forever.
 const migrationTimeout = 5 * time.Minute
 
-// allowedGithubUsers returns the dashboard allowlist. It is the only signal the
-// logger has for who should own data that predates projects.
-func allowedGithubUsers() []string {
-	return data.ParseGithubLogins(os.Getenv("LOGWOLF_ALLOWED_GITHUB_USERS"))
+// defaultProjectOwners returns who should own data that predates projects: the
+// dashboard's users allowlist plus LOGWOLF_DEFAULT_PROJECT_OWNERS. The second
+// list exists for deployments that admit users through
+// LOGWOLF_ALLOWED_GITHUB_ORGS only — org membership is not visible from Logger,
+// so it cannot pick owners out of an org by itself.
+func defaultProjectOwners() []string {
+	return data.ParseGithubLogins(os.Getenv("LOGWOLF_ALLOWED_GITHUB_USERS") + "," + os.Getenv("LOGWOLF_DEFAULT_PROJECT_OWNERS"))
 }
 
 // runStartupMigration adopts any pre-multi-tenancy data into the Default project
-// before the RPC server starts accepting connections. It is silent when there is
-// nothing to migrate.
+// before the RPC server starts accepting connections, then makes sure that
+// project has an owner. It is silent when there is nothing to do.
 //
 // Failures are logged rather than fatal: the migration is idempotent, so a
 // crash-looping logger helps nobody when the next start would retry anyway.
@@ -34,21 +37,36 @@ func (app *Config) runStartupMigration() {
 		log.Println("Migration: dropped the legacy global TTL index on logs — retention is per project now")
 	}
 
-	owners := allowedGithubUsers()
+	owners := defaultProjectOwners()
 
 	report, err := app.Models.MigrateOrphansToDefaultProject(ctx, owners)
 	if err != nil {
 		log.Printf("Migration: FAILED — data without a project stays invisible until this succeeds: %v", err)
 	}
-	if report == nil {
+	if report != nil {
+		log.Printf("Migration: adopted pre-multi-tenancy data into project %q project_id=%s logs=%d api_keys=%d settings=%d owners=%d",
+			data.DefaultProjectName, report.ProjectID, report.Logs, report.APIKeys, report.Settings, report.Owners)
+	}
+
+	// Runs whatever the orphan count: it is what finishes an owner step that
+	// failed above or on an earlier start, and what picks up owners configured
+	// after the data moved.
+	repair, err := app.Models.EnsureDefaultProjectOwners(ctx, owners)
+	if err != nil {
+		log.Printf("Migration: FAILED to give project %q an owner, will retry on the next start: %v", data.DefaultProjectName, err)
+	}
+	if repair == nil {
 		return
 	}
 
-	log.Printf("Migration: adopted pre-multi-tenancy data into project %q project_id=%s logs=%d api_keys=%d settings=%d owners=%d",
-		data.DefaultProjectName, report.ProjectID, report.Logs, report.APIKeys, report.Settings, report.Owners)
+	if repair.Owners > 0 {
+		log.Printf("Migration: project %q had no owner; added owners=%d project_id=%s",
+			data.DefaultProjectName, repair.Owners, repair.ProjectID)
+		return
+	}
 
 	if len(owners) == 0 {
-		log.Printf("Migration: WARNING — LOGWOLF_ALLOWED_GITHUB_USERS is empty, so project %q has no owners; nobody can see the migrated data until a member is added",
+		log.Printf("Migration: WARNING — project %q has no owner, so nobody can see its data. Set LOGWOLF_ALLOWED_GITHUB_USERS or LOGWOLF_DEFAULT_PROJECT_OWNERS on Logger and restart it to add owners",
 			data.DefaultProjectName)
 	}
 }

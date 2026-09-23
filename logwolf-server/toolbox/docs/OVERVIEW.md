@@ -70,10 +70,13 @@ Adopts data written before projects existed. Logger calls it on every start; Bro
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | `CountOrphanedDocuments`         | Counts `logs`, `api_keys`, and `settings` documents with no project ID                  |
 | `MigrateOrphansToDefaultProject` | Adopts those documents into the `Default` project, creating it and its owners if needed |
+| `EnsureDefaultProjectOwners`     | Gives an ownerless `Default` project its owners, promoting existing members if listed   |
 | `DropLegacyTTLIndex`             | Removes the global TTL index that predates per-project retention                        |
 | `ParseGithubLogins`              | Splits a comma-separated allowlist into logins (trimmed, deduplicated, case preserved)  |
 
 `MigrateOrphansToDefaultProject` returns a nil `*MigrationReport` when there is nothing to adopt, which is what makes repeated runs a no-op.
+
+That is also why it can't be trusted to add owners on its own. If its owner step fails, or runs with an empty owner list, the next start has no orphans left and returns early. `EnsureDefaultProjectOwners` runs independently of the orphan count and only acts while `Default` has no owner. It returns a nil `*OwnerRepair` when there is no `Default` project or it already has an owner.
 
 ## `event` package
 
