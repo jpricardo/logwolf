@@ -695,20 +695,22 @@ func TestGetProjectMembers_NoMembers(t *testing.T) {
 	}
 }
 
-func TestIsMember(t *testing.T) {
+func TestMemberRole(t *testing.T) {
 	m := setupProjectModels(t)
 
 	p, _ := m.InsertProject(data.Project{Name: "Check", Slug: "check"})
 	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "carol", Role: data.RoleMember})
+	m.InsertProjectMember(data.ProjectMember{ProjectID: p.ID, GithubLogin: "olive", Role: data.RoleOwner})
 
-	ok, err := m.IsMember(p.ID, "carol")
-	if err != nil || !ok {
-		t.Errorf("IsMember carol: ok=%v err=%v", ok, err)
+	for login, want := range map[string]string{"carol": data.RoleMember, "olive": data.RoleOwner, "stranger": ""} {
+		role, err := m.MemberRole(p.ID, login)
+		if err != nil || role != want {
+			t.Errorf("MemberRole %s: role=%q err=%v, want %q", login, role, err, want)
+		}
 	}
 
-	ok, err = m.IsMember(p.ID, "stranger")
-	if err != nil || ok {
-		t.Errorf("IsMember stranger: ok=%v err=%v", ok, err)
+	if role, err := m.MemberRole(primitive.NewObjectID(), "carol"); err != nil || role != "" {
+		t.Errorf("MemberRole in a project that does not exist: role=%q err=%v, want none", role, err)
 	}
 }
 
@@ -725,9 +727,9 @@ func TestProjectMembers_CaseInsensitiveLogin(t *testing.T) {
 		t.Fatalf("InsertProjectMember: %v", err)
 	}
 
-	ok, err := m.IsMember(p.ID, "JDoe")
-	if err != nil || !ok {
-		t.Errorf("IsMember JDoe: ok=%v err=%v, want the membership added as jdoe", ok, err)
+	role, err := m.MemberRole(p.ID, "JDoe")
+	if err != nil || role != data.RoleMember {
+		t.Errorf("MemberRole JDoe: role=%q err=%v, want the membership added as jdoe", role, err)
 	}
 
 	projects, err := m.GetProjectsForUser("JDoe")
@@ -743,7 +745,7 @@ func TestProjectMembers_CaseInsensitiveLogin(t *testing.T) {
 	if err := m.RemoveProjectMember(p.ID, "JDoe"); err != nil {
 		t.Fatalf("RemoveProjectMember JDoe: %v", err)
 	}
-	if ok, _ := m.IsMember(p.ID, "jdoe"); ok {
+	if role, _ := m.MemberRole(p.ID, "jdoe"); role != "" {
 		t.Error("jdoe is still a member after removing JDoe")
 	}
 }

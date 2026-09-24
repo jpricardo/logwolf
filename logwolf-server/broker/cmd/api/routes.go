@@ -37,17 +37,21 @@ func (app *Config) routes() http.Handler {
 		r.Get("/metrics", app.GetMetrics)
 		r.Get("/projects", app.ListProjects)
 		r.Post("/projects", app.CreateProject)
-		r.Get("/projects/{id}", app.GetProject)
-		r.Patch("/projects/{id}", app.UpdateProject)
-		r.Delete("/projects/{id}", app.DeleteProject)
-		r.Get("/projects/{id}/members", app.ListProjectMembers)
-		r.Post("/projects/{id}/members", app.AddProjectMember)
-		r.Patch("/projects/{id}/members/{login}", app.UpdateProjectMemberRole)
-		r.Delete("/projects/{id}/members/{login}", app.RemoveProjectMember)
-		r.Get("/projects/{id}/logs", app.ListProjectLogs)
-		r.Post("/projects/{id}/logs", app.CreateProjectLog)
-		r.Get("/projects/{id}/logs/{logID}", app.GetProjectLog)
-		r.Delete("/projects/{id}/logs/{logID}", app.DeleteProjectLog)
+
+		// Each project route states who may use it; requireProject answers 404
+		// or 403 for everyone else, before the handler runs.
+		member, owner := app.requireProject(anyMember), app.requireProject(ownerOnly)
+		r.With(member).Get("/projects/{id}", app.GetProject)
+		r.With(owner).Patch("/projects/{id}", app.UpdateProject)
+		r.With(owner).Delete("/projects/{id}", app.DeleteProject)
+		r.With(member).Get("/projects/{id}/members", app.ListProjectMembers)
+		r.With(owner).Post("/projects/{id}/members", app.AddProjectMember)
+		r.With(owner).Patch("/projects/{id}/members/{login}", app.UpdateProjectMemberRole)
+		r.With(owner).Delete("/projects/{id}/members/{login}", app.RemoveProjectMember)
+		r.With(member).Get("/projects/{id}/logs", app.ListProjectLogs)
+		r.With(member).Post("/projects/{id}/logs", app.CreateProjectLog)
+		r.With(member).Get("/projects/{id}/logs/{logID}", app.GetProjectLog)
+		r.With(member).Delete("/projects/{id}/logs/{logID}", app.DeleteProjectLog)
 	})
 
 	// Protected routes — each also needs its scope on the key
