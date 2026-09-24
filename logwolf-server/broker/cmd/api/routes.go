@@ -25,16 +25,11 @@ func (app *Config) routes() http.Handler {
 
 	mux.Get("/health", app.Health)
 
-	// Key management — dashboard only, no API key required
+	// Dashboard routes — the internal secret and a user login, no API key.
+	// Everything that acts on one project is under /projects/{id}.
 	mux.Group(func(r chi.Router) {
 		r.Use(app.requireInternalSecret)
 		r.Use(app.requireUserLogin)
-		r.Get("/keys", app.ListAPIKeys)
-		r.Post("/keys", app.CreateAPIKey)
-		r.Delete("/keys/{id}", app.RevokeAPIKey)
-		r.Get("/settings/retention", app.GetRetention)
-		r.Patch("/settings/retention", app.UpdateRetention)
-		r.Get("/metrics", app.GetMetrics)
 		r.Get("/projects", app.ListProjects)
 		r.Post("/projects", app.CreateProject)
 
@@ -52,6 +47,13 @@ func (app *Config) routes() http.Handler {
 		r.With(member).Post("/projects/{id}/logs", app.CreateProjectLog)
 		r.With(member).Get("/projects/{id}/logs/{logID}", app.GetProjectLog)
 		r.With(member).Delete("/projects/{id}/logs/{logID}", app.DeleteProjectLog)
+		r.With(member).Get("/projects/{id}/keys", app.ListAPIKeys)
+		r.With(member).Post("/projects/{id}/keys", app.CreateAPIKey)
+		r.With(member).Delete("/projects/{id}/keys/{keyID}", app.RevokeAPIKey)
+		// Any member may raise retention; UpdateRetention lets only an owner lower it.
+		r.With(member).Get("/projects/{id}/retention", app.GetRetention)
+		r.With(member).Patch("/projects/{id}/retention", app.UpdateRetention)
+		r.With(member).Get("/projects/{id}/metrics", app.GetMetrics)
 	})
 
 	// Protected routes — each also needs its scope on the key

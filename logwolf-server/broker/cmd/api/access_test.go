@@ -21,26 +21,23 @@ func path(suffix string) func(string) string {
 	return func(id string) string { return "/projects/" + id + suffix }
 }
 
-func query(route string) func(string) string {
-	return func(id string) string { return route + "?project_id=" + id }
-}
-
-func fixed(route string) func(string) string {
-	return func(string) string { return route }
-}
-
 func noBody(string) any { return nil }
 
 func constBody(body any) func(string) any { return func(string) any { return body } }
 
-// projectRoutes lists every dashboard route that acts on one project, whether
-// the project is in the path, the query or the body.
+// alphaKeyID is a key id the revoke route is tried with. It names no key: a
+// request that got past the access check would be a 404 from the logger.
+const alphaKeyID = "dddddddddddddddddddddd04"
+
+// projectRoutes lists every dashboard route that acts on one project; they all
+// name it in the path.
 var projectRoutes = []projectRoute{
-	{http.MethodGet, query("/keys"), noBody, false},
-	{http.MethodPost, fixed("/keys"), func(id string) any { return map[string]string{"project_id": id} }, false},
-	{http.MethodGet, query("/settings/retention"), noBody, false},
-	{http.MethodPatch, fixed("/settings/retention"), func(id string) any { return map[string]any{"project_id": id, "days": 180} }, false},
-	{http.MethodGet, query("/metrics"), noBody, false},
+	{http.MethodGet, path("/keys"), noBody, false},
+	{http.MethodPost, path("/keys"), constBody(map[string]any{}), false},
+	{http.MethodDelete, path("/keys/" + alphaKeyID), noBody, false},
+	{http.MethodGet, path("/retention"), noBody, false},
+	{http.MethodPatch, path("/retention"), constBody(map[string]any{"days": 180}), false},
+	{http.MethodGet, path("/metrics"), noBody, false},
 	{http.MethodGet, path(""), noBody, false},
 	{http.MethodPatch, path(""), constBody(map[string]string{"name": "Renamed"}), true},
 	{http.MethodDelete, path(""), noBody, true},
@@ -55,9 +52,7 @@ var projectRoutes = []projectRoute{
 }
 
 // TestProjectAccess_SameAnswerOnEveryRoute: every route that acts on a project
-// denies the same way. It used to depend on the route: /keys, /metrics and
-// /settings/retention answered 403 for a project that does not exist, where
-// /projects/{id} answered 404.
+// denies the same way.
 func TestProjectAccess_SameAnswerOnEveryRoute(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -98,7 +93,7 @@ func TestProjectAccess_OneLookupPerRequest(t *testing.T) {
 	h, f := newInternalTestServer(t)
 
 	for _, user := range []string{"owner-a", "owner-b"} {
-		for _, target := range []string{"/projects/" + projAlpha + "/members", "/metrics?project_id=" + projAlpha} {
+		for _, target := range []string{"/projects/" + projAlpha + "/members", "/projects/" + projAlpha + "/metrics"} {
 			f.snapshot(func(f *fakeLogger) { f.accessChecks = 0 })
 			do(h, internalRequest(http.MethodGet, target, user, nil))
 			f.snapshot(func(f *fakeLogger) {

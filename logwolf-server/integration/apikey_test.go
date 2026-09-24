@@ -161,8 +161,8 @@ func TestRevokeAPIKey_ScopedToProject(t *testing.T) {
 	if err := m.RevokeAPIKey(other.ID, id); !errors.Is(err, data.ErrKeyNotFound) {
 		t.Fatalf("RevokeAPIKey through another project: want ErrKeyNotFound, got %v", err)
 	}
-	if got, err := m.GetAPIKeyByID(id); err != nil || !got.Active {
-		t.Fatalf("key after a revoke through another project: %+v, %v; want it still active", got, err)
+	if got := findAPIKey(t, m, owner.ID, id); !got.Active {
+		t.Fatalf("key after a revoke through another project: %+v; want it still active", got)
 	}
 
 	if err := m.RevokeAPIKey(owner.ID, primitive.NewObjectID().Hex()); !errors.Is(err, data.ErrKeyNotFound) {
@@ -172,10 +172,7 @@ func TestRevokeAPIKey_ScopedToProject(t *testing.T) {
 	if err := m.RevokeAPIKey(owner.ID, id); err != nil {
 		t.Fatalf("RevokeAPIKey: %v", err)
 	}
-	got, err := m.GetAPIKeyByID(id)
-	if err != nil {
-		t.Fatalf("GetAPIKeyByID: %v", err)
-	}
+	got := findAPIKey(t, m, owner.ID, id)
 	if got.Active || got.RevokedAt == nil {
 		t.Errorf("revoked key = active %v, revoked_at %v; want inactive with a time", got.Active, got.RevokedAt)
 	}
@@ -205,8 +202,8 @@ func TestKeyRoutes_ThroughLogger(t *testing.T) {
 	projectID := createProject(owner, "key-routes")
 	createProject(outsider, "key-routes-other")
 
-	body := mustInternalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner,
-		map[string]any{"project_id": projectID}, http.StatusCreated)
+	keys := "/projects/" + projectID + "/keys"
+	body := mustInternalCall(t, stack.brokerURL, http.MethodPost, keys, owner, map[string]any{}, http.StatusCreated)
 	var created struct {
 		Key string `json:"key"`
 		ID  string `json:"id"`
@@ -221,15 +218,15 @@ func TestKeyRoutes_ThroughLogger(t *testing.T) {
 	postLog(t, stack.brokerURL, created.Key, "key-routes-event")
 	waitForLog(t, stack.mongoURI, "key-routes-event")
 
-	if status, _ := internalCall(t, stack.brokerURL, http.MethodDelete, "/keys/"+created.ID, outsider, nil); status != http.StatusForbidden {
-		t.Errorf("DELETE /keys/{id} by a non-member = %d, want 403", status)
+	if status, _ := internalCall(t, stack.brokerURL, http.MethodDelete, keys+"/"+created.ID, outsider, nil); status != http.StatusForbidden {
+		t.Errorf("DELETE /projects/{id}/keys/{keyID} by a non-member = %d, want 403", status)
 	}
-	if status, _ := internalCall(t, stack.brokerURL, http.MethodDelete, "/keys/"+primitive.NewObjectID().Hex(), owner, nil); status != http.StatusNotFound {
-		t.Errorf("DELETE /keys/{id} of an unknown key = %d, want 404", status)
+	if status, _ := internalCall(t, stack.brokerURL, http.MethodDelete, keys+"/"+primitive.NewObjectID().Hex(), owner, nil); status != http.StatusNotFound {
+		t.Errorf("DELETE /projects/{id}/keys/{keyID} of an unknown key = %d, want 404", status)
 	}
-	mustInternalCall(t, stack.brokerURL, http.MethodDelete, "/keys/"+created.ID, owner, nil, http.StatusOK)
+	mustInternalCall(t, stack.brokerURL, http.MethodDelete, keys+"/"+created.ID, owner, nil, http.StatusOK)
 
-	body = mustInternalCall(t, stack.brokerURL, http.MethodGet, "/keys?project_id="+projectID, owner, nil, http.StatusOK)
+	body = mustInternalCall(t, stack.brokerURL, http.MethodGet, keys, owner, nil, http.StatusOK)
 	var listed []struct {
 		ID     string `json:"id"`
 		Active bool   `json:"active"`
@@ -240,4 +237,20 @@ func TestKeyRoutes_ThroughLogger(t *testing.T) {
 	if len(listed) != 1 || listed[0].ID != created.ID || listed[0].Active {
 		t.Errorf("keys after revoke = %+v, want only %s, inactive", listed, created.ID)
 	}
+}
+
+// findAPIKey reads a key of a project back by id.
+func findAPIKey(t *testing.T, m data.Models, projectID primitive.ObjectID, id string) data.APIKey {
+	t.Helper()
+	keys, err := m.ListAPIKeysByProject(projectID)
+	if err != nil {
+		t.Fatalf("ListAPIKeysByProject: %v", err)
+	}
+	for _, k := range keys {
+		if k.ID.Hex() == id {
+			return k
+		}
+	}
+	t.Fatalf("key %s not found in project %s", id, projectID.Hex())
+	return data.APIKey{}
 }

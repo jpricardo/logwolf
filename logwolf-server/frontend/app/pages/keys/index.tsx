@@ -63,13 +63,13 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 		const api = createApi(user.login);
 
-		if (intent === 'create') {
-			// The new key belongs to the project in session rather than one named by
-			// the form, so a tab left open on a since-switched project cannot mint a
-			// key somewhere the user is no longer looking.
-			const projectId = await getCurrentProjectID(request);
-			if (!projectId) return { error: new Error('No project selected.') };
+		// Both intents act on the project in session rather than one named by the
+		// form, so a tab left open on a since-switched project cannot mint or
+		// revoke a key somewhere the user is no longer looking.
+		const projectId = await getCurrentProjectID(request);
+		if (!projectId) return { error: new Error('No project selected.') };
 
+		if (intent === 'create') {
 			// Unknown values are left for the broker to refuse.
 			const scopes = fd.getAll('scope').map(String) as ApiKeyScope[];
 			if (scopes.length === 0) return { error: new Error('Pick at least one scope.') };
@@ -81,7 +81,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 		if (intent === 'revoke') {
 			const id = fd.get('id')?.toString() ?? '';
-			await api.deleteKey(id);
+			await api.deleteKey(projectId, id);
 			event?.set('actionData', null);
 			return { revoked: true };
 		}

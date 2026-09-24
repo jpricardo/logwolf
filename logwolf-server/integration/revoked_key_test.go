@@ -24,8 +24,8 @@ func TestRevokedKey_RefusedAtOnce(t *testing.T) {
 		t.Fatalf("decode created project: %v (%s)", err, body)
 	}
 
-	body = mustInternalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner,
-		map[string]string{"project_id": project.ID}, http.StatusCreated)
+	keys := "/projects/" + project.ID + "/keys"
+	body = mustInternalCall(t, stack.brokerURL, http.MethodPost, keys, owner, map[string]string{}, http.StatusCreated)
 	var created struct {
 		ID  string `json:"id"`
 		Key string `json:"key"`
@@ -37,7 +37,7 @@ func TestRevokedKey_RefusedAtOnce(t *testing.T) {
 	// Accepted, and now in the Broker's cache.
 	postLog(t, stack.brokerURL, created.Key, "revoke-now-before")
 
-	mustInternalCall(t, stack.brokerURL, http.MethodDelete, "/keys/"+created.ID, owner, nil, http.StatusOK)
+	mustInternalCall(t, stack.brokerURL, http.MethodDelete, keys+"/"+created.ID, owner, nil, http.StatusOK)
 
 	req, _ := http.NewRequest(http.MethodPost, stack.brokerURL+"/logs",
 		strings.NewReader(`{"name":"revoke-now-after","data":"{}","severity":"info","tags":[]}`))

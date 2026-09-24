@@ -37,27 +37,29 @@ A key without the route's scope gets 403.
 
 ### Internal routes (`X-Internal-Secret` header required)
 
-| Method   | Path                             | Description                                 |
-| -------- | -------------------------------- | ------------------------------------------- |
-| `GET`    | `/keys`                          | List API keys                               |
-| `POST`   | `/keys`                          | Create an API key; `scopes` default: ingest |
-| `DELETE` | `/keys/{id}`                     | Revoke an API key                           |
-| `GET`    | `/settings/retention`            | Get retention setting                       |
-| `PATCH`  | `/settings/retention`            | Update retention TTL                        |
-| `GET`    | `/metrics`                       | Usage analytics                             |
-| `GET`    | `/projects`                      | Projects the caller belongs to, with `role` |
-| `POST`   | `/projects`                      | Create a project, owned by the caller       |
-| `GET`    | `/projects/{id}`                 | Get one project                             |
-| `PATCH`  | `/projects/{id}`                 | Rename a project (the slug stays)           |
-| `DELETE` | `/projects/{id}`                 | Delete a project and everything under it    |
-| `GET`    | `/projects/{id}/members`         | List members                                |
-| `POST`   | `/projects/{id}/members`         | Add a member                                |
-| `PATCH`  | `/projects/{id}/members/{login}` | Change a member's `role` (owner or member)  |
-| `DELETE` | `/projects/{id}/members/{login}` | Remove a member                             |
-| `GET`    | `/projects/{id}/logs`            | List a project's events (paginated)         |
-| `POST`   | `/projects/{id}/logs`            | Submit an event to a project (async, 202)   |
-| `GET`    | `/projects/{id}/logs/{logID}`    | Get one event                               |
-| `DELETE` | `/projects/{id}/logs/{logID}`    | Delete one event                            |
+Everything that acts on one project is under `/projects/{id}`.
+
+| Method   | Path                             | Access | Description                                          |
+| -------- | -------------------------------- | ------ | ---------------------------------------------------- |
+| `GET`    | `/projects`                      | —      | Projects the caller belongs to, with `role`          |
+| `POST`   | `/projects`                      | —      | Create a project, owned by the caller                |
+| `GET`    | `/projects/{id}`                 | member | Get one project                                      |
+| `PATCH`  | `/projects/{id}`                 | owner  | Rename a project (the slug stays)                    |
+| `DELETE` | `/projects/{id}`                 | owner  | Delete a project and everything under it             |
+| `GET`    | `/projects/{id}/members`         | member | List members                                         |
+| `POST`   | `/projects/{id}/members`         | owner  | Add a member                                         |
+| `PATCH`  | `/projects/{id}/members/{login}` | owner  | Change a member's `role` (owner or member)           |
+| `DELETE` | `/projects/{id}/members/{login}` | owner  | Remove a member                                      |
+| `GET`    | `/projects/{id}/logs`            | member | List a project's events (paginated)                  |
+| `POST`   | `/projects/{id}/logs`            | member | Submit an event to a project (async, 202)            |
+| `GET`    | `/projects/{id}/logs/{logID}`    | member | Get one event                                        |
+| `DELETE` | `/projects/{id}/logs/{logID}`    | member | Delete one event                                     |
+| `GET`    | `/projects/{id}/keys`            | member | List API keys                                        |
+| `POST`   | `/projects/{id}/keys`            | member | Create an API key; `scopes` default: ingest          |
+| `DELETE` | `/projects/{id}/keys/{keyID}`    | member | Revoke an API key; another project's is a 404        |
+| `GET`    | `/projects/{id}/retention`       | member | Get retention (`{"days": n}`)                        |
+| `PATCH`  | `/projects/{id}/retention`       | member | Update retention; lowering it is owner-only (below)  |
+| `GET`    | `/projects/{id}/metrics`         | member | Usage analytics                                      |
 
 Internal routes also require `X-User-Login`; project access is checked against
 that login on every call. `requireUserLogin` lowercases it first, as memberships
@@ -68,7 +70,7 @@ Every route that acts on a project denies access the same way (`access.go`):
 - **404** if the project does not exist, or the id is not an ObjectID;
 - **403** if it exists and the caller is not a member, or is a member on an owner-only route.
 
-`authorizeProject` is that rule. It costs one logger call, `RPCServer.ProjectAccess`, which answers both whether the project exists and the caller's role. The `/projects/{id}/...` routes get it from the `requireProject(anyMember|ownerOnly)` middleware, so `routes.go` states each route's access level. The middleware also hands the handler the checked project (with its canonical lower-case id) and the logger connection it checked over, which the handler reuses and the middleware closes. `/keys`, `/settings/retention` and `/metrics`, which take the project from the query or the body, and `DELETE /keys/{id}`, which takes it from the key, call `authorizeProject` themselves.
+`authorizeProject` is that rule. It costs one logger call, `RPCServer.ProjectAccess`, which answers both whether the project exists and the caller's role. Every `/projects/{id}/...` route gets it from the `requireProject(anyMember|ownerOnly)` middleware, so `routes.go` states each route's access level. The middleware also hands the handler the checked project (with its canonical lower-case id) and the logger connection it checked over, which the handler reuses and the middleware closes. No route takes a project id from the query or the body.
 
 Creating a project is one logger call: the logger writes the project and the
 caller's owner membership in one transaction, so a failure leaves no project
@@ -125,8 +127,8 @@ The logger check calls `RPCServer.Status`. It is `down` if the logger cannot be 
 
 Two middleware layers:
 
-- **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token through the logger (`RPCServer.ValidateAPIKey`); results are cached with TTL + rate limiting so the hot path does not make an RPC call per request. A cached key is evicted as soon as it is revoked (`DELETE /keys/{id}`) or its project deleted (`DELETE /projects/{id}`), via `forgetCachedKeys`, so it stops working at once rather than after the 60s TTL. A validation already in flight during an eviction is not cached, since it may have read the key before the revoke. The eviction is local: a second broker replica would keep its entry until it expires. The key cache and the per-IP failure counters are each capped at 10,000 entries. A background sweep deletes expired entries every minute, so a flood of bogus keys from many addresses cannot grow them without bound.
-  - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too.
+- **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token through the logger (`RPCServer.ValidateAPIKey`); results are cached with TTL + rate limiting so the hot path does not make an RPC call per request. A cached key is evicted as soon as it is revoked (`DELETE /projects/{id}/keys/{keyID}`) or its project deleted (`DELETE /projects/{id}`), via `forgetCachedKeys`, so it stops working at once rather than after the 60s TTL. A validation already in flight during an eviction is not cached, since it may have read the key before the revoke. The eviction is local: a second broker replica would keep its entry until it expires. The key cache and the per-IP failure counters are each capped at 10,000 entries. A background sweep deletes expired entries every minute, so a flood of bogus keys from many addresses cannot grow them without bound.
+  - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /projects/{id}/keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too.
 - **`requireInternalSecret`** — validates the `X-Internal-Secret` header; used exclusively by the dashboard backend.
 
 ## Write path
@@ -151,7 +153,7 @@ Dashboard → GET /projects/{id}/logs     → requireProject      → RPC call t
 | `RABBITMQ_URL`        | `amqp://guest:guest@rabbitmq` | RabbitMQ connection string     |
 | `BROKER_PORT`         | `80`                          | HTTP listen port               |
 | `LOGGER_RPC_ADDR`     | `logger:5001`                 | Logger RPC address             |
-| `INTERNAL_API_SECRET` | —                             | Shared secret for `/keys` etc. |
+| `INTERNAL_API_SECRET` | —                             | Shared secret for dashboard    |
 | `TRUSTED_PROXIES`     | — (trust no one)              | See below                      |
 
 `TRUSTED_PROXIES` is a comma-separated list of IPs and CIDR ranges. A request from one of them is attributed to the right-most `X-Forwarded-For` entry that is not itself trusted (`clientIP` in `clientip.go`); any other request is attributed to its peer address, and its `X-Forwarded-For` is ignored. The failed-auth rate limiter counts per that address. Behind Caddy it must cover Caddy, or every internet client shares Caddy's counter and ten bad keys from anyone lock out all SDK clients for a minute. `docker-compose.yml` trusts the private ranges, which is safe only while the broker publishes no port. An entry that is not an IP or range stops the broker at start.

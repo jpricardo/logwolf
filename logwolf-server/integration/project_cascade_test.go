@@ -45,8 +45,8 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 
 	// --- Mint an API key for it, able to read back as well as ingest ---
 
-	data = mustInternalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner,
-		map[string]any{"project_id": project.ID, "scopes": []string{"ingest", "read"}}, http.StatusCreated)
+	data = mustInternalCall(t, stack.brokerURL, http.MethodPost, "/projects/"+project.ID+"/keys", owner,
+		map[string]any{"scopes": []string{"ingest", "read"}}, http.StatusCreated)
 
 	var created struct {
 		Key string `json:"key"`
@@ -60,8 +60,8 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 
 	// --- Set retention, so a settings document exists ---
 
-	mustInternalCall(t, stack.brokerURL, http.MethodPatch, "/settings/retention", owner,
-		map[string]any{"project_id": project.ID, "days": 30}, http.StatusOK)
+	mustInternalCall(t, stack.brokerURL, http.MethodPatch, "/projects/"+project.ID+"/retention", owner,
+		map[string]any{"days": 30}, http.StatusOK)
 
 	// --- Send events with that key ---
 

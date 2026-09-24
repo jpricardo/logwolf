@@ -109,9 +109,9 @@ Entry point: `cmd/api/main.go`. Key files: `routes.go`, `handlers.go`, `middlewa
 
 - `POST /logs`, `POST /logs/batch` — enqueue events (async, 202)
 - `GET /logs`, `DELETE /logs` — proxy to Logger RPC
-- Internal routes (`X-Internal-Secret` + `X-User-Login`): `/keys`, `/settings/retention`, `/metrics`, `/projects/...` — including `/projects/{id}/logs`, the dashboard's project-scoped read/write path for events
-- Project access on internal routes: 404 when the project does not exist (or the id is malformed), 403 for a non-member or a member on an owner-only route, the same on every route. `authorizeProject` (`access.go`) decides with one `RPCServer.ProjectAccess` call; `/projects/{id}/...` routes declare their level with `requireProject(anyMember|ownerOnly)` in `routes.go` and read the project and logger connection from the context
-- `requireAPIKey` middleware validates keys over logger RPC and caches the result for 60s. Revoking a key or deleting its project evicts it from that broker's cache at once (`forgetCachedKeys`); another broker replica would keep it until the entry expires. `requireInternalSecret` guards dashboard routes. The broker has no MongoDB client: key storage (`/keys`) goes through logger RPC too
+- Internal routes (`X-Internal-Secret` + `X-User-Login`): `/projects` plus everything that acts on one project under `/projects/{id}/...` — members, `logs` (the dashboard's project-scoped read/write path for events), `keys`, `retention` and `metrics`. No route takes a project id from the query or the body
+- Project access on internal routes: 404 when the project does not exist (or the id is malformed), 403 for a non-member or a member on an owner-only route, the same on every route. `authorizeProject` (`access.go`) decides with one `RPCServer.ProjectAccess` call; every `/projects/{id}/...` route declares its level with `requireProject(anyMember|ownerOnly)` in `routes.go` and reads the project and logger connection from the context
+- `requireAPIKey` middleware validates keys over logger RPC and caches the result for 60s. Revoking a key or deleting its project evicts it from that broker's cache at once (`forgetCachedKeys`); another broker replica would keep it until the entry expires. `requireInternalSecret` guards dashboard routes. The broker has no MongoDB client: key storage (`/projects/{id}/keys`) goes through logger RPC too
 
 ### Listener (`logwolf-server/listener`)
 
@@ -127,7 +127,7 @@ RPC methods (Go stdlib `net/rpc`):
 - `RPCServer.GetLogs` — query with pagination/filtering
 - `RPCServer.GetLog` — fetch one event by id within a project
 - `RPCServer.DeleteLog` — delete by filter, returns count
-- `RPCServer.ValidateAPIKey`, `ListAPIKeys`, `CreateAPIKey`, `GetAPIKey`, `RevokeAPIKey` — API key storage for the broker; replies never carry the hash, and revoke matches the project as well as the id
+- `RPCServer.ValidateAPIKey`, `ListAPIKeys`, `CreateAPIKey`, `RevokeAPIKey` — API key storage for the broker; replies never carry the hash, and revoke matches the project as well as the id
 
 ### Toolbox (`logwolf-server/toolbox`)
 

@@ -13,11 +13,11 @@ import (
 
 // --- Project access ---
 //
-// Every dashboard route that touches a project answers the same way when the
-// caller may not: 404 if the project does not exist (or the id cannot name
-// one), 403 if it exists and the caller is not a member, or is a member where
-// an owner is needed. authorizeProject is that rule; requireProject applies it
-// to the routes that name the project in the path.
+// Every dashboard route that touches a project names it in the path, as
+// /projects/{id}/..., and answers the same way when the caller may not: 404 if
+// the project does not exist (or the id cannot name one), 403 if it exists and
+// the caller is not a member, or is a member where an owner is needed.
+// authorizeProject is that rule; requireProject applies it to the routes.
 
 // accessLevel is who may use a route.
 type accessLevel int
