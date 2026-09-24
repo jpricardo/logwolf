@@ -34,6 +34,10 @@ const (
 	mongoPass  = "password"
 	replicaSet = "rs0"
 
+	// The images docker-compose.yml runs, so the suite tests what ships.
+	mongoImage  = "mongo:8.0.32"
+	rabbitImage = "rabbitmq:4.3.6-alpine"
+
 	// internalSecret is what the Broker is started with, so dashboard-style
 	// requests in these tests can reach the internal routes.
 	internalSecret = "test-secret"
@@ -96,7 +100,7 @@ func startMongo() (string, error) {
 
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "mongo:4.2.16-bionic",
+			Image:        mongoImage,
 			ExposedPorts: []string{"27017/tcp"},
 			Env: map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": mongoUser,
@@ -111,7 +115,12 @@ func startMongo() (string, error) {
 				"mongod", "--replSet", replicaSet, "--keyFile", "/tmp/keyfile", "--bind_ip_all",
 				"--setParameter", "enableTestCommands=1",
 			},
-			WaitingFor: wait.ForLog("waiting for connections on port 27017"),
+			// mongod logs JSON since 4.4, with "Waiting for connections" as the
+			// message. The entrypoint first runs a mongod of its own, on
+			// localhost only, to create the root user; the second one to wait is
+			// the real server.
+			WaitingFor: wait.ForLog(`"msg":"Waiting for connections"`).WithOccurrence(2).
+				WithStartupTimeout(2 * time.Minute),
 		},
 		Started: true,
 	})
@@ -171,13 +180,13 @@ func initiateReplicaSet(uri string, timeout time.Duration) error {
 
 	for time.Now().Before(deadline) {
 		var hello struct {
-			IsMaster bool `bson:"ismaster"`
+			IsWritablePrimary bool `bson:"isWritablePrimary"`
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		lastErr = admin.RunCommand(ctx, bson.D{{Key: "isMaster", Value: 1}}).Decode(&hello)
+		lastErr = admin.RunCommand(ctx, bson.D{{Key: "hello", Value: 1}}).Decode(&hello)
 		cancel()
 
-		if lastErr == nil && hello.IsMaster {
+		if lastErr == nil && hello.IsWritablePrimary {
 			return nil
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -189,7 +198,7 @@ func initiateReplicaSet(uri string, timeout time.Duration) error {
 func startRabbit() (string, error) {
 	ctx := context.Background()
 
-	c, err := rabbitmq.Run(ctx, "rabbitmq:3.9-alpine")
+	c, err := rabbitmq.Run(ctx, rabbitImage)
 	if err != nil {
 		return "", err
 	}

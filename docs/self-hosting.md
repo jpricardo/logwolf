@@ -54,6 +54,10 @@ Create a `.env` file in `logwolf-server/`. The full reference:
 | `LOGWOLF_DEFAULT_PROJECT_OWNERS` | Upgrades only | GitHub usernames made owners of the `Default` project that holds pre-multi-tenancy data, on top of `LOGWOLF_ALLOWED_GITHUB_USERS`. Needed for org-only deployments. Read on every start. |
 | `API_KEY`                        | ✅            | An `lw_`-prefixed API key used by the frontend to instrument itself. Generate one after first boot.                                                                                      |
 | `TRUSTED_PROXIES`                | No            | IPs/CIDR ranges whose `X-Forwarded-For` the broker believes, to rate-limit failed API key attempts per client. Compose trusts private ranges; narrow it if you publish the broker port.  |
+| `MONGO_USERNAME`                 | ✅            | MongoDB root user. Read by MongoDB only when its data directory is first created; see Updating.                                                                                          |
+| `MONGO_PASSWORD`                 | ✅            | Its password. Minimum 32 random bytes on a new install.                                                                                                                                  |
+| `RABBITMQ_USERNAME`              | ✅            | RabbitMQ user, created when the node first starts. URL-safe characters only.                                                                                                             |
+| `RABBITMQ_PASSWORD`              | ✅            | Its password. URL-safe characters only; `openssl rand -hex 32` is.                                                                                                                       |
 
 Generate secrets with:
 
@@ -69,8 +73,14 @@ GITHUB_CLIENT_SECRET=def456
 LOGWOLF_ALLOWED_GITHUB_USERS=yourname
 SESSION_SECRET=<output of openssl rand -hex 32>
 INTERNAL_API_SECRET=<output of openssl rand -hex 32>
+MONGO_USERNAME=logwolf
+MONGO_PASSWORD=<output of openssl rand -hex 32>
+RABBITMQ_USERNAME=logwolf
+RABBITMQ_PASSWORD=<output of openssl rand -hex 32>
 API_KEY=lw_<your key from the Keys page>
 ```
+
+MongoDB 8.0 needs a CPU with AVX on x86-64 (any 64-bit ARM works). On an old or oddly virtualized VPS without it, `mongod` exits at start with an illegal instruction; check with `grep -m1 -o avx /proc/cpuinfo`.
 
 ## GitHub OAuth app
 
@@ -174,6 +184,52 @@ docker compose up --build -d
 
 Caddy, MongoDB, and RabbitMQ use pinned image versions in `docker-compose.yml`. Update these deliberately, not automatically.
 
+### Upgrading from MongoDB 4.2 and RabbitMQ 3.9
+
+Releases before this one ran `mongo:4.2` and `rabbitmq:3.9`, with the MongoDB credentials fixed at `admin` / `password` and no RabbitMQ credentials at all. They now run MongoDB 8.0 and RabbitMQ 4.3, with credentials from `.env`. A fresh install needs none of this; an existing one needs a few steps, once:
+
+1. **Let queued events drain.** Stop the Broker so nothing new comes in, and wait for the Listener to store what is queued. The new RabbitMQ starts as a fresh node, so anything still queued in the old one stays behind.
+
+   ```bash
+   docker compose stop broker
+   docker compose logs -f listener   # until it goes quiet
+   docker compose down
+   ```
+
+2. **Set the new variables in `.env`.** MongoDB reads its credentials only when a data directory is created, so an existing one still has `admin` / `password`; start with those, and change them in step 5. RabbitMQ's are new, so pick them now. `SESSION_SECRET` is now actually used (Compose used to override it with a fixed value), so everyone is signed out once.
+
+   ```bash
+   MONGO_USERNAME=admin
+   MONGO_PASSWORD=password
+   RABBITMQ_USERNAME=logwolf
+   RABBITMQ_PASSWORD=<output of openssl rand -hex 32>
+   ```
+
+3. **Upgrade the MongoDB data.** MongoDB 8.0 cannot open 4.2 data files directly: they go through 4.4, 5.0, 6.0 and 7.0 first. `scripts/upgrade-mongo.sh` does that on `db-data/mongo`, in throwaway containers without a network. It is safe to run again, but take a backup first.
+
+   ```bash
+   cp -a db-data/mongo db-data/mongo.bak
+   scripts/upgrade-mongo.sh
+   ```
+
+4. **Start the new stack.**
+
+   ```bash
+   git pull
+   docker compose up --build -d
+   ```
+
+5. **Change the MongoDB password** from the old default, then put the new one in `.env` and recreate the containers that use it:
+
+   ```bash
+   docker compose exec mongo mongosh -u admin -p password --authenticationDatabase admin \
+     --eval 'db.getSiblingDB("admin").changeUserPassword("admin", "<new password>")'
+   # set MONGO_PASSWORD=<new password> in .env
+   docker compose up -d
+   ```
+
+RabbitMQ likewise creates its user only when the node first starts. To change `RABBITMQ_USERNAME` or `RABBITMQ_PASSWORD` later, drain the queue as in step 1, delete `db-data/rabbitmq`, and start again; the Listener declares everything it needs.
+
 ## Troubleshooting
 
 **The dashboard redirects to GitHub but login fails.**
@@ -204,4 +260,4 @@ Check Frontend logs:
 docker compose logs frontend
 ```
 
-A missing `SESSION_SECRET` or `GITHUB_CLIENT_SECRET` will cause silent failures here.
+A missing `GITHUB_CLIENT_SECRET` will cause silent failures here. A missing `SESSION_SECRET`, or any of the MongoDB and RabbitMQ credentials, stops `docker compose` before anything starts, naming the variable.

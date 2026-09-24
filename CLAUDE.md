@@ -26,7 +26,7 @@ Managed as a Go workspace (`logwolf-server/go.work`):
 ### Infrastructure
 
 - RabbitMQ for async event ingestion
-- MongoDB for persistence, run as a single-member replica set (`rs0`) because the data layer uses transactions. Compose's `mongo` healthcheck initiates the set the first time it runs, including on existing standalone volumes
+- MongoDB 8.0 for persistence, run as a single-member replica set (`rs0`) because the data layer uses transactions. Compose's `mongo` healthcheck initiates the set the first time it runs, including on existing standalone volumes. Data from the `mongo:4.2` of earlier releases is brought forward with `scripts/upgrade-mongo.sh` (4.4 → 5.0 → 6.0 → 7.0 → 8.0); the integration suite runs the same images as compose
 - Caddy as reverse proxy (TLS termination)
 - Full stack via `logwolf-server/docker-compose.yml`
 
@@ -173,13 +173,17 @@ A separate workflow (`release-js-client.yml`) publishes the JS SDK to npm.
 
 ## Environment
 
-Copy `.env.example` to `.env` and fill in GitHub OAuth credentials before running the stack locally. Required vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `LOGWOLF_ALLOWED_GITHUB_USERS` or `LOGWOLF_ALLOWED_GITHUB_ORGS`, `SESSION_SECRET`, `API_SECRET`.
+Copy `.env.example` to `.env` and fill in GitHub OAuth credentials before running the stack locally. Required vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `LOGWOLF_ALLOWED_GITHUB_USERS` or `LOGWOLF_ALLOWED_GITHUB_ORGS`, `SESSION_SECRET`, `INTERNAL_API_SECRET`, `MONGO_USERNAME`, `MONGO_PASSWORD`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`. Compose refuses to start without the secrets and credentials; none of them has a default.
 
 Per-service env vars:
 
 | Variable                         | Service          | Default                       | Description                                                            |
 | -------------------------------- | ---------------- | ----------------------------- | ---------------------------------------------------------------------- |
 | `MONGO_URL`                      | logger           | `mongodb://mongo:27017`       | MongoDB connection                                                     |
+| `MONGO_USERNAME`                 | logger, mongo    | —                             | MongoDB credentials; unset, `MONGO_URL`'s own apply                    |
+| `MONGO_PASSWORD`                 | logger, mongo    | —                             | With `MONGO_USERNAME`; one without the other is refused                |
+| `RABBITMQ_USERNAME`              | rabbitmq         | —                             | RabbitMQ user; compose builds `RABBITMQ_URL` from it                   |
+| `RABBITMQ_PASSWORD`              | rabbitmq         | —                             | Its password; URL-safe characters only                                 |
 | `RABBITMQ_URL`                   | broker, listener | `amqp://guest:guest@rabbitmq` | RabbitMQ connection                                                    |
 | `BROKER_PORT`                    | broker           | `80`                          | HTTP listen port                                                       |
 | `TRUSTED_PROXIES`                | broker           | private ranges (compose)      | Peers whose `X-Forwarded-For` names the client for rate limiting       |

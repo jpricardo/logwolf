@@ -34,6 +34,10 @@ GITHUB_CLIENT_SECRET=your_client_secret
 LOGWOLF_ALLOWED_GITHUB_USERS=your_github_username
 SESSION_SECRET=a_long_random_string
 INTERNAL_API_SECRET=another_long_random_string
+MONGO_USERNAME=logwolf
+MONGO_PASSWORD=a_third_random_string
+RABBITMQ_USERNAME=logwolf
+RABBITMQ_PASSWORD=a_fourth_random_string
 ```
 
 ### 3. Trust Caddy's local CA (first run only)
@@ -134,7 +138,7 @@ const logwolf = new Logwolf({
 ## ✅ Recommended local workflow
 
 - **Frontend only:** `docker compose up -d broker mongo rabbitmq caddy`, then `npm run dev` in `frontend/`.
-- **Backend only:** `docker compose up -d mongo rabbitmq`, then run Go services locally.
+- **Backend only:** `docker compose up -d mongo rabbitmq`, then run Go services locally. Give them the credentials from `.env`: `MONGO_USERNAME` and `MONGO_PASSWORD` for the logger, and `RABBITMQ_URL=amqp://<user>:<password>@<host>` for the broker and listener.
 - **Full stack:** `docker compose up --build -d`
 
 ---
