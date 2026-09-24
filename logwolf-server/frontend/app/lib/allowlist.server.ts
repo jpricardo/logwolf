@@ -60,3 +60,100 @@ export async function listGithubOrgs(accessToken: string, fetchImpl: typeof fetc
 	if (!Array.isArray(body)) throw new Error('GitHub /user/orgs did not answer with a list');
 	return body.flatMap((org) => (typeof org?.login === 'string' ? [org.login] : []));
 }
+
+// --- Checking an invitee ---
+//
+// Adding a member only writes a membership; whether that person can ever sign
+// in is the allowlist's call, which lives here and not in the broker. So before
+// the dashboard adds someone it asks GitHub who they are, and checks them the
+// way sign-in will.
+
+/** What the dashboard learned about a login it is about to add to a project. */
+export type InviteeCheck =
+	/** No GitHub user by that name: refused, as it can only be a typo. */
+	| { kind: 'unknown' }
+	/** An organization, which can never sign in: refused. */
+	| { kind: 'organization'; login: string }
+	/** On the users allowlist, or a public member of an allowed org. */
+	| { kind: 'allowed'; login: string }
+	/**
+	 * Neither. With orgs allowlisted they may still get in through an org whose
+	 * membership they keep private, which GitHub does not show without a token.
+	 */
+	| { kind: 'not-allowlisted'; login: string; orgsAllowlisted: boolean }
+	/** GitHub could not be asked, or did not answer usefully. */
+	| { kind: 'unverified'; login: string };
+
+const GITHUB_TIMEOUT_MS = 5000;
+
+function githubGet(path: string, fetchImpl: typeof fetch) {
+	return fetchImpl(`https://api.github.com${path}`, {
+		headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'logwolf' },
+		signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+	});
+}
+
+/**
+ * Checks `login` before it is added to a project, through GitHub's public API.
+ * It needs no token: the user lookup and public org membership are open, and
+ * rate-limited per server address, which invites come nowhere near.
+ *
+ * It never throws. When GitHub cannot say, the answer is `unverified`, and the
+ * caller adds the member anyway: GitHub being down should not block an owner.
+ */
+export async function checkInvitee(
+	login: string,
+	allowlist: Allowlist,
+	fetchImpl: typeof fetch = fetch,
+): Promise<InviteeCheck> {
+	let canonical: string;
+	try {
+		const res = await githubGet(`/users/${encodeURIComponent(login)}`, fetchImpl);
+		if (res.status === 404) return { kind: 'unknown' };
+		if (!res.ok) return { kind: 'unverified', login };
+
+		const user: unknown = await res.json();
+		if (typeof user !== 'object' || user === null || typeof (user as { login?: unknown }).login !== 'string') {
+			return { kind: 'unverified', login };
+		}
+		canonical = (user as { login: string }).login;
+		if ((user as { type?: unknown }).type === 'Organization') return { kind: 'organization', login: canonical };
+	} catch {
+		return { kind: 'unverified', login };
+	}
+
+	if (allowlist.users.includes(normalizeLogin(canonical))) return { kind: 'allowed', login: canonical };
+
+	for (const org of allowlist.orgs) {
+		try {
+			// 204 for a public member; 404 for anyone else, private members included.
+			const res = await githubGet(
+				`/orgs/${encodeURIComponent(org)}/public_members/${encodeURIComponent(canonical)}`,
+				fetchImpl,
+			);
+			if (res.status === 204) return { kind: 'allowed', login: canonical };
+			if (res.status !== 404) return { kind: 'unverified', login: canonical };
+		} catch {
+			return { kind: 'unverified', login: canonical };
+		}
+	}
+
+	return { kind: 'not-allowlisted', login: canonical, orgsAllowlisted: allowlist.orgs.length > 0 };
+}
+
+/**
+ * What to tell the owner after adding someone the check could not clear, or
+ * nothing when it did.
+ */
+export function inviteWarning(check: InviteeCheck): string | undefined {
+	switch (check.kind) {
+		case 'not-allowlisted':
+			return check.orgsAllowlisted
+				? `${check.login} is not on the users allowlist or a public member of an allowed org. They can sign in only if they belong to one of those orgs privately.`
+				: `${check.login} is not on the allowlist, so they cannot sign in until an admin adds them to LOGWOLF_ALLOWED_GITHUB_USERS.`;
+		case 'unverified':
+			return `Could not reach GitHub to check ${check.login}. Make sure it is the right login, and that they are allowlisted.`;
+		default:
+			return undefined;
+	}
+}

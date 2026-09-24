@@ -2,6 +2,7 @@ import { redirect } from 'react-router';
 
 import { Page } from '~/components/nav/page';
 import { eventContext } from '~/context';
+import { allowlistFromEnv, checkInvitee, inviteWarning } from '~/lib/allowlist.server';
 import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
@@ -94,8 +95,19 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			const role = fd.get('role')?.toString() === 'owner' ? 'owner' : 'member';
 			if (!login) return { error: 'A GitHub login is required.' };
 
-			await api.addMember(project.id, login, role);
-			return { success: `Added ${login} as ${role}.` };
+			// Adding someone who can never sign in would look like it worked, so
+			// ask GitHub first. Only a login that cannot be a person is refused;
+			// one the allowlist does not clear is added with a warning, since an
+			// admin may allowlist them later.
+			const check = await checkInvitee(login, allowlistFromEnv());
+			event?.set('inviteCheck', check.kind);
+			if (check.kind === 'unknown') return { error: `There is no GitHub user named ${login}.` };
+			if (check.kind === 'organization') {
+				return { error: `${check.login} is a GitHub organization; only users can be members.` };
+			}
+
+			await api.addMember(project.id, check.login, role);
+			return { success: `Added ${check.login} as ${role}.`, warning: inviteWarning(check) };
 		}
 
 		if (intent === 'change-role') {

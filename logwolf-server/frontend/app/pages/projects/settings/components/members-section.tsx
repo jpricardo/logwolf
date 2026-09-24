@@ -2,7 +2,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useFetcher } from 'react-router';
 
-import { Alert, AlertTitle } from '~/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent } from '~/components/ui/card';
@@ -55,6 +55,8 @@ export function MembersSection({ members, currentUser, canManage }: Props) {
 	}
 
 	const error = addFetcher.data?.error ?? roleFetcher.data?.error ?? removeFetcher.data?.error;
+	// Set when a member was added whom the allowlist does not clear.
+	const warning = addFetcher.data?.warning;
 
 	return (
 		<Section title='Members'>
@@ -62,6 +64,13 @@ export function MembersSection({ members, currentUser, canManage }: Props) {
 				{error && (
 					<Alert variant='destructive'>
 						<AlertTitle>{error}</AlertTitle>
+					</Alert>
+				)}
+
+				{warning && (
+					<Alert>
+						<AlertTitle>They may not be able to sign in</AlertTitle>
+						<AlertDescription>{warning}</AlertDescription>
 					</Alert>
 				)}
 
