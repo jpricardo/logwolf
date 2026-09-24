@@ -4,6 +4,11 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// LogBindingKey matches every event the broker publishes, whatever its
+// severity: the listener stores them all. One word after "log.", which
+// data.SeverityRoutingKey always produces.
+const LogBindingKey = "log.*"
+
 func declareExchange(ch *amqp.Channel) error {
 	return ch.ExchangeDeclare(
 		"logs_topic",

@@ -42,7 +42,7 @@ func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = emitter.Push(string(j), "log.INFO")
+	err = emitter.Push(string(j), data.SeverityRoutingKey(payload.Severity))
 	if err != nil {
 		app.errorJSON(w, err)
 		return
@@ -78,7 +78,10 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 	// Pre-serialize all payloads before emitting any. This ensures a
 	// marshaling error doesn't cause a partial write to RabbitMQ.
 	messages := make([]string, len(payloads))
+	routingKeys := make([]string, len(payloads))
 	for i, payload := range payloads {
+		routingKeys[i] = data.SeverityRoutingKey(payload.Severity)
+
 		evp := event.Payload{Action: "log", Log: payload}
 
 		j, err := json.MarshalIndent(&evp, "", "\t")
@@ -96,8 +99,8 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, msg := range messages {
-		if err := emitter.Push(msg, "log.INFO"); err != nil {
+	for i, msg := range messages {
+		if err := emitter.Push(msg, routingKeys[i]); err != nil {
 			app.errorJSON(w, err)
 			return
 		}
@@ -721,7 +724,7 @@ func (app *Config) CreateProjectLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := emitter.Push(string(j), "log.INFO"); err != nil {
+	if err := emitter.Push(string(j), data.SeverityRoutingKey(payload.Severity)); err != nil {
 		app.errorJSON(w, err)
 		return
 	}

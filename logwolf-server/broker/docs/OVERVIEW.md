@@ -139,7 +139,7 @@ Two middleware layers:
 Client → POST /logs → requireAPIKey → publish to RabbitMQ → 202 Accepted
 ```
 
-Events are published to the `logs_topic` exchange with routing key `log.<SEVERITY>`. The broker has no MongoDB client at all: API keys, like everything else it stores or reads, go through the logger's RPC methods.
+Events are published to the `logs_topic` exchange with routing key `log.<severity>` (`data.SeverityRoutingKey`): `log.info`, `log.warning`, `log.error` or `log.critical`, case-insensitively, and `log.unknown` for any other severity, which is stored as sent. A batch publishes each event under its own. The broker has no MongoDB client at all: API keys, like everything else it stores or reads, go through the logger's RPC methods.
 
 ## Read path
 
