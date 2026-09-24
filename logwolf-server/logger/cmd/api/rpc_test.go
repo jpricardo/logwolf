@@ -53,8 +53,8 @@ func TestLogInfo_UnknownProject(t *testing.T) {
 
 	var reply string
 	err := srv.LogInfo(data.RPCLogPayload{ProjectID: "not-a-project", Name: "stray"}, &reply)
-	if !errors.Is(err, errUnknownProject) {
-		t.Errorf("LogInfo for an unknown project: want errUnknownProject, got %v", err)
+	if !errors.Is(err, data.ErrUnknownProject) {
+		t.Errorf("LogInfo for an unknown project: want ErrUnknownProject, got %v", err)
 	}
 	if reply != "" {
 		t.Errorf("reply should stay empty when the event is dropped, got %q", reply)

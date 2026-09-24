@@ -114,7 +114,7 @@ Entry point: `cmd/api/main.go`. Key files: `routes.go`, `handlers.go`, `middlewa
 
 ### Listener (`logwolf-server/listener`)
 
-Entry point: `cmd/api/main.go`. No external dependencies beyond toolbox. Pure consumer — no HTTP server.
+Entry point: `cmd/api/main.go`. No external dependencies beyond toolbox. Pure consumer — no HTTP server. The consumer loop lives in `toolbox/event`: it keeps one RPC connection to logger, acknowledges a message only once the event is stored or dropped for good, and retries an unreachable logger with back-off, so a logger outage delays events instead of losing them. Delivery is at least once.
 
 ### Logger (`logwolf-server/logger`)
 

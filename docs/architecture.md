@@ -42,7 +42,7 @@ Logger ────────────────────────�
 
 **RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`). If the Listener restarts, in-flight messages are not lost.
 
-**Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping.
+**Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping. A message is acknowledged only once the Logger has stored it; while the Logger is unreachable the Listener retries with back-off and the queue holds the rest, so an outage delays events rather than losing them.
 
 **Logger** is the only service with direct access to MongoDB. It runs a Go RPC server on port `5001` and handles all reads and writes. The Logger also manages the retention TTL index and runs metric aggregations via a MongoDB `$facet` pipeline.
 
