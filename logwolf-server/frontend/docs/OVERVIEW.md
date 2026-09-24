@@ -170,7 +170,17 @@ npm run dev       # Vite dev server (hot reload)
 npm run build     # react-router build → build/
 npm run typecheck # react-router typegen + tsc --noEmit
 npm run lint      # oxlint
+npm test          # vitest, single run
 ```
+
+## Tests
+
+Vitest runs in node (`vitest.config.ts`) and covers the server side, where access and project scoping are decided:
+
+- **Libraries:** the allowlist and invite check, retention, and `lib/api.ts`, whose tests check every project-scoped call names the project in the path, sends the internal secret and the user's login, and encodes what it puts in a path.
+- **Route loaders and actions** (`*.test.ts` next to each route), called the way React Router calls them. Requests carry a real signed session cookie, built by the helpers in `app/test/routes.ts`, so sessions and CSRF are the real code. Only the broker client (`createApi`) is replaced, by `fakeApi`, whose every method rejects unless the test stubs it, and GitHub's API is stubbed on `fetch` where a test needs it.
+
+Covered: the layout's session repair and first-project redirect, the project switcher (membership, CSRF, open redirects), project settings (owner-only intents, retention, invites, delete), keys and event pages (always the project in session, whatever the form says). Components are not rendered in tests.
 
 ## Relationship to other services
 

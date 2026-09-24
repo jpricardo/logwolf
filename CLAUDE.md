@@ -66,7 +66,7 @@ npx tsc --noEmit  # typecheck (no npm script for it here)
 ```bash
 npm run dev       # Vite dev server
 npm run build     # react-router build
-npm test          # vitest (single run)
+npm test          # vitest (single run): libraries, and route loaders/actions with real sessions (app/test/routes.ts)
 npm run typecheck # react-router typegen + tsc
 npm run lint      # oxlint
 ```
