@@ -20,7 +20,8 @@ toolbox/
 ├── event/
 │   ├── event.go     # Exchange + queue declarations
 │   ├── emitter.go   # RabbitMQ message publisher
-│   └── consumer.go  # RabbitMQ message consumer
+│   ├── consumer.go  # RabbitMQ message consumer: manual acks, retries
+│   └── logger_client.go # The consumer's one reused RPC connection to Logger
 ├── rabbitmq/
 │   └── connect.go   # RabbitMQ connection initialisation
 └── json/
@@ -107,7 +108,7 @@ Declares the RabbitMQ topology used by all services:
 - **Random/exclusive queues**: temporary, used for one-off consumers
 
 `emitter.go` wraps `amqp.Channel.Publish` for structured event publishing.  
-`consumer.go` provides `NewConsumer` + `Listen`, the main loop used by Listener.
+`consumer.go` provides `NewConsumer` + `Listen`, the main loop used by Listener. It acknowledges a message only once Logger has stored the event or it has been dropped for good, and retries an unreachable Logger with back-off; see the [Listener overview](../../listener/docs/OVERVIEW.md#delivery-guarantees) for the rules. `logger_client.go` holds the one RPC connection it reuses for every event.
 
 ## `rabbitmq` package
 

@@ -530,8 +530,9 @@ func buildService(pkgPath string) (string, error) {
 	return out, nil
 }
 
-// startProcess is spawn scoped to a single test.
-func startProcess(t *testing.T, pkgPath string, env map[string]string) {
+// startProcess is spawn scoped to a single test. The function it returns stops
+// the process early, for tests that take a service down mid-way.
+func startProcess(t *testing.T, pkgPath string, env map[string]string) (stop func()) {
 	t.Helper()
 
 	bin, err := buildService(pkgPath)
@@ -551,10 +552,15 @@ func startProcess(t *testing.T, pkgPath string, env map[string]string) {
 		t.Fatalf("startProcess %s: %v", pkgPath, err)
 	}
 
-	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-	})
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			cmd.Process.Kill()
+			cmd.Wait()
+		})
+	}
+	t.Cleanup(stop)
+	return stop
 }
 
 // --- readiness ---
