@@ -14,7 +14,7 @@ Caddy  ────────────────────────�
   ▼
 Broker                                                      │
   │  publishes to RabbitMQ exchange: logs_topic             │
-  │  routing keys: log.INFO | log.WARNING | log.ERROR       │
+  │  routing key: log.<severity>, e.g. log.error            │
   │                                                         │
   │  GET /api/logs → RPC → Logger ◄────────────────────────┘
   ▼

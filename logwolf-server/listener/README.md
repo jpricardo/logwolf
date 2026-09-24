@@ -8,7 +8,7 @@ This service is designed to handle high-throughput log processing. Instead of wr
 
 ## Features
 
-- **Queue Consumption**: Connects to **RabbitMQ** and binds to specific routing keys (`log.INFO`, `log.WARNING`, `log.ERROR`).
+- **Queue Consumption**: Connects to **RabbitMQ** and binds to every log routing key (`log.*`), whatever the severity.
 - **Asynchronous Processing**: Decouples the ingestion API from the storage layer, allowing the system to handle spikes in traffic without blocking.
 - **RPC Client**: Acts as a client to the **Logger** service, forwarding processed payloads via TCP for persistent storage.
 

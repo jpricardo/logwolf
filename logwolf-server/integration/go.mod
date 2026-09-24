@@ -3,6 +3,7 @@ module logwolf-integration
 go 1.25.0
 
 require (
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.37.0
 	go.mongodb.org/mongo-driver v1.17.9

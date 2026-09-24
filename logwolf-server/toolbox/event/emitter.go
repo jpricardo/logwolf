@@ -20,7 +20,9 @@ func (e *Emitter) setup() error {
 	return declareExchange(ch)
 }
 
-func (e *Emitter) Push(event string, severity string) error {
+// Push publishes event on the logs_topic exchange under routingKey; see
+// data.SeverityRoutingKey.
+func (e *Emitter) Push(event string, routingKey string) error {
 	ch, err := e.connection.Channel()
 	if err != nil {
 		return err
@@ -31,7 +33,7 @@ func (e *Emitter) Push(event string, severity string) error {
 
 	err = ch.Publish(
 		"logs_topic",
-		severity,
+		routingKey,
 		false,
 		false,
 		amqp.Publishing{
