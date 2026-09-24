@@ -59,7 +59,7 @@ Stores API key metadata: project ID, bcrypt hash, the key's first 10 characters 
 
 ### `Settings`
 
-Manages per-project settings documents (currently: retention in days), keyed by `(project_id, key)`.
+Manages per-project settings documents (currently: retention in days), keyed by `(project_id, key)`. `LowersRetention(from, to)` says whether a change shortens retention, 0 (forever) being the longest; the Broker lets only owners make such a change.
 
 ### Project ids
 

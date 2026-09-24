@@ -73,6 +73,12 @@ member are owner-only. A project always keeps one owner: removing or demoting th
 demote themselves while another owner remains, which is how a project changes
 hands: promote the new owner, then step down.
 
+Any member may raise a project's retention, but only an owner may lower it:
+`UpdateRetention` reads the current value first and answers 403 when
+`data.LowersRetention` says the new one is shorter (0, forever, is the longest).
+Lowering it is a bulk delete, as the next cleanup pass drops everything outside
+the new window. Creating and revoking API keys stays open to every member.
+
 The `/projects/{id}/logs` routes are the dashboard's way into events. They do the
 same work as the public `/logs` routes, but take the project from the path and
 check the caller's membership instead of reading it off an API key — the

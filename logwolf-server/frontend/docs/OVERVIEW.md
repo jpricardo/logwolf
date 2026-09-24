@@ -104,7 +104,12 @@ does not belong to sends them back to `/projects` instead of surfacing a 403.
 
 Every section except retention is owner-only — the broker enforces that as well,
 so the role checks in the route are there to keep a stale tab from producing a
-bare "forbidden". Owners change a member's role from a select in the members
+bare "forbidden". Retention is open to any member, but only upwards: shortening
+it makes the next cleanup pass delete everything outside the new window, so a
+member sees the shorter options disabled, and the action checks the stored value
+with `lowersRetention` (`app/lib/retention.ts`) before calling the broker. API
+keys are not project settings; any member may create and revoke them on `/keys`.
+Owners change a member's role from a select in the members
 table; the last owner shows a plain badge instead, since the broker would refuse
 to demote them. Deleting a project clears `currentProjectID` when it was the
 one in session and returns to `/projects`, where the layout takes over.

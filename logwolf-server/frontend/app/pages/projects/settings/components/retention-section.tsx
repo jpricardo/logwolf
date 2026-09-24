@@ -17,6 +17,7 @@ import {
 } from '~/components/ui/select';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
 import type { RetentionDays } from '~/lib/api';
+import { lowersRetention } from '~/lib/retention';
 
 import { type SettingsActionResult, useSuccessToast } from '../action-result';
 
@@ -35,9 +36,13 @@ const retentionDaysMap: RetentionDaysMap<RetentionDays> = {
 
 const retentionOptions = Object.entries(retentionDaysMap);
 
-type Props = { days: RetentionDays };
+type Props = {
+	days: RetentionDays;
+	/** Owners only: a member may keep logs longer, never shorter. */
+	canLower: boolean;
+};
 
-export function RetentionSection({ days }: Props) {
+export function RetentionSection({ days, canLower }: Props) {
 	const csrfToken = useCsrfToken();
 	const fetcher = useFetcher<SettingsActionResult>();
 	useSuccessToast(fetcher.data);
@@ -69,7 +74,11 @@ export function RetentionSection({ days }: Props) {
 										<SelectGroup>
 											<SelectLabel>Retention time</SelectLabel>
 											{retentionOptions.map(([value, label]) => (
-												<SelectItem key={value} value={value}>
+												<SelectItem
+													key={value}
+													value={value}
+													disabled={!canLower && lowersRetention(days, Number(value))}
+												>
 													{label}
 												</SelectItem>
 											))}
@@ -77,7 +86,10 @@ export function RetentionSection({ days }: Props) {
 									</SelectContent>
 								</Select>
 
-								<FieldDescription>Events older than this are dropped from this project.</FieldDescription>
+								<FieldDescription>
+									Events older than this are dropped from this project.
+									{!canLower && ' Only an owner can shorten it.'}
+								</FieldDescription>
 							</Field>
 
 							<Field className='flex flex-row justify-end items-end'>
