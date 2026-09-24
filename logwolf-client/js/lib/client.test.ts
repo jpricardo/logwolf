@@ -1,6 +1,8 @@
+import { ZodError } from 'zod';
+
 import { Logwolf } from './client';
 import { LogwolfEvent } from './event';
-import type { LogwolfConfig } from './schema';
+import { MAX_PAGE, MAX_PAGE_SIZE, type LogwolfConfig } from './schema';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -343,5 +345,82 @@ describe('Logwolf', () => {
 			new URL('http://test.url/logs'),
 			expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ id: 'id' }) }),
 		);
+	});
+
+	describe('getOne()', () => {
+		const stored = {
+			id: '66a0000000000000000000a1',
+			name: 'Checkout failed',
+			severity: 'error',
+			tags: ['checkout'],
+			data: '{}',
+			created_at: '2026-09-24T12:00:00Z',
+			updated_at: '2026-09-24T12:00:00Z',
+		};
+
+		function respond(status: number, body: unknown) {
+			mockFetch.mockReturnValue(Promise.resolve(new Response(JSON.stringify(body), { status })));
+		}
+
+		it('asks the server for that event alone', async () => {
+			respond(200, { error: false, message: 'OK!', data: stored });
+			const client = new Logwolf(testConfig);
+
+			const event = await client.getOne(stored.id);
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				new URL(`http://test.url/logs/${stored.id}`),
+				expect.objectContaining({ method: 'GET' }),
+			);
+			expect(event?.id).toBe(stored.id);
+			expect(event?.name).toBe('Checkout failed');
+		});
+
+		it('is undefined when the key’s project has no such event', async () => {
+			respond(404, { error: true, message: 'log not found' });
+			const client = new Logwolf(testConfig);
+
+			await expect(client.getOne('66a0000000000000000000ff')).resolves.toBeUndefined();
+		});
+
+		it('throws on any other failure', async () => {
+			respond(403, { error: true, message: 'API key lacks the "read" scope' });
+			const client = new Logwolf(testConfig);
+
+			await expect(client.getOne(stored.id)).rejects.toThrow(/read/);
+		});
+
+		it('keeps an id from reshaping the path', async () => {
+			respond(404, { error: true, message: 'log not found' });
+			const client = new Logwolf(testConfig);
+			await client.getOne('../keys');
+
+			const calledUrl: URL = mockFetch.mock.calls.at(0)?.at(0);
+			expect(calledUrl.pathname).toBe('/logs/..%2Fkeys');
+		});
+	});
+
+	describe('getAll() pagination', () => {
+		it('sends a page within the server’s bounds', async () => {
+			mockFetch.mockReturnValue(Promise.resolve(new Response(JSON.stringify({ error: false, data: [] }))));
+			const client = new Logwolf(testConfig);
+			await client.getAll({ page: 3, pageSize: MAX_PAGE_SIZE });
+
+			const calledUrl: URL = mockFetch.mock.calls.at(0)?.at(0);
+			expect(calledUrl.searchParams.get('page')).toBe('3');
+			expect(calledUrl.searchParams.get('pageSize')).toBe(String(MAX_PAGE_SIZE));
+		});
+
+		it.each([
+			{ page: 1, pageSize: MAX_PAGE_SIZE + 1 },
+			{ page: 1, pageSize: 2.5 },
+			{ page: 0, pageSize: 10 },
+			{ page: MAX_PAGE + 1, pageSize: 10 },
+		])('refuses %o before making a request', async (p) => {
+			const client = new Logwolf(testConfig);
+
+			await expect(client.getAll(p)).rejects.toBeInstanceOf(ZodError);
+			expect(mockFetch).not.toHaveBeenCalled();
+		});
 	});
 });

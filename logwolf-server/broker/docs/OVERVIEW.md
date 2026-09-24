@@ -31,6 +31,7 @@ cmd/api/
 | `POST`   | `/logs`       | `ingest` | Submit a single log event (async, 202)   |
 | `POST`   | `/logs/batch` | `ingest` | Submit up to 1000 events at once         |
 | `GET`    | `/logs`       | `read`   | Retrieve events (RPC → Logger → MongoDB) |
+| `GET`    | `/logs/{id}`  | `read`   | Retrieve one event of the key's project  |
 | `DELETE` | `/logs`       | `delete` | Delete matching events (RPC → Logger)    |
 
 A key without the route's scope gets 403.

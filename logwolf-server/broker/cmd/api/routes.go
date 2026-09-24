@@ -62,6 +62,7 @@ func (app *Config) routes() http.Handler {
 		r.With(app.requireScope(data.ScopeIngest)).Post("/logs", app.CreateLog)
 		r.With(app.requireScope(data.ScopeIngest)).Post("/logs/batch", app.CreateLogBatch)
 		r.With(app.requireScope(data.ScopeRead)).Get("/logs", app.GetLogs)
+		r.With(app.requireScope(data.ScopeRead)).Get("/logs/{id}", app.GetLog)
 		r.With(app.requireScope(data.ScopeDelete)).Delete("/logs", app.DeleteLog)
 	})
 
