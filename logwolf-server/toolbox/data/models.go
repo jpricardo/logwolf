@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -45,6 +46,35 @@ type LogEntryFilter struct {
 type PaginationParams struct {
 	Page     int64
 	PageSize int64
+}
+
+const (
+	// DefaultPageSize is the page size of a read that does not ask for one.
+	DefaultPageSize = 20
+
+	// MaxPageSize caps a page. A read decodes the whole page in the logger and
+	// sends it over RPC in one reply, so without a cap one request could pull a
+	// project's every log into memory.
+	MaxPageSize = 100
+
+	// MaxPage caps how deep a read can page. Past the last log a page is empty
+	// anyway; the cap keeps the skip, (page-1)*pageSize, far from overflowing.
+	MaxPage = 1_000_000
+)
+
+// ErrInvalidPagination is what a page or page size outside its bounds is.
+var ErrInvalidPagination = errors.New("invalid pagination")
+
+// Validate reports whether p asks for a page that can be served: a page from 1
+// to MaxPage of 1 to MaxPageSize logs.
+func (p PaginationParams) Validate() error {
+	if p.Page < 1 || p.Page > MaxPage {
+		return fmt.Errorf("%w: page must be between 1 and %d", ErrInvalidPagination, MaxPage)
+	}
+	if p.PageSize < 1 || p.PageSize > MaxPageSize {
+		return fmt.Errorf("%w: pageSize must be between 1 and %d", ErrInvalidPagination, MaxPageSize)
+	}
+	return nil
 }
 
 // QueryParams is the RPC argument for GetLogs. Like every RPC argument it
@@ -99,7 +129,13 @@ func (m *Models) Insert(entry LogEntry) error {
 	return nil
 }
 
+// AllLogs returns one page of a project's logs, newest first. A page outside
+// the bounds Validate sets is refused before any query.
 func (m *Models) AllLogs(projectID primitive.ObjectID, p PaginationParams) ([]*LogEntry, error) {
+	if err := p.Validate(); err != nil {
+		return nil, fmt.Errorf("AllLogs: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -107,7 +143,7 @@ func (m *Models) AllLogs(projectID primitive.ObjectID, p PaginationParams) ([]*L
 	opts := options.Find()
 	opts.SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(p.PageSize).SetSkip(p.PageSize * (p.Page - 1))
 
-	cursor, err := collection.Find(context.TODO(), bson.M{"project_id": projectID}, opts)
+	cursor, err := collection.Find(ctx, bson.M{"project_id": projectID}, opts)
 	if err != nil {
 		log.Println("Error finding docs")
 		return nil, err

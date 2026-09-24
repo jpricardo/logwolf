@@ -177,7 +177,7 @@ Fetches a paginated list of events from your Logwolf instance.
 const events = await logwolf.getAll({ page: 1, pageSize: 20 });
 ```
 
-Returns an array of `LogwolfEventData` objects.
+Returns an array of `LogwolfEventData` objects. Without `pagination` you get the first 20. `pageSize` can be at most 100 and `page` at most 1,000,000; the server refuses anything outside that with a 400, which `getAll` throws.
 
 ### `getOne(id)`
 
