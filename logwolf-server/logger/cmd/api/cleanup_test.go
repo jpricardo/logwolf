@@ -16,19 +16,19 @@ import (
 // done by the time it starts.
 type fakeRetentionStore struct {
 	projects []data.Project
-	slow     map[string]bool
+	slow     map[primitive.ObjectID]bool
 
 	mu       sync.Mutex
-	deleted  map[string]bool
-	attempts map[string]int
-	noLimit  []string
+	deleted  map[primitive.ObjectID]bool
+	attempts map[primitive.ObjectID]int
+	noLimit  []primitive.ObjectID
 }
 
 func newFakeRetentionStore(n int) *fakeRetentionStore {
 	f := &fakeRetentionStore{
-		slow:     map[string]bool{},
-		deleted:  map[string]bool{},
-		attempts: map[string]int{},
+		slow:     map[primitive.ObjectID]bool{},
+		deleted:  map[primitive.ObjectID]bool{},
+		attempts: map[primitive.ObjectID]int{},
 	}
 	for i := 0; i < n; i++ {
 		f.projects = append(f.projects, data.Project{ID: primitive.NewObjectID()})
@@ -36,13 +36,13 @@ func newFakeRetentionStore(n int) *fakeRetentionStore {
 	return f
 }
 
-func (f *fakeRetentionStore) id(i int) string { return f.projects[i].ID.Hex() }
+func (f *fakeRetentionStore) id(i int) primitive.ObjectID { return f.projects[i].ID }
 
 func (f *fakeRetentionStore) GetAllProjects(ctx context.Context) ([]data.Project, error) {
 	return f.projects, nil
 }
 
-func (f *fakeRetentionStore) GetRetentionDays(ctx context.Context, projectID string) (int, error) {
+func (f *fakeRetentionStore) GetRetentionDays(ctx context.Context, projectID primitive.ObjectID) (int, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		f.mu.Lock()
 		f.noLimit = append(f.noLimit, projectID)
@@ -54,7 +54,7 @@ func (f *fakeRetentionStore) GetRetentionDays(ctx context.Context, projectID str
 	return 30, nil
 }
 
-func (f *fakeRetentionStore) DeleteExpiredLogs(ctx context.Context, projectID string, before time.Time) (int64, error) {
+func (f *fakeRetentionStore) DeleteExpiredLogs(ctx context.Context, projectID primitive.ObjectID, before time.Time) (int64, error) {
 	f.mu.Lock()
 	f.attempts[projectID]++
 	f.mu.Unlock()

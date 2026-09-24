@@ -21,14 +21,16 @@ func defaultProjectOwners() []string {
 	return data.ParseGithubLogins(os.Getenv("LOGWOLF_ALLOWED_GITHUB_USERS") + "," + os.Getenv("LOGWOLF_DEFAULT_PROJECT_OWNERS"))
 }
 
-// runStartupMigration normalizes member logins and adopts any pre-multi-tenancy
-// data into the Default project before the RPC server starts accepting
-// connections, then makes sure that project has an owner. It is silent when
-// there is nothing to do.
+// runStartupMigration converts project ids to ObjectIDs, normalizes member
+// logins and adopts any pre-multi-tenancy data into the Default project before
+// the RPC server starts accepting connections, then makes sure that project has
+// an owner. It is silent when there is nothing to do.
 //
 // Failures are logged rather than fatal: the migration is idempotent, so a
-// crash-looping logger helps nobody when the next start would retry anyway.
-func (app *Config) runStartupMigration() {
+// crash-looping logger helps nobody when the next start would retry anyway. It
+// reports whether every project_id is an ObjectID now, which the retention
+// cleanup waits for.
+func (app *Config) runStartupMigration() (converted bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), migrationTimeout)
 	defer cancel()
 
@@ -36,6 +38,26 @@ func (app *Config) runStartupMigration() {
 		log.Printf("Migration: could not drop the legacy TTL index: %v", err)
 	} else if dropped {
 		log.Println("Migration: dropped the legacy global TTL index on logs — retention is per project now")
+	}
+
+	ids, err := app.Models.ConvertProjectIDs(ctx)
+	if err != nil {
+		log.Printf("Migration: FAILED to convert project_id to ObjectID, will retry on the next start: %v", err)
+	}
+	if ids.Total() > 0 {
+		log.Printf("Migration: converted project_id to ObjectID logs=%d api_keys=%d settings=%d",
+			ids.Logs, ids.APIKeys, ids.Settings)
+	}
+	converted = err == nil
+
+	// Before the Default project steps below: they find it by this flag.
+	retired, err := app.Models.MarkDefaultProject(ctx)
+	if err != nil {
+		log.Printf("Migration: FAILED to mark project %q, will retry on the next start: %v", data.DefaultProjectName, err)
+		return converted
+	}
+	if retired {
+		log.Println("Migration: dropped the unique index on project slugs — slugs are labels now, and the Default project is marked as such")
 	}
 
 	// Before the owner steps below: they look owners up by normalized login, and
@@ -68,17 +90,19 @@ func (app *Config) runStartupMigration() {
 		log.Printf("Migration: FAILED to give project %q an owner, will retry on the next start: %v", data.DefaultProjectName, err)
 	}
 	if repair == nil {
-		return
+		return converted
 	}
 
 	if repair.Owners > 0 {
 		log.Printf("Migration: project %q had no owner; added owners=%d project_id=%s",
 			data.DefaultProjectName, repair.Owners, repair.ProjectID)
-		return
+		return converted
 	}
 
 	if len(owners) == 0 {
 		log.Printf("Migration: WARNING — project %q has no owner, so nobody can see its data. Set LOGWOLF_ALLOWED_GITHUB_USERS or LOGWOLF_DEFAULT_PROJECT_OWNERS on Logger and restart it to add owners",
 			data.DefaultProjectName)
 	}
+
+	return converted
 }

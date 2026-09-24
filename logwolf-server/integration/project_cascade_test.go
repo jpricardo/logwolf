@@ -72,12 +72,15 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 
 	// --- Everything is in place before the delete ---
 
+	// Every project_id is an ObjectID, so these filters match what the cascade
+	// deletes; a hex string here would count nothing and prove nothing.
+	projectID := oid(t, project.ID)
 	counts := map[string]func() int64{
-		"projects":        func() int64 { return countDocs(t, db.Collection("projects"), bson.M{"slug": "cascade"}) },
-		"project_members": func() int64 { return countDocs(t, db.Collection("project_members"), bson.M{"github_login": owner}) },
-		"api_keys":        func() int64 { return countDocs(t, db.Collection("api_keys"), bson.M{"project_id": project.ID}) },
-		"settings":        func() int64 { return countDocs(t, db.Collection("settings"), bson.M{"project_id": project.ID}) },
-		"logs":            func() int64 { return countDocs(t, db.Collection("logs"), bson.M{"project_id": project.ID}) },
+		"projects":        func() int64 { return countDocs(t, db.Collection("projects"), bson.M{"_id": projectID}) },
+		"project_members": func() int64 { return countDocs(t, db.Collection("project_members"), bson.M{"project_id": projectID}) },
+		"api_keys":        func() int64 { return countDocs(t, db.Collection("api_keys"), bson.M{"project_id": projectID}) },
+		"settings":        func() int64 { return countDocs(t, db.Collection("settings"), bson.M{"project_id": projectID}) },
+		"logs":            func() int64 { return countDocs(t, db.Collection("logs"), bson.M{"project_id": projectID}) },
 	}
 
 	for name, count := range counts {

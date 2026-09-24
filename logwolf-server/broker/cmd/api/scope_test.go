@@ -114,7 +114,7 @@ func TestPublicRoutes_FullAccessKeyReachesEveryHandler(t *testing.T) {
 // the first, which went to the validator.
 func TestRequireScope_CachePathKeepsScopes(t *testing.T) {
 	app := newApp()
-	v := validKeyWithScopes{projectID: "proj-scope", scopes: []string{data.ScopeIngest}}
+	v := validKeyWithScopes{projectID: "aaaaaaaaaaaaaaaaaaaa5c0e", scopes: []string{data.ScopeIngest}}
 	handler := app.requireAPIKeyWith(v, app.requireScope(data.ScopeRead)(http.HandlerFunc(okHandler)))
 
 	for _, source := range []string{"db", "cache"} {
@@ -159,5 +159,5 @@ type validKeyWithScopes struct {
 }
 
 func (v validKeyWithScopes) ValidateAPIKey(string) (bool, *data.APIKey, error) {
-	return true, &data.APIKey{ProjectID: v.projectID, Scopes: v.scopes}, nil
+	return true, &data.APIKey{ProjectID: mustObjectID(v.projectID), Scopes: v.scopes}, nil
 }

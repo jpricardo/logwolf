@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -24,7 +25,7 @@ type Config struct {
 
 	// purges carries the ids of just-deleted projects from the DeleteProject RPC
 	// to the cleanup loop, which deletes their logs. See requestPurge.
-	purges chan string
+	purges chan primitive.ObjectID
 }
 
 func main() {
@@ -45,7 +46,7 @@ func main() {
 
 	app := Config{
 		Models: data.New(client),
-		purges: make(chan string, purgeQueueSize),
+		purges: make(chan primitive.ObjectID, purgeQueueSize),
 	}
 
 	if err := app.Models.Settings.EnsureSettingsIndex(); err != nil {
@@ -63,12 +64,20 @@ func main() {
 
 	// Adopt any data that predates projects before the RPC server comes up, so no
 	// caller ever reads a half-migrated database.
-	app.runStartupMigration()
+	converted := app.runStartupMigration()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	go app.runCleanup(ctx)
+	// Retention is looked up by an ObjectID project_id. A setting still stored
+	// under the old string one would be missed, and the project's logs expired on
+	// the 90-day default however long it had chosen to keep them; no cleanup
+	// until the next start has converted everything.
+	if converted {
+		go app.runCleanup(ctx)
+	} else {
+		log.Println("Retention cleanup: DISABLED until a start converts every project_id; see the migration error above")
+	}
 
 	app.serve(ctx)
 }

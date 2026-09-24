@@ -74,32 +74,31 @@ func TestGetProject_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetProjectBySlug(t *testing.T) {
+// Slugs are labels, not identifiers: two users naming their projects alike
+// must both succeed, and neither learns that the other's project exists.
+func TestProjectSlugsAreNotUnique(t *testing.T) {
 	m := setupProjectModels(t)
 
-	if _, err := m.InsertProject(data.Project{Name: "Beta", Slug: "beta"}); err != nil {
-		t.Fatalf("InsertProject: %v", err)
-	}
-
-	got, err := m.GetProjectBySlug("beta")
+	first, err := m.CreateProjectWithOwner(data.Project{Name: "App", Slug: "app"}, "alice")
 	if err != nil {
-		t.Fatalf("GetProjectBySlug: %v", err)
+		t.Fatalf("first CreateProjectWithOwner: %v", err)
 	}
-	if got.Slug != "beta" {
-		t.Errorf("GetProjectBySlug: slug = %q", got.Slug)
+	second, err := m.CreateProjectWithOwner(data.Project{Name: "App", Slug: "app"}, "bob")
+	if err != nil {
+		t.Fatalf("second CreateProjectWithOwner with the same slug: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatal("both creates returned the same project")
+	}
+
+	// Default is an ordinary slug too: the migration's project is found by its
+	// flag, never by this.
+	if _, err := m.CreateProjectWithOwner(data.Project{Name: "Default", Slug: data.DefaultProjectSlug}, "carol"); err != nil {
+		t.Errorf("CreateProjectWithOwner with slug %q: %v", data.DefaultProjectSlug, err)
 	}
 }
 
-func TestGetProjectBySlug_NotFound(t *testing.T) {
-	m := setupProjectModels(t)
-
-	_, err := m.GetProjectBySlug("no-such-slug")
-	if !errors.Is(err, mongo.ErrNoDocuments) {
-		t.Errorf("GetProjectBySlug missing: want mongo.ErrNoDocuments, got %v", err)
-	}
-}
-
-func TestUpdateProject(t *testing.T) {
+func TestRenameProject(t *testing.T) {
 	m := setupProjectModels(t)
 
 	p, err := m.InsertProject(data.Project{Name: "Old", Slug: "old-slug"})
@@ -107,27 +106,90 @@ func TestUpdateProject(t *testing.T) {
 		t.Fatalf("InsertProject: %v", err)
 	}
 
-	updated, err := m.UpdateProject(p.ID, "New Name", "new-slug")
+	updated, err := m.RenameProject(p.ID, "New Name")
 	if err != nil {
-		t.Fatalf("UpdateProject: %v", err)
+		t.Fatalf("RenameProject: %v", err)
 	}
-	if updated.Name != "New Name" || updated.Slug != "new-slug" {
-		t.Errorf("UpdateProject: got %+v", updated)
+	if updated.Name != "New Name" || updated.Slug != "old-slug" {
+		t.Errorf("RenameProject: got %+v, want the new name and the old slug", updated)
 	}
 
 	// Verify persistence via a fresh read.
 	got, _ := m.GetProject(p.ID)
-	if got.Name != "New Name" || got.Slug != "new-slug" {
-		t.Errorf("UpdateProject not persisted: got %+v", got)
+	if got.Name != "New Name" || got.Slug != "old-slug" {
+		t.Errorf("RenameProject not persisted: got %+v", got)
 	}
 }
 
-func TestUpdateProject_NotFound(t *testing.T) {
+func TestRenameProject_NotFound(t *testing.T) {
 	m := setupProjectModels(t)
 
-	_, err := m.UpdateProject(newOID(), "X", "x")
+	_, err := m.RenameProject(newOID(), "X")
 	if !errors.Is(err, mongo.ErrNoDocuments) {
-		t.Errorf("UpdateProject missing: want mongo.ErrNoDocuments, got %v", err)
+		t.Errorf("RenameProject missing: want mongo.ErrNoDocuments, got %v", err)
+	}
+}
+
+func TestCreateProjectWithOwner(t *testing.T) {
+	m := setupProjectModels(t)
+
+	p, err := m.CreateProjectWithOwner(data.Project{Name: "Fresh", Slug: "fresh"}, "  JDoe ")
+	if err != nil {
+		t.Fatalf("CreateProjectWithOwner: %v", err)
+	}
+
+	got, err := m.GetProject(p.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if got.Name != "Fresh" || got.Slug != "fresh" || got.Default {
+		t.Errorf("GetProject: got %+v", got)
+	}
+
+	members, err := m.GetProjectMembers(p.ID)
+	if err != nil {
+		t.Fatalf("GetProjectMembers: %v", err)
+	}
+	if len(members) != 1 || members[0].GithubLogin != "jdoe" || members[0].Role != data.RoleOwner {
+		t.Errorf("members = %+v, want jdoe as the only owner", members)
+	}
+}
+
+func TestCreateProjectWithOwner_RequiresOwner(t *testing.T) {
+	m := setupProjectModels(t)
+	db := testMongo(t, sharedModelsMongo(t)).Database("logs")
+
+	if _, err := m.CreateProjectWithOwner(data.Project{Name: "Ownerless", Slug: "ownerless"}, " "); err == nil {
+		t.Fatal("CreateProjectWithOwner with a blank login: want an error, got nil")
+	}
+	if n := countDocs(t, db.Collection("projects"), bson.M{}); n != 0 {
+		t.Errorf("projects: %d created without an owner, want 0", n)
+	}
+}
+
+// TestCreateProjectWithOwner_RollsBackWhenOwnerInsertFails lets the project
+// insert through and fails the owner's, and checks the project goes with it: a
+// project without an owner could never be reached by anyone.
+func TestCreateProjectWithOwner_RollsBackWhenOwnerInsertFails(t *testing.T) {
+	m := setupProjectModels(t)
+	client := testMongo(t, sharedModelsMongo(t))
+	db := client.Database("logs")
+
+	// Let the project insert through, then fail every insert after with a
+	// non-transient error, so WithTransaction gives up instead of retrying.
+	setFailPoint(t, client, bson.M{"skip": 1}, bson.M{"failCommands": bson.A{"insert"}, "errorCode": 2})
+
+	_, err := m.CreateProjectWithOwner(data.Project{Name: "Orphan", Slug: "orphan"}, "alice")
+	clearFailPoint(t, client)
+
+	if err == nil || !strings.Contains(err.Error(), "owner") {
+		t.Fatalf("CreateProjectWithOwner: want a failure at the owner insert, got %v", err)
+	}
+	if n := countDocs(t, db.Collection("projects"), bson.M{}); n != 0 {
+		t.Errorf("projects: %d left behind by the failed create, want 0", n)
+	}
+	if n := countDocs(t, db.Collection("project_members"), bson.M{}); n != 0 {
+		t.Errorf("project_members: %d left behind by the failed create, want 0", n)
 	}
 }
 
@@ -137,10 +199,10 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	p, _ := m.InsertProject(data.Project{Name: "Doomed", Slug: "doomed"})
 
 	// Seed related data.
-	if err := m.Insert(data.LogEntry{ProjectID: p.ID.Hex(), Name: "e", Data: "{}", Severity: "info", Tags: []string{}}); err != nil {
+	if err := m.Insert(data.LogEntry{ProjectID: p.ID, Name: "e", Data: "{}", Severity: "info", Tags: []string{}}); err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
-	plaintext, key, err := data.GenerateAPIKey(p.ID.Hex(), nil)
+	plaintext, key, err := data.GenerateAPIKey(p.ID, nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
@@ -148,7 +210,7 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	if err := m.SaveAPIKey(&key); err != nil {
 		t.Fatalf("SaveAPIKey: %v", err)
 	}
-	if err := m.Settings.SetRetentionDays(p.ID.Hex(), 30); err != nil {
+	if err := m.Settings.SetRetentionDays(p.ID, 30); err != nil {
 		t.Fatalf("SetRetentionDays: %v", err)
 	}
 	if _, err := m.InsertProjectMember(data.ProjectMember{
@@ -171,17 +233,14 @@ func TestDeleteProject_Cascade(t *testing.T) {
 		t.Errorf("members still present: %d", len(members))
 	}
 	// Logs are left behind for PurgeProjectLogs, which removes them.
-	purged, err := m.PurgeProjectLogs(context.Background(), p.ID.Hex())
+	purged, err := m.PurgeProjectLogs(context.Background(), p.ID)
 	if err != nil {
 		t.Fatalf("PurgeProjectLogs: %v", err)
 	}
 	if purged != 1 {
 		t.Errorf("PurgeProjectLogs deleted %d log(s), want the 1 seeded", purged)
 	}
-	logs, err := m.AllLogs(data.QueryParams{
-		ProjectID:  p.ID.Hex(),
-		Pagination: data.PaginationParams{Page: 1, PageSize: 100},
-	})
+	logs, err := m.AllLogs(p.ID, data.PaginationParams{Page: 1, PageSize: 100})
 	if err != nil {
 		t.Fatalf("AllLogs after delete: %v", err)
 	}
@@ -189,7 +248,7 @@ func TestDeleteProject_Cascade(t *testing.T) {
 		t.Errorf("logs still present: %d", len(logs))
 	}
 	// API keys must be gone.
-	keys, err := m.ListAPIKeysByProject(p.ID.Hex())
+	keys, err := m.ListAPIKeysByProject(p.ID)
 	if err != nil {
 		t.Fatalf("ListAPIKeysByProject after delete: %v", err)
 	}
@@ -198,7 +257,7 @@ func TestDeleteProject_Cascade(t *testing.T) {
 	}
 	// Settings must be gone — GetRetentionDays falls back to the default (90)
 	// when no document exists, so verify directly that no settings doc survives.
-	days, err := m.Settings.GetRetentionDays(context.Background(), p.ID.Hex())
+	days, err := m.Settings.GetRetentionDays(context.Background(), p.ID)
 	if err != nil {
 		t.Fatalf("GetRetentionDays after delete: %v", err)
 	}
@@ -217,7 +276,7 @@ func TestDeleteProject_RollsBackOnFailure(t *testing.T) {
 	db := client.Database("logs")
 
 	p, _ := m.InsertProject(data.Project{Name: "Survivor", Slug: "survivor"})
-	projectID := p.ID.Hex()
+	projectID := p.ID
 
 	if err := m.Insert(data.LogEntry{ProjectID: projectID, Name: "e", Data: "{}", Severity: "info", Tags: []string{}}); err != nil {
 		t.Fatalf("seed log: %v", err)
@@ -293,24 +352,6 @@ func clearFailPoint(t *testing.T, client *mongo.Client) {
 	cmd := bson.D{{Key: "configureFailPoint", Value: "failCommand"}, {Key: "mode", Value: "off"}}
 	if err := client.Database("admin").RunCommand(ctx, cmd).Err(); err != nil {
 		t.Errorf("clear fail point: %v", err)
-	}
-}
-
-// The broker turns a slug collision into a 409 by matching "E11000" in the RPC
-// error string, so that substring is part of the contract this test pins down.
-func TestInsertProject_DuplicateSlug(t *testing.T) {
-	m := setupProjectModels(t)
-
-	if _, err := m.InsertProject(data.Project{Name: "First", Slug: "taken"}); err != nil {
-		t.Fatalf("first InsertProject: %v", err)
-	}
-
-	_, err := m.InsertProject(data.Project{Name: "Second", Slug: "taken"})
-	if err == nil {
-		t.Fatal("second InsertProject: expected duplicate key error, got nil")
-	}
-	if !strings.Contains(err.Error(), "E11000") {
-		t.Errorf("second InsertProject: error %q must mention E11000", err)
 	}
 }
 

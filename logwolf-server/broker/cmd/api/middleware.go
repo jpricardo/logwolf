@@ -289,7 +289,7 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 		projectID := ""
 		var scopes []string
 		if key != nil {
-			projectID = key.ProjectID
+			projectID = key.ProjectID.Hex()
 			scopes = key.Scopes
 		}
 

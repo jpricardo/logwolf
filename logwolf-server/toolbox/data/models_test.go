@@ -1,6 +1,10 @@
 package data
 
-import "testing"
+import (
+	"testing"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 func TestQueryParamsHasProjectID(t *testing.T) {
 	p := QueryParams{
@@ -29,8 +33,8 @@ func TestMultiProjectIsolation_Structs(t *testing.T) {
 	projectA := "proj-aaa"
 	projectB := "proj-bbb"
 
-	entryA := LogEntry{ProjectID: projectA, Name: "event-a", Severity: "info"}
-	entryB := LogEntry{ProjectID: projectB, Name: "event-b", Severity: "error"}
+	entryA := LogEntry{ProjectID: primitive.NewObjectID(), Name: "event-a", Severity: "info"}
+	entryB := LogEntry{ProjectID: primitive.NewObjectID(), Name: "event-b", Severity: "error"}
 
 	if entryA.ProjectID == entryB.ProjectID {
 		t.Error("entries from different projects must have distinct ProjectIDs")

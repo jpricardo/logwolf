@@ -288,7 +288,7 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, key.ProjectID, userLogin)
+	isMember, err := checkProjectMembership(client, key.ProjectID.Hex(), userLogin)
 	if err != nil {
 		app.rpcErrorJSON(w, err, projectNotFound)
 		return
@@ -299,7 +299,7 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var reply string
-	args := data.RPCRevokeAPIKeyArgs{ProjectID: key.ProjectID, ID: id}
+	args := data.RPCRevokeAPIKeyArgs{ProjectID: key.ProjectID.Hex(), ID: id}
 	if err := client.Call("RPCServer.RevokeAPIKey", &args, &reply); err != nil {
 		app.rpcErrorJSON(w, err, keyNotFound)
 		return
@@ -559,23 +559,12 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
+	// One call: the logger writes the project and the caller's owner membership
+	// in one transaction, so a failure leaves no project nobody can reach.
+	// Slugs are not unique, so there is no collision to report.
 	var project data.Project
-	if err := client.Call("RPCServer.CreateProject", &data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug}, &project); err != nil {
-		// Slugs are globally unique, so a collision is a client mistake, not a
-		// server fault.
-		app.rpcErrorJSON(w, err, rpcErrorMessages{rpcErrDuplicate: "a project with that slug already exists"})
-		return
-	}
-
-	var reply string
-	if err := client.Call("RPCServer.AddMember", &data.RPCAddMemberArgs{
-		ProjectID:   project.ID.Hex(),
-		GithubLogin: userLogin,
-		Role:        data.RoleOwner,
-	}, &reply); err != nil {
-		// Best-effort rollback: project must not exist without an owner.
-		var rollbackReply string
-		_ = client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: project.ID.Hex()}, &rollbackReply)
+	args := data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug, Owner: userLogin}
+	if err := client.Call("RPCServer.CreateProject", &args, &project); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
 	}
@@ -617,9 +606,9 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	userLogin := userLoginFromContext(r)
 
+	// Only the name changes: the slug is fixed when the project is created.
 	var body struct {
 		Name string `json:"name"`
-		Slug string `json:"slug"`
 	}
 	if err := app.readJSON(w, r, &body); err != nil {
 		app.errorJSON(w, err)
@@ -628,10 +617,6 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	if body.Name == "" {
 		app.errorJSON(w, fmt.Errorf("name is required"), http.StatusBadRequest)
-		return
-	}
-	if !data.ValidSlug(body.Slug) {
-		app.errorJSON(w, fmt.Errorf("invalid slug"), http.StatusBadRequest)
 		return
 	}
 
@@ -657,11 +642,8 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var project data.Project
-	if err := client.Call("RPCServer.UpdateProject", &data.RPCUpdateProjectArgs{ID: id, Name: body.Name, Slug: body.Slug}, &project); err != nil {
-		app.rpcErrorJSON(w, err, rpcErrorMessages{
-			rpcErrDuplicate: "a project with that slug already exists",
-			rpcErrNotFound:  "project not found",
-		})
+	if err := client.Call("RPCServer.UpdateProject", &data.RPCUpdateProjectArgs{ID: id, Name: body.Name}, &project); err != nil {
+		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
 

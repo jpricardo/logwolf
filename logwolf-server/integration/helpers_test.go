@@ -397,6 +397,18 @@ func insertProject(mongoURI, slug string) (string, error) {
 	return id.Hex(), nil
 }
 
+// oid parses the hex id the broker's JSON carries into the ObjectID project_id
+// is stored as, for querying MongoDB directly.
+func oid(t *testing.T, hex string) primitive.ObjectID {
+	t.Helper()
+
+	id, err := primitive.ObjectIDFromHex(hex)
+	if err != nil {
+		t.Fatalf("oid %q: %v", hex, err)
+	}
+	return id
+}
+
 // seedAPIKey inserts an API key scoped to projectID and returns the plaintext key.
 //
 // The document has no scopes field, like every key created before scopes
@@ -420,6 +432,11 @@ func insertAPIKey(mongoURI, projectID, plaintext string) error {
 		return fmt.Errorf("bcrypt: %w", err)
 	}
 
+	projectOID, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return fmt.Errorf("project id: %w", err)
+	}
+
 	client, err := connectMongo(mongoURI)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -427,7 +444,7 @@ func insertAPIKey(mongoURI, projectID, plaintext string) error {
 	defer client.Disconnect(context.Background())
 
 	_, err = client.Database("logs").Collection("api_keys").InsertOne(ctx, bson.M{
-		"project_id": projectID,
+		"project_id": projectOID,
 		"prefix":     plaintext[:10],
 		"hash":       string(hash),
 		"active":     true,

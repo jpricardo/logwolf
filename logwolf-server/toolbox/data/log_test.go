@@ -1,15 +1,72 @@
 package data
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/bsontype"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 func TestLogEntryHasProjectID(t *testing.T) {
+	projectID := primitive.NewObjectID()
 	entry := LogEntry{
-		ProjectID: "proj-abc",
+		ProjectID: projectID,
 		Name:      "test-event",
 		Severity:  "info",
 	}
-	if entry.ProjectID != "proj-abc" {
-		t.Errorf("LogEntry.ProjectID = %q, want %q", entry.ProjectID, "proj-abc")
+	if entry.ProjectID != projectID {
+		t.Errorf("LogEntry.ProjectID = %s, want %s", entry.ProjectID.Hex(), projectID.Hex())
+	}
+}
+
+// TestProjectIDIsStoredAsObjectID pins down that every document carrying a
+// project_id stores it as an ObjectID, the type projects._id and
+// project_members.project_id have. A filter of the other type matches nothing,
+// silently.
+func TestProjectIDIsStoredAsObjectID(t *testing.T) {
+	projectID := primitive.NewObjectID()
+
+	for name, doc := range map[string]any{
+		"logs":            LogEntry{ProjectID: projectID},
+		"api_keys":        APIKey{ProjectID: projectID},
+		"settings":        settingsDoc{ProjectID: projectID},
+		"project_members": ProjectMember{ProjectID: projectID},
+	} {
+		raw, err := bson.Marshal(doc)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", name, err)
+		}
+		v := bson.Raw(raw).Lookup("project_id")
+		if v.Type != bsontype.ObjectID {
+			t.Errorf("%s: project_id stored as %s, want objectId", name, v.Type)
+		}
+	}
+}
+
+// TestProjectIDIsHexInJSON pins down that the switch to ObjectID changed
+// nothing for the broker's JSON responses: project_id is still the hex string.
+func TestProjectIDIsHexInJSON(t *testing.T) {
+	projectID := primitive.NewObjectID()
+
+	for name, v := range map[string]any{
+		"LogEntry": LogEntry{ProjectID: projectID},
+		"APIKey":   APIKey{ProjectID: projectID},
+	} {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", name, err)
+		}
+		var out struct {
+			ProjectID string `json:"project_id"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("%s: unmarshal: %v", name, err)
+		}
+		if out.ProjectID != projectID.Hex() {
+			t.Errorf("%s: project_id = %q, want %q", name, out.ProjectID, projectID.Hex())
+		}
 	}
 }
 

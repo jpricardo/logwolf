@@ -38,13 +38,13 @@ func TestValidateAPIKey_ManyKeysAcrossProjects(t *testing.T) {
 		t.Fatal("api_keys has no prefix index")
 	}
 
-	var projects []string
+	var projects []primitive.ObjectID
 	for _, slug := range []string{"keys-alpha", "keys-beta", "keys-gamma"} {
 		p, err := m.InsertProject(data.Project{Name: slug, Slug: slug})
 		if err != nil {
 			t.Fatalf("InsertProject %s: %v", slug, err)
 		}
-		projects = append(projects, p.ID.Hex())
+		projects = append(projects, p.ID)
 	}
 
 	decoyHash, err := bcrypt.GenerateFromPassword([]byte("lw_decoy"), bcrypt.DefaultCost)
@@ -146,7 +146,7 @@ func TestRevokeAPIKey_ScopedToProject(t *testing.T) {
 		t.Fatalf("InsertProject: %v", err)
 	}
 
-	_, key, err := data.GenerateAPIKey(owner.ID.Hex(), nil)
+	_, key, err := data.GenerateAPIKey(owner.ID, nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
@@ -158,18 +158,18 @@ func TestRevokeAPIKey_ScopedToProject(t *testing.T) {
 	}
 	id := key.ID.Hex()
 
-	if err := m.RevokeAPIKey(other.ID.Hex(), id); !errors.Is(err, data.ErrKeyNotFound) {
+	if err := m.RevokeAPIKey(other.ID, id); !errors.Is(err, data.ErrKeyNotFound) {
 		t.Fatalf("RevokeAPIKey through another project: want ErrKeyNotFound, got %v", err)
 	}
 	if got, err := m.GetAPIKeyByID(id); err != nil || !got.Active {
 		t.Fatalf("key after a revoke through another project: %+v, %v; want it still active", got, err)
 	}
 
-	if err := m.RevokeAPIKey(owner.ID.Hex(), primitive.NewObjectID().Hex()); !errors.Is(err, data.ErrKeyNotFound) {
+	if err := m.RevokeAPIKey(owner.ID, primitive.NewObjectID().Hex()); !errors.Is(err, data.ErrKeyNotFound) {
 		t.Errorf("RevokeAPIKey of an unknown id: want ErrKeyNotFound, got %v", err)
 	}
 
-	if err := m.RevokeAPIKey(owner.ID.Hex(), id); err != nil {
+	if err := m.RevokeAPIKey(owner.ID, id); err != nil {
 		t.Fatalf("RevokeAPIKey: %v", err)
 	}
 	got, err := m.GetAPIKeyByID(id)

@@ -21,13 +21,31 @@ type RPCServer struct {
 
 	// purges hands deleted projects to the cleanup loop; nil hands them to no
 	// one, and the orphan sweep deletes their logs instead.
-	purges chan<- string
+	purges chan<- primitive.ObjectID
 }
 
+// parseProjectID turns the hex project id an RPC argument carries into the
+// ObjectID every project_id is stored as. A malformed one names no project; the
+// error says "not a valid ObjectID", which the broker answers as not found.
+func parseProjectID(op, hex string) (primitive.ObjectID, error) {
+	id, err := primitive.ObjectIDFromHex(hex)
+	if err != nil {
+		return primitive.NilObjectID, fmt.Errorf("%s: invalid project ID: %w", op, err)
+	}
+	return id, nil
+}
+
+// projectExists is the projectCache lookup. A string that is not an ObjectID
+// names no project, so it answers false without a query.
 func (r *RPCServer) projectExists(projectID string) (bool, error) {
+	id, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return false, nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return r.models.ProjectExists(ctx, projectID)
+	return r.models.ProjectExists(ctx, id)
 }
 
 // LogInfo inserts an event. One filed under a project that does not exist is
@@ -45,9 +63,11 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 		log.Printf("Dropping event %q: project %q does not exist", p.Name, p.ProjectID)
 		return fmt.Errorf("LogInfo: %w: %q", errUnknownProject, p.ProjectID)
 	}
+	// projectExists answers true only for a valid ObjectID.
+	projectID, _ := primitive.ObjectIDFromHex(p.ProjectID)
 
 	err = r.models.Insert(data.LogEntry{
-		ProjectID: p.ProjectID,
+		ProjectID: projectID,
 		Name:      p.Name,
 		Data:      p.Data,
 		Severity:  p.Severity,
@@ -66,7 +86,12 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
 	log.Printf("Getting logs with params %+v...\n", p)
 
-	result, err := r.models.AllLogs(p)
+	projectID, err := parseProjectID("GetLogs", p.ProjectID)
+	if err != nil {
+		return err
+	}
+
+	result, err := r.models.AllLogs(projectID, p.Pagination)
 	if err != nil {
 		log.Println("Error getting logs:", err)
 		return err
@@ -86,7 +111,12 @@ func (r *RPCServer) GetLogs(p data.QueryParams, resp *[]data.LogEntry) error {
 func (r *RPCServer) GetLog(f data.RPCLogEntryFilter, resp *data.LogEntry) error {
 	log.Printf("Getting log %s of project %s...\n", f.ID, f.ProjectID)
 
-	entry, err := r.models.GetLog(f.ID, f.ProjectID)
+	projectID, err := parseProjectID("GetLog", f.ProjectID)
+	if err != nil {
+		return err
+	}
+
+	entry, err := r.models.GetLog(f.ID, projectID)
 	if err != nil {
 		log.Println("Error getting log:", err)
 		return err
@@ -99,7 +129,12 @@ func (r *RPCServer) GetLog(f data.RPCLogEntryFilter, resp *data.LogEntry) error 
 func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 	log.Printf("Deleting log %+v...\n", f)
 
-	result, err := r.models.DeleteLog(f.ID, f.ProjectID)
+	projectID, err := parseProjectID("DeleteLog", f.ProjectID)
+	if err != nil {
+		return err
+	}
+
+	result, err := r.models.DeleteLog(f.ID, projectID)
 	if err != nil {
 		log.Println("Error deleting document:", err)
 		return err
@@ -112,10 +147,15 @@ func (r *RPCServer) DeleteLog(f data.RPCLogEntryFilter, resp *int64) error {
 }
 
 func (r *RPCServer) GetRetention(args *data.RetentionArgs, reply *int) error {
+	projectID, err := parseProjectID("GetRetention", args.ProjectID)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	days, err := r.models.Settings.GetRetentionDays(ctx, args.ProjectID)
+	days, err := r.models.Settings.GetRetentionDays(ctx, projectID)
 	if err != nil {
 		return err
 	}
@@ -124,7 +164,11 @@ func (r *RPCServer) GetRetention(args *data.RetentionArgs, reply *int) error {
 }
 
 func (r *RPCServer) UpdateRetention(args *data.RetentionArgs, reply *string) error {
-	if err := r.models.Settings.SetRetentionDays(args.ProjectID, args.Days); err != nil {
+	projectID, err := parseProjectID("UpdateRetention", args.ProjectID)
+	if err != nil {
+		return err
+	}
+	if err := r.models.Settings.SetRetentionDays(projectID, args.Days); err != nil {
 		return err
 	}
 	*reply = "ok"
@@ -132,7 +176,11 @@ func (r *RPCServer) UpdateRetention(args *data.RetentionArgs, reply *string) err
 }
 
 func (r *RPCServer) GetMetrics(args *data.ProjectArgs, reply *data.Metrics) error {
-	metrics, err := r.models.GetMetrics(args.ProjectID)
+	projectID, err := parseProjectID("GetMetrics", args.ProjectID)
+	if err != nil {
+		return err
+	}
+	metrics, err := r.models.GetMetrics(projectID)
 	if err != nil {
 		return err
 	}
@@ -140,6 +188,8 @@ func (r *RPCServer) GetMetrics(args *data.ProjectArgs, reply *data.Metrics) erro
 	return nil
 }
 
+// CreateProject creates a project owned by args.Owner. The project and the
+// owner membership are written in one transaction, so a failure leaves neither.
 func (r *RPCServer) CreateProject(args *data.RPCCreateProjectArgs, reply *data.Project) error {
 	if args.Name == "" {
 		return fmt.Errorf("CreateProject: name is required")
@@ -147,8 +197,11 @@ func (r *RPCServer) CreateProject(args *data.RPCCreateProjectArgs, reply *data.P
 	if !data.ValidSlug(args.Slug) {
 		return fmt.Errorf("CreateProject: invalid slug %q", args.Slug)
 	}
-	log.Printf("Creating project: %s (%s)", args.Name, args.Slug)
-	project, err := r.models.InsertProject(data.Project{Name: args.Name, Slug: args.Slug})
+	if data.NormalizeGithubLogin(args.Owner) == "" {
+		return fmt.Errorf("CreateProject: owner is required")
+	}
+	log.Printf("Creating project: %s (%s) owned by %s", args.Name, args.Slug, args.Owner)
+	project, err := r.models.CreateProjectWithOwner(data.Project{Name: args.Name, Slug: args.Slug}, args.Owner)
 	if err != nil {
 		log.Println("Error creating project:", err)
 		return err
@@ -172,19 +225,17 @@ func (r *RPCServer) GetProject(args *data.RPCProjectIDArgs, reply *data.Project)
 	return nil
 }
 
+// UpdateProject renames a project. The slug is fixed at creation.
 func (r *RPCServer) UpdateProject(args *data.RPCUpdateProjectArgs, reply *data.Project) error {
 	if args.Name == "" {
 		return fmt.Errorf("UpdateProject: name is required")
-	}
-	if !data.ValidSlug(args.Slug) {
-		return fmt.Errorf("UpdateProject: invalid slug %q", args.Slug)
 	}
 	log.Printf("Updating project: %s", args.ID)
 	id, err := primitive.ObjectIDFromHex(args.ID)
 	if err != nil {
 		return fmt.Errorf("UpdateProject: invalid ID: %w", err)
 	}
-	project, err := r.models.UpdateProject(id, args.Name, args.Slug)
+	project, err := r.models.RenameProject(id, args.Name)
 	if err != nil {
 		log.Println("Error updating project:", err)
 		return err
@@ -204,7 +255,7 @@ func (r *RPCServer) DeleteProject(args *data.RPCProjectIDArgs, reply *string) er
 		return err
 	}
 	r.projects.forget(args.ID)
-	r.requestPurge(args.ID)
+	r.requestPurge(id)
 	*reply = "ok"
 	return nil
 }
@@ -212,14 +263,14 @@ func (r *RPCServer) DeleteProject(args *data.RPCProjectIDArgs, reply *string) er
 // requestPurge asks the cleanup loop to delete a deleted project's logs, which
 // DeleteProject leaves behind. It never blocks the RPC: if the queue is full the
 // request is dropped, and the next orphan sweep deletes those logs anyway.
-func (r *RPCServer) requestPurge(projectID string) {
+func (r *RPCServer) requestPurge(projectID primitive.ObjectID) {
 	if r.purges == nil {
 		return
 	}
 	select {
 	case r.purges <- projectID:
 	default:
-		log.Printf("Purge queue full: logs of deleted project %s are left for the next cleanup pass", projectID)
+		log.Printf("Purge queue full: logs of deleted project %s are left for the next cleanup pass", projectID.Hex())
 	}
 }
 
@@ -339,7 +390,11 @@ func (r *RPCServer) ValidateAPIKey(args *data.RPCValidateAPIKeyArgs, reply *data
 
 func (r *RPCServer) ListAPIKeys(args *data.ProjectArgs, reply *[]data.APIKey) error {
 	log.Printf("Listing API keys for project: %s", args.ProjectID)
-	keys, err := r.models.ListAPIKeysByProject(args.ProjectID)
+	projectID, err := parseProjectID("ListAPIKeys", args.ProjectID)
+	if err != nil {
+		return err
+	}
+	keys, err := r.models.ListAPIKeysByProject(projectID)
 	if err != nil {
 		log.Println("Error listing API keys:", err)
 		return err
@@ -355,7 +410,11 @@ func (r *RPCServer) ListAPIKeys(args *data.ProjectArgs, reply *[]data.APIKey) er
 // goes back to the caller once and is never stored.
 func (r *RPCServer) CreateAPIKey(args *data.RPCCreateAPIKeyArgs, reply *data.RPCCreateAPIKeyReply) error {
 	log.Printf("Creating API key for project: %s", args.ProjectID)
-	plaintext, key, err := data.GenerateAPIKey(args.ProjectID, args.Scopes)
+	projectID, err := parseProjectID("CreateAPIKey", args.ProjectID)
+	if err != nil {
+		return err
+	}
+	plaintext, key, err := data.GenerateAPIKey(projectID, args.Scopes)
 	if err != nil {
 		return fmt.Errorf("CreateAPIKey: %w", err)
 	}
@@ -383,7 +442,11 @@ func (r *RPCServer) GetAPIKey(args *data.RPCAPIKeyIDArgs, reply *data.APIKey) er
 // project is data.ErrKeyNotFound.
 func (r *RPCServer) RevokeAPIKey(args *data.RPCRevokeAPIKeyArgs, reply *string) error {
 	log.Printf("Revoking API key %s of project %s", args.ID, args.ProjectID)
-	if err := r.models.RevokeAPIKey(args.ProjectID, args.ID); err != nil {
+	projectID, err := parseProjectID("RevokeAPIKey", args.ProjectID)
+	if err != nil {
+		return err
+	}
+	if err := r.models.RevokeAPIKey(projectID, args.ID); err != nil {
 		log.Println("Error revoking API key:", err)
 		return err
 	}

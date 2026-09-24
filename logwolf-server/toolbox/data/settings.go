@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -22,9 +23,9 @@ type Settings struct {
 }
 
 type settingsDoc struct {
-	ProjectID string `bson:"project_id"`
-	Key       string `bson:"key"`
-	Value     int    `bson:"value"`
+	ProjectID primitive.ObjectID `bson:"project_id"`
+	Key       string             `bson:"key"`
+	Value     int                `bson:"value"`
 }
 
 // ProjectArgs is the RPC argument for calls that need only a project scope.
@@ -44,7 +45,7 @@ func (s *Settings) collection() *mongo.Collection {
 
 // GetRetentionDays returns a project's retention in days, or the default if it
 // has none set. ctx bounds the lookup; the caller picks the deadline.
-func (s *Settings) GetRetentionDays(ctx context.Context, projectID string) (int, error) {
+func (s *Settings) GetRetentionDays(ctx context.Context, projectID primitive.ObjectID) (int, error) {
 	var doc settingsDoc
 	err := s.collection().FindOne(ctx, bson.M{"project_id": projectID, "key": "retention_days"}).Decode(&doc)
 	if err == mongo.ErrNoDocuments {
@@ -56,7 +57,7 @@ func (s *Settings) GetRetentionDays(ctx context.Context, projectID string) (int,
 	return doc.Value, nil
 }
 
-func (s *Settings) SetRetentionDays(projectID string, days int) error {
+func (s *Settings) SetRetentionDays(projectID primitive.ObjectID, days int) error {
 	if !ValidRetentionDays[days] {
 		return fmt.Errorf("SetRetentionDays: %d is not a valid retention value", days)
 	}

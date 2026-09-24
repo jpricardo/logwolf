@@ -68,7 +68,7 @@ export type Metrics = {
 export interface IApi {
 	getProjects(): Promise<UserProject[]>;
 	createProject(name: string, slug: string): Promise<Project>;
-	updateProject(id: string, name: string, slug: string): Promise<Project>;
+	updateProject(id: string, name: string): Promise<Project>;
 	deleteProject(id: string): Promise<void>;
 	getMembers(projectId: string): Promise<ProjectMember[]>;
 	addMember(projectId: string, login: string, role: ProjectRole): Promise<void>;
@@ -124,11 +124,11 @@ export class Api implements IApi {
 		return json.data;
 	}
 
-	public async updateProject(id: string, name: string, slug: string): Promise<Project> {
+	public async updateProject(id: string, name: string): Promise<Project> {
 		const res = await fetch(`${this.baseUrl}projects/${id}`, {
 			method: 'PATCH',
 			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ name, slug }),
+			body: JSON.stringify({ name }),
 		});
 		const json = (await res.json()) as ApiResponse<Project>;
 		if (json.error) throw new Error(json.message);

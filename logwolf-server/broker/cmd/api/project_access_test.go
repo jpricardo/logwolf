@@ -459,8 +459,8 @@ func TestProjectLogs_ScopedToPathProject(t *testing.T) {
 
 	entries := decodeData[[]data.LogEntry](t, w)
 	for _, e := range entries {
-		if e.ProjectID != projAlpha {
-			t.Errorf("list logs returned an entry from project %q", e.ProjectID)
+		if e.ProjectID.Hex() != projAlpha {
+			t.Errorf("list logs returned an entry from project %s", e.ProjectID.Hex())
 		}
 		if e.Name == "beta-event" {
 			t.Error("list logs leaked project beta's event")
@@ -509,8 +509,8 @@ func TestProjectLogs_OwnLogIsReadableAndDeletable(t *testing.T) {
 		t.Fatalf("read own log: got %d, want 200 (body: %s)", w.Code, w.Body.String())
 	}
 	entry := decodeData[data.LogEntry](t, w)
-	if entry.ProjectID != projAlpha {
-		t.Errorf("entry ProjectID = %q, want %q", entry.ProjectID, projAlpha)
+	if entry.ProjectID.Hex() != projAlpha {
+		t.Errorf("entry ProjectID = %s, want %s", entry.ProjectID.Hex(), projAlpha)
 	}
 
 	w = do(handler, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/logs/"+alphaLogID, "member-a", nil))
@@ -563,32 +563,23 @@ func TestCreateProject_MakesCallerTheOwner(t *testing.T) {
 	}
 	created := decodeData[data.Project](t, w)
 
+	// The owner travels with the project in one call, which the logger writes
+	// in one transaction; the broker attaches no member on its own.
 	fake.snapshot(func(f *fakeLogger) {
-		if len(f.addedMembers) != 1 {
-			t.Fatalf("AddMember called %d times, want 1", len(f.addedMembers))
+		if len(f.createdProjects) != 1 {
+			t.Fatalf("CreateProject called %d times, want 1", len(f.createdProjects))
 		}
-		got := f.addedMembers[0]
-		if got.GithubLogin != "newcomer" {
-			t.Errorf("owner login = %q, want %q", got.GithubLogin, "newcomer")
+		if got := f.createdProjects[0].Owner; got != "newcomer" {
+			t.Errorf("owner login = %q, want %q", got, "newcomer")
 		}
-		if got.Role != data.RoleOwner {
-			t.Errorf("owner role = %q, want %q", got.Role, data.RoleOwner)
+		if len(f.addedMembers) != 0 {
+			t.Errorf("AddMember called %d times, want 0: the owner is created with the project", len(f.addedMembers))
 		}
-		if got.ProjectID != created.ID.Hex() {
-			t.Errorf("owner attached to project %q, want %q", got.ProjectID, created.ID.Hex())
+		members := f.members[created.ID.Hex()]
+		if len(members) != 1 || members[0].GithubLogin != "newcomer" || members[0].Role != data.RoleOwner {
+			t.Errorf("members of the new project = %+v, want newcomer as its only owner", members)
 		}
 	})
-}
-
-func TestCreateProject_DuplicateSlugIsConflict(t *testing.T) {
-	handler, fake := newInternalTestServer(t)
-	fake.duplicateSlug = "alpha"
-
-	w := do(handler, internalRequest(http.MethodPost, "/projects", "newcomer",
-		map[string]string{"name": "Alpha again", "slug": "alpha"}))
-	if w.Code != http.StatusConflict {
-		t.Errorf("duplicate slug: got %d, want 409 (body: %s)", w.Code, w.Body.String())
-	}
 }
 
 func TestCreateProject_RejectsInvalidInput(t *testing.T) {
@@ -611,25 +602,22 @@ func TestCreateProject_RejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// A project whose owner never got attached would be unreachable for everyone,
-// so the broker rolls the creation back.
-func TestCreateProject_RollsBackWhenOwnerCannotBeAttached(t *testing.T) {
+// A failed create leaves nothing behind in the logger — its transaction sees to
+// that — so the broker has nothing to roll back and only reports the failure.
+func TestCreateProject_FailureIsServerError(t *testing.T) {
 	handler, fake := newInternalTestServer(t)
-	fake.failAddMember = true
+	fake.failCreateProject = true
 
 	w := do(handler, internalRequest(http.MethodPost, "/projects", "newcomer",
 		map[string]string{"name": "Orphan", "slug": "orphan"}))
 	// Nothing the caller sent was wrong, so this is the server's failure.
 	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("create project with failing AddMember: got %d, want 500", w.Code)
+		t.Fatalf("create project with a failing logger: got %d, want 500", w.Code)
 	}
 
 	fake.snapshot(func(f *fakeLogger) {
-		if len(f.deletedProjects) != 1 {
-			t.Fatalf("rollback deleted %d project(s), want 1", len(f.deletedProjects))
-		}
-		if _, stillThere := f.projects[f.deletedProjects[0]]; stillThere {
-			t.Error("rolled-back project is still present")
+		if len(f.addedMembers) != 0 || len(f.deletedProjects) != 0 {
+			t.Errorf("broker made follow-up calls after a failed create: added=%v deleted=%v", f.addedMembers, f.deletedProjects)
 		}
 	})
 }
