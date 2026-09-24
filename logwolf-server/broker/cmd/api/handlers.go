@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"logwolf-toolbox/data"
-	"logwolf-toolbox/event"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -26,29 +25,7 @@ func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload.ProjectID = projectIDFromContext(r)
-
-	// Push to queue
-	evp := event.Payload{Action: "log", Log: data.JSONLogPayload(payload)}
-
-	emitter, err := event.NewEmitter(app.Rabbit)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	j, err := json.MarshalIndent(&evp, "", "\t")
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	err = emitter.Push(string(j), data.SeverityRoutingKey(payload.Severity))
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+	app.publishEvents(w, r, payload)
 }
 
 func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
@@ -75,38 +52,7 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 		payloads[i].ProjectID = projectID
 	}
 
-	// Pre-serialize all payloads before emitting any. This ensures a
-	// marshaling error doesn't cause a partial write to RabbitMQ.
-	messages := make([]string, len(payloads))
-	routingKeys := make([]string, len(payloads))
-	for i, payload := range payloads {
-		routingKeys[i] = data.SeverityRoutingKey(payload.Severity)
-
-		evp := event.Payload{Action: "log", Log: payload}
-
-		j, err := json.MarshalIndent(&evp, "", "\t")
-		if err != nil {
-			app.errorJSON(w, err)
-			return
-		}
-
-		messages[i] = string(j)
-	}
-
-	emitter, err := event.NewEmitter(app.Rabbit)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	for i, msg := range messages {
-		if err := emitter.Push(msg, routingKeys[i]); err != nil {
-			app.errorJSON(w, err)
-			return
-		}
-	}
-
-	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+	app.publishEvents(w, r, payloads...)
 }
 
 func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
@@ -381,17 +327,15 @@ func (app *Config) Health(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// checkRabbitMQ asks the emitter, which reconnects first if RabbitMQ was
+// restarted, so the answer is whether events can be queued now.
 func checkRabbitMQ(app *Config) serviceStatus {
-	if app.Rabbit == nil || app.Rabbit.IsClosed() {
-		return serviceStatus{Status: "down", Error: "connection is closed"}
+	if app.Events == nil {
+		return serviceStatus{Status: "down", Error: "no event queue configured"}
 	}
-
-	ch, err := app.Rabbit.Channel()
-	if err != nil {
+	if err := app.Events.Check(); err != nil {
 		return serviceStatus{Status: "down", Error: err.Error()}
 	}
-	ch.Close()
-
 	return serviceStatus{Status: "up"}
 }
 
@@ -709,27 +653,7 @@ func (app *Config) CreateProjectLog(w http.ResponseWriter, r *http.Request) {
 	// Whatever project the body named is discarded: the event belongs to the one
 	// in the path, which the caller was checked against.
 	payload.ProjectID = p.id
-
-	evp := event.Payload{Action: "log", Log: payload}
-
-	emitter, err := event.NewEmitter(app.Rabbit)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	j, err := json.MarshalIndent(&evp, "", "	")
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	if err := emitter.Push(string(j), data.SeverityRoutingKey(payload.Severity)); err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-
-	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!"})
+	app.publishEvents(w, r, payload)
 }
 
 func (app *Config) DeleteProjectLog(w http.ResponseWriter, r *http.Request) {

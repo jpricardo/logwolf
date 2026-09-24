@@ -30,6 +30,8 @@ RabbitMQ (logs_topic exchange)
 
 ## Delivery guarantees
 
+The Broker publishes persistent messages and waits for RabbitMQ's confirms before answering `202`, so what reaches this queue survives a RabbitMQ restart. The Listener exits when its connection drops, as it does when RabbitMQ restarts; Compose restarts it, and unacknowledged messages are delivered again.
+
 Deliveries are acknowledged by hand, and only once settled:
 
 - **Stored** — the logger took the event: ack.

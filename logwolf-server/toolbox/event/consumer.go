@@ -88,7 +88,7 @@ func (c *Consumer) Listen(ctx context.Context, topics []string) error {
 	}
 
 	for _, t := range topics {
-		if err := ch.QueueBind(q.Name, t, "logs_topic", false, nil); err != nil {
+		if err := ch.QueueBind(q.Name, t, logsExchange, false, nil); err != nil {
 			return err
 		}
 	}
