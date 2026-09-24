@@ -114,6 +114,15 @@ table; the last owner shows a plain badge instead, since the broker would refuse
 to demote them. Deleting a project clears `currentProjectID` when it was the
 one in session and returns to `/projects`, where the layout takes over.
 
+Adding a member checks the login first (`checkInvitee` in
+`app/lib/allowlist.server.ts`), through GitHub's public API, without a token.
+A login GitHub does not know, or an organization, is refused. Otherwise the
+member is added under GitHub's casing, with a warning when the allowlist does
+not clear them: they are on neither the users allowlist nor, publicly, an allowed
+org, so they cannot sign in (or, with orgs allowlisted, only through a private
+membership GitHub will not show). The same warning, worded for it, covers
+GitHub being unreachable or rate-limited: that never blocks an owner.
+
 ## Authentication
 
 1. User initiates login via GitHub OAuth 2.0.

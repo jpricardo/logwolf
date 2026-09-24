@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { allowlistFromEnv, isAllowed, isEmptyAllowlist, listGithubOrgs, parseGithubLogins } from './allowlist.server';
+import {
+	allowlistFromEnv,
+	checkInvitee,
+	inviteWarning,
+	isAllowed,
+	isEmptyAllowlist,
+	listGithubOrgs,
+	parseGithubLogins,
+} from './allowlist.server';
 
 const orgs = (...names: string[]) => vi.fn(async () => names);
 
@@ -120,5 +128,110 @@ describe('listGithubOrgs', () => {
 	it('throws when the body is not a list', async () => {
 		const fetchImpl = respond(200, { login: 'acme' });
 		await expect(listGithubOrgs('token', fetchImpl)).rejects.toThrow('did not answer with a list');
+	});
+});
+
+describe('checkInvitee', () => {
+	// A fake GitHub: users by lowercase login, and the public members of each org.
+	function github(
+		users: Record<string, { login: string; type?: string }>,
+		publicMembers: Record<string, string[]> = {},
+	) {
+		return vi.fn(async (input: RequestInfo | URL) => {
+			const path = new URL(String(input)).pathname;
+
+			const user = path.match(/^\/users\/([^/]+)$/);
+			if (user) {
+				const found = users[decodeURIComponent(user[1]).toLowerCase()];
+				return found ? Response.json({ type: 'User', ...found }) : new Response(null, { status: 404 });
+			}
+
+			const member = path.match(/^\/orgs\/([^/]+)\/public_members\/([^/]+)$/);
+			if (member) {
+				const listed = publicMembers[member[1]]?.includes(member[2]);
+				return new Response(null, { status: listed ? 204 : 404 });
+			}
+
+			return new Response(null, { status: 500 });
+		}) as unknown as typeof fetch;
+	}
+
+	const octocat = { octocat: { login: 'Octocat' } };
+
+	it('refuses a login GitHub does not know', async () => {
+		const check = await checkInvitee(
+			'nobody',
+			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_USERS: 'nobody' }),
+			github({}),
+		);
+		expect(check).toEqual({ kind: 'unknown' });
+	});
+
+	it('refuses an organization', async () => {
+		const check = await checkInvitee(
+			'acme',
+			allowlistFromEnv({}),
+			github({ acme: { login: 'Acme', type: 'Organization' } }),
+		);
+		expect(check).toEqual({ kind: 'organization', login: 'Acme' });
+	});
+
+	it('clears a user on the users allowlist, in GitHub’s casing', async () => {
+		const check = await checkInvitee(
+			'OCTOCAT',
+			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_USERS: 'octocat' }),
+			github(octocat),
+		);
+		expect(check).toEqual({ kind: 'allowed', login: 'Octocat' });
+		expect(inviteWarning(check)).toBeUndefined();
+	});
+
+	it('clears a public member of an allowed org', async () => {
+		const fetchImpl = github(octocat, { acme: ['Octocat'] });
+		const check = await checkInvitee(
+			'octocat',
+			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_ORGS: 'other,acme' }),
+			fetchImpl,
+		);
+		expect(check).toEqual({ kind: 'allowed', login: 'Octocat' });
+	});
+
+	it('warns about a user nothing clears, and says whether an org still might', async () => {
+		const usersOnly = await checkInvitee(
+			'octocat',
+			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_USERS: 'alice' }),
+			github(octocat),
+		);
+		expect(usersOnly).toEqual({ kind: 'not-allowlisted', login: 'Octocat', orgsAllowlisted: false });
+		expect(inviteWarning(usersOnly)).toMatch(/cannot sign in until an admin adds them/);
+
+		const withOrgs = await checkInvitee(
+			'octocat',
+			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_ORGS: 'acme' }),
+			github(octocat),
+		);
+		expect(withOrgs).toEqual({ kind: 'not-allowlisted', login: 'Octocat', orgsAllowlisted: true });
+		expect(inviteWarning(withOrgs)).toMatch(/privately/);
+	});
+
+	it('does not block when GitHub cannot be asked', async () => {
+		const down = vi.fn(async () => {
+			throw new TypeError('fetch failed');
+		}) as unknown as typeof fetch;
+		const check = await checkInvitee('octocat', allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_USERS: 'alice' }), down);
+		expect(check).toEqual({ kind: 'unverified', login: 'octocat' });
+		expect(inviteWarning(check)).toMatch(/Could not reach GitHub/);
+
+		const limited = vi.fn(async () => new Response(null, { status: 403 })) as unknown as typeof fetch;
+		expect(await checkInvitee('octocat', allowlistFromEnv({}), limited)).toEqual({
+			kind: 'unverified',
+			login: 'octocat',
+		});
+	});
+
+	it('keeps a hand-crafted login from reshaping the GitHub path', async () => {
+		const fetchImpl = github({});
+		await checkInvitee('../orgs/acme', allowlistFromEnv({}), fetchImpl);
+		expect(String(vi.mocked(fetchImpl).mock.calls[0][0])).toBe('https://api.github.com/users/..%2Forgs%2Facme');
 	});
 });
