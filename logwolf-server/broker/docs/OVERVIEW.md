@@ -35,6 +35,8 @@ cmd/api/
 
 A key without the route's scope gets 403.
 
+Both log reads, `GET /logs` and the dashboard's `GET /projects/{id}/logs`, take `page` and `pageSize` from the query (`paginationFromQuery`). A missing one means the first page, or 20 logs. One that is given must be a whole number within `data.PaginationParams.Validate`'s bounds: `page` from 1 to 1,000,000, `pageSize` from 1 to 100 (`data.MaxPageSize`). Anything else is a 400 rather than a quiet fallback, so a client asking for 1000 logs learns it did not get them. The logger enforces the same bounds in `AllLogs`, whoever calls it: a page is decoded whole in the logger and sent back in one RPC reply, so an unbounded one could load a project's every log into memory.
+
 ### Internal routes (`X-Internal-Secret` header required)
 
 Everything that acts on one project is under `/projects/{id}`.

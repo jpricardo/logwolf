@@ -204,3 +204,19 @@ func TestWithoutHash(t *testing.T) {
 		t.Errorf("withoutHash = %+v, want the key minus its hash", got)
 	}
 }
+
+// TestGetLogs_RefusesAnOversizedPage: the logger holds the page bounds itself,
+// whoever calls it. The zero-value server has no database, so a page that got
+// past the check would panic instead of answering.
+func TestGetLogs_RefusesAnOversizedPage(t *testing.T) {
+	srv := &RPCServer{}
+
+	var reply []data.LogEntry
+	err := srv.GetLogs(data.QueryParams{
+		ProjectID:  primitive.NewObjectID().Hex(),
+		Pagination: data.PaginationParams{Page: 1, PageSize: data.MaxPageSize + 1},
+	}, &reply)
+	if !errors.Is(err, data.ErrInvalidPagination) {
+		t.Errorf("GetLogs with a page over the cap = %v, want ErrInvalidPagination", err)
+	}
+}

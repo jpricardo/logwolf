@@ -124,7 +124,7 @@ Entry point: `cmd/api/main.go`. Key files: `rpc.go`, `routes.go`, `migrate.go`, 
 RPC methods (Go stdlib `net/rpc`):
 
 - `RPCServer.LogInfo` — insert event (refused if its project does not exist)
-- `RPCServer.GetLogs` — query with pagination/filtering
+- `RPCServer.GetLogs` — query with pagination/filtering. Pages are bounded (`data.PaginationParams.Validate`: `pageSize` 1–100, `page` 1–1,000,000), in the broker's `paginationFromQuery` (400) and again in `AllLogs`
 - `RPCServer.GetLog` — fetch one event by id within a project
 - `RPCServer.DeleteLog` — delete by filter, returns count
 - `RPCServer.ValidateAPIKey`, `ListAPIKeys`, `CreateAPIKey`, `RevokeAPIKey` — API key storage for the broker; replies never carry the hash, and revoke matches the project as well as the id

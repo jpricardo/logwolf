@@ -107,6 +107,12 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
+	pagination, err := paginationFromQuery(r.URL.Query())
+	if err != nil {
+		app.errorJSON(w, err, http.StatusBadRequest)
+		return
+	}
+
 	client, ok := app.dialLogger(w)
 	if !ok {
 		return
@@ -114,9 +120,9 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 	defer client.Close()
 
 	var result []data.LogEntry
-	err := client.Call("RPCServer.GetLogs", data.QueryParams{
+	err = client.Call("RPCServer.GetLogs", data.QueryParams{
 		ProjectID:  projectIDFromContext(r),
-		Pagination: paginationFromQuery(r.URL.Query()),
+		Pagination: pagination,
 	}, &result)
 	if err != nil {
 		app.errorJSON(w, err)
@@ -130,20 +136,30 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: result})
 }
 
-// paginationFromQuery reads page/pageSize off a query string, falling back to
-// the first page of 20 whenever either is missing or unusable.
-func paginationFromQuery(qp url.Values) data.PaginationParams {
-	page, err := strconv.ParseInt(qp.Get("page"), 10, 0)
-	if err != nil || page < 1 {
-		page = 1
+// paginationFromQuery reads page and pageSize off a query string. A missing one
+// is the first page, or DefaultPageSize logs. One that is given has to be a
+// whole number within data.PaginationParams.Validate's bounds, or the request
+// is refused: quietly serving something else would leave a client that asked
+// for 1000 logs believing it had them all.
+func paginationFromQuery(qp url.Values) (data.PaginationParams, error) {
+	p := data.PaginationParams{Page: 1, PageSize: data.DefaultPageSize}
+
+	for _, f := range []struct {
+		name string
+		dst  *int64
+	}{{"page", &p.Page}, {"pageSize", &p.PageSize}} {
+		raw := qp.Get(f.name)
+		if raw == "" {
+			continue
+		}
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return p, fmt.Errorf("%w: %s must be a whole number", data.ErrInvalidPagination, f.name)
+		}
+		*f.dst = n
 	}
 
-	pageSize, err := strconv.ParseInt(qp.Get("pageSize"), 10, 0)
-	if err != nil || pageSize < 1 {
-		pageSize = 20
-	}
-
-	return data.PaginationParams{Page: page, PageSize: pageSize}
+	return p, p.Validate()
 }
 
 func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
@@ -642,10 +658,16 @@ func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Reques
 func (app *Config) ListProjectLogs(w http.ResponseWriter, r *http.Request) {
 	p := projectFromContext(r)
 
+	pagination, err := paginationFromQuery(r.URL.Query())
+	if err != nil {
+		app.errorJSON(w, err, http.StatusBadRequest)
+		return
+	}
+
 	var result []data.LogEntry
-	err := p.client.Call("RPCServer.GetLogs", data.QueryParams{
+	err = p.client.Call("RPCServer.GetLogs", data.QueryParams{
 		ProjectID:  p.id,
-		Pagination: paginationFromQuery(r.URL.Query()),
+		Pagination: pagination,
 	}, &result)
 	if err != nil {
 		app.rpcErrorJSON(w, err, nil)
