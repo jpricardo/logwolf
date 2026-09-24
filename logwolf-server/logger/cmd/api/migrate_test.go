@@ -30,3 +30,34 @@ func TestDefaultProjectOwners(t *testing.T) {
 		})
 	}
 }
+
+func TestMongoCredential(t *testing.T) {
+	cases := []struct {
+		name, user, pass string
+		want             bool // a credential is set
+		wantErr          bool
+	}{
+		{"neither: MONGO_URL's credentials apply", "", "", false, false},
+		{"both", "logwolf", "s3cret", true, false},
+		{"username alone", "logwolf", "", false, true},
+		{"password alone", "", "s3cret", false, true},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MONGO_USERNAME", tt.user)
+			t.Setenv("MONGO_PASSWORD", tt.pass)
+
+			cred, err := mongoCredential()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("mongoCredential() error = %v, want error %v", err, tt.wantErr)
+			}
+			if (cred != nil) != tt.want {
+				t.Fatalf("mongoCredential() = %+v, want a credential: %v", cred, tt.want)
+			}
+			if cred != nil && (cred.Username != tt.user || cred.Password != tt.pass) {
+				t.Errorf("mongoCredential() = %+v, want %s / %s", cred, tt.user, tt.pass)
+			}
+		})
+	}
+}

@@ -46,7 +46,15 @@ LOGWOLF_ALLOWED_GITHUB_USERS=your_github_username
 # Secrets — generate with: openssl rand -hex 32
 SESSION_SECRET=a_long_random_string
 INTERNAL_API_SECRET=another_long_random_string
+
+# Credentials for MongoDB and RabbitMQ, set once on first start
+MONGO_USERNAME=logwolf
+MONGO_PASSWORD=a_third_random_string
+RABBITMQ_USERNAME=logwolf
+RABBITMQ_PASSWORD=a_fourth_random_string
 ```
+
+Compose refuses to start while any of these is missing.
 
 ## 4. Trust Caddy's local certificate (first run only)
 

@@ -24,7 +24,7 @@ func TestListener_KeepsEventsThroughALoggerOutage(t *testing.T) {
 	ctx := context.Background()
 	mongoURI := dedicatedMongo(t)
 
-	rabbitC, err := rabbitmq.Run(ctx, "rabbitmq:3.9-alpine")
+	rabbitC, err := rabbitmq.Run(ctx, rabbitImage)
 	if err != nil {
 		t.Fatalf("rabbitmq container: %v", err)
 	}

@@ -124,7 +124,14 @@ func (app *Config) rpcListen() error {
 
 func connectToMongo() (*mongo.Client, error) {
 	clientOptions := options.Client().ApplyURI(mongoConnectionString())
-	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
+
+	cred, err := mongoCredential()
+	if err != nil {
+		return nil, err
+	}
+	if cred != nil {
+		clientOptions.SetAuth(*cred)
+	}
 
 	c, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
@@ -133,6 +140,21 @@ func connectToMongo() (*mongo.Client, error) {
 	}
 
 	return c, nil
+}
+
+// mongoCredential reads MONGO_USERNAME and MONGO_PASSWORD, kept apart from
+// MONGO_URL so a password needs no URL escaping. With neither set it returns
+// nil, and whatever credentials MONGO_URL carries apply. Setting only one is a
+// mistake, and refused, rather than an attempt to log in without a password.
+func mongoCredential() (*options.Credential, error) {
+	user, pass := os.Getenv("MONGO_USERNAME"), os.Getenv("MONGO_PASSWORD")
+	switch {
+	case user == "" && pass == "":
+		return nil, nil
+	case user == "" || pass == "":
+		return nil, fmt.Errorf("set both MONGO_USERNAME and MONGO_PASSWORD, or neither")
+	}
+	return &options.Credential{Username: user, Password: pass}, nil
 }
 
 func mongoConnectionString() string {

@@ -147,7 +147,7 @@ func TestStartupMigration_LegacyDataReadableThroughBroker(t *testing.T) {
 
 	legacyKey := seedLegacyAPIKey(t, db, "lw_legacykey0000000000000000000000000000000001")
 
-	rabbitC, err := rabbitmq.Run(ctx, "rabbitmq:3.9-alpine")
+	rabbitC, err := rabbitmq.Run(ctx, rabbitImage)
 	if err != nil {
 		t.Fatalf("rabbitmq container: %v", err)
 	}
