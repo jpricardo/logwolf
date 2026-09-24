@@ -73,7 +73,7 @@ func TestDeletedProject_LateEventsAreDropped(t *testing.T) {
 		t.Errorf("LogInfo for a deleted project: want a \"does not exist\" error, got %v", err)
 	}
 
-	// --- Through the Broker, with the key it may still hold ---
+	// --- Through the Broker, with the key it had cached ---
 
 	req, _ := http.NewRequest(http.MethodPost, stack.brokerURL+"/logs",
 		strings.NewReader(`{"name":"late-via-broker","data":"{}","severity":"info","tags":[]}`))
@@ -85,24 +85,16 @@ func TestDeletedProject_LateEventsAreDropped(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	switch resp.StatusCode {
-	case http.StatusAccepted:
-		// The Broker still had the key cached and queued the event. The Listener
-		// hands events over one at a time, in order, so once an event queued after
-		// it has been written, this one has been dealt with too.
-		liveKey := seedAPIKey(t, stack.mongoURI, seedProject(t, stack.mongoURI, "late-events-live"), "lw_lateeventslive00000000000000000000000000001")
-		postLog(t, stack.brokerURL, liveKey, "late-barrier")
-		waitForLog(t, stack.mongoURI, "late-barrier")
-	case http.StatusUnauthorized:
-		// The key was already gone from the cache; nothing was queued.
-	default:
-		t.Errorf("POST /logs with the deleted project's key: got %d, want 202 or 401", resp.StatusCode)
+	// The Broker that deleted the project dropped its keys from the cache, so
+	// the key is looked up again, and it went with the project.
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("POST /logs with the deleted project's key: got %d, want 401", resp.StatusCode)
 	}
 
 	// --- Nothing of the project is left ---
 	//
-	// Checked for a couple of seconds rather than once, in case the late event is
-	// still in flight behind the barrier.
+	// Checked for a couple of seconds rather than once, in case an event queued
+	// before the delete is still in flight.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if n := countDocs(t, logs, bson.M{"project_id": oid(t, project.ID)}); n != 0 {

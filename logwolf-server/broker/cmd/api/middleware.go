@@ -45,7 +45,10 @@ func userLoginFromContext(r *http.Request) string {
 }
 
 type cacheEntry struct {
-	valid     bool
+	valid bool
+	// keyID and projectID name the key a valid entry stands for, so revoking
+	// the key or deleting its project can evict it (see forgetCachedKeys).
+	keyID     string
 	projectID string
 	scopes    []string
 	expiresAt time.Time
@@ -60,15 +63,35 @@ var (
 	// a cap a flood of made-up keys from many addresses would grow it without
 	// bound between two sweeps.
 	maxKeyCacheEntries = 10_000
+
+	// keyCacheGen counts forgetCachedKeys calls. A validation that started
+	// before one may have read a key the eviction was about, so its result is
+	// not cached (see cacheKeyResult). Guarded by keyCacheMu.
+	keyCacheGen uint64
 )
+
+// keyCacheGeneration returns the current keyCacheGen, to hand to
+// cacheKeyResult once the validation it precedes is done.
+func keyCacheGeneration() uint64 {
+	keyCacheMu.RLock()
+	defer keyCacheMu.RUnlock()
+	return keyCacheGen
+}
 
 // cacheKeyResult stores entry under cacheKey, first evicting an arbitrary
 // entry if the cache is full. Evicting a live entry costs one extra RPC the
 // next time its key is seen, nothing more.
-func cacheKeyResult(cacheKey string, entry cacheEntry) {
+//
+// gen is keyCacheGeneration from before the validation. If keys were evicted
+// since, the result may predate a revocation and is dropped: caching it would
+// bring a revoked key back for a whole cacheTTL.
+func cacheKeyResult(cacheKey string, entry cacheEntry, gen uint64) {
 	keyCacheMu.Lock()
 	defer keyCacheMu.Unlock()
 
+	if gen != keyCacheGen {
+		return
+	}
 	if _, ok := keyCache[cacheKey]; !ok && len(keyCache) >= maxKeyCacheEntries {
 		for k := range keyCache {
 			delete(keyCache, k)
@@ -76,6 +99,35 @@ func cacheKeyResult(cacheKey string, entry cacheEntry) {
 		}
 	}
 	keyCache[cacheKey] = entry
+}
+
+// forgetCachedKeys evicts every cached key that match reports true for, so the
+// next request with one of them is validated against the logger again. The
+// broker calls it once it has revoked a key or deleted a project; without it the
+// key kept working for up to cacheTTL.
+//
+// It only reaches this broker's cache. Another broker replica keeps its entries
+// until they expire.
+func forgetCachedKeys(match func(cacheEntry) bool) {
+	keyCacheMu.Lock()
+	defer keyCacheMu.Unlock()
+
+	keyCacheGen++
+	for k, e := range keyCache {
+		if e.valid && match(e) {
+			delete(keyCache, k)
+		}
+	}
+}
+
+// forgetCachedKey evicts the key with the given id.
+func forgetCachedKey(keyID string) {
+	forgetCachedKeys(func(e cacheEntry) bool { return e.keyID == keyID })
+}
+
+// forgetCachedProjectKeys evicts every key of the given project.
+func forgetCachedProjectKeys(projectID string) {
+	forgetCachedKeys(func(e cacheEntry) bool { return e.projectID == projectID })
 }
 
 func hashKey(plaintext string) string {
@@ -278,6 +330,7 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 		}
 
 		// Cache miss — validate against DB via Logger RPC
+		gen := keyCacheGeneration()
 		valid, key, err := v.ValidateAPIKey(plaintext)
 		if err != nil {
 			log.Printf(`{"event":"auth","outcome":"error","reason":"db_error","key_prefix":"%s","method":"%s","path":"%s","remote_addr":"%s","error":"%s"}`,
@@ -286,15 +339,16 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 			return
 		}
 
-		projectID := ""
+		keyID, projectID := "", ""
 		var scopes []string
 		if key != nil {
+			keyID = key.ID.Hex()
 			projectID = key.ProjectID.Hex()
 			scopes = key.Scopes
 		}
 
 		// Write result to cache (keyed on hash).
-		cacheKeyResult(cacheKey, cacheEntry{valid: valid, projectID: projectID, scopes: scopes, expiresAt: time.Now().Add(cacheTTL)})
+		cacheKeyResult(cacheKey, cacheEntry{valid: valid, keyID: keyID, projectID: projectID, scopes: scopes, expiresAt: time.Now().Add(cacheTTL)}, gen)
 
 		if !valid {
 			limited := recordFailure(ip)

@@ -82,7 +82,7 @@ Every read hits MongoDB directly. There is no read cache.
 
 Logwolf uses two separate authentication mechanisms for two different surfaces.
 
-**API keys** protect the SDK ingestion endpoints (`POST /api/logs`, `GET /api/logs`, `DELETE /api/logs`). Keys use a `lw_` prefix, are stored bcrypt-hashed in MongoDB, and are validated in `requireAPIKey` middleware on the Broker. Validation looks keys up by their stored 10-character prefix, so it runs one bcrypt compare, not one per key. A 60-second in-memory cache avoids a database hit on every request. Failed attempts are rate-limited per IP: 10 failures within 60 seconds triggers a `429`.
+**API keys** protect the SDK ingestion endpoints (`POST /api/logs`, `GET /api/logs`, `DELETE /api/logs`). Keys use a `lw_` prefix, are stored bcrypt-hashed in MongoDB, and are validated in `requireAPIKey` middleware on the Broker. Validation looks keys up by their stored 10-character prefix, so it runs one bcrypt compare, not one per key. A 60-second in-memory cache avoids a database hit on every request. Revoking a key, or deleting its project, evicts it from the cache at once, so it stops working immediately. With more than one Broker replica, only the one that handled the revoke evicts it; the others keep it until the entry expires. Failed attempts are rate-limited per IP: 10 failures within 60 seconds triggers a `429`.
 
 **GitHub OAuth** protects the dashboard. The Frontend handles the OAuth callback, validates the user against a configured allow-list (`LOGWOLF_ALLOWED_GITHUB_USERS` or `LOGWOLF_ALLOWED_GITHUB_ORGS`), and sets a signed HTTP-only session cookie. Dashboard routes are protected at the layout level via `requireAuth`.
 
