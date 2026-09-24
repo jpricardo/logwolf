@@ -45,8 +45,8 @@ await client.destroy();  // flush + stop background timer
 
 // Read-side: getAll/getOne need a key with the `read` scope, delete the `delete`
 // scope. New keys only have `ingest` unless you pick more on /keys.
-const events = await client.getAll({ page: 1, limit: 50 });
-const event  = await client.getOne(id);
+const events = await client.getAll({ page: 1, pageSize: 50 }); // pageSize ≤ MAX_PAGE_SIZE (100)
+const event  = await client.getOne(id);                        // undefined if the project has no such event
 await client.delete(id);
 ```
 

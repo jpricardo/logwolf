@@ -111,6 +111,28 @@ func paginationFromQuery(qp url.Values) (data.PaginationParams, error) {
 	return p, p.Validate()
 }
 
+// GetLog returns one event of the key's project. An id of another project's
+// event is a 404, the same as one that does not exist: the project is part of
+// the lookup, not a check after it. The SDK's getOne used to fetch the first
+// page of events and search it, so it missed anything older.
+func (app *Config) GetLog(w http.ResponseWriter, r *http.Request) {
+	client, ok := app.dialLogger(w)
+	if !ok {
+		return
+	}
+	defer client.Close()
+
+	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "id"), ProjectID: projectIDFromContext(r)}
+
+	var entry data.LogEntry
+	if err := client.Call("RPCServer.GetLog", filter, &entry); err != nil {
+		app.rpcErrorJSON(w, err, logNotFound)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "OK!", Data: entry})
+}
+
 func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 	var requestBody data.LogEntryFilter
 	err := app.readJSON(w, r, &requestBody)

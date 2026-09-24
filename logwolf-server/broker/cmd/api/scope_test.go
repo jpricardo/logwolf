@@ -51,6 +51,7 @@ var publicRoutes = []struct {
 	{http.MethodPost, "/logs", `{`, data.ScopeIngest},
 	{http.MethodPost, "/logs/batch", `[]`, data.ScopeIngest},
 	{http.MethodGet, "/logs", ``, data.ScopeRead},
+	{http.MethodGet, "/logs/" + alphaLogID, ``, data.ScopeRead},
 	{http.MethodDelete, "/logs", `{}`, data.ScopeDelete},
 }
 
@@ -159,4 +160,30 @@ type validKeyWithScopes struct {
 
 func (v validKeyWithScopes) ValidateAPIKey(string) (bool, *data.APIKey, error) {
 	return true, &data.APIKey{ProjectID: mustObjectID(v.projectID), Scopes: v.scopes}, nil
+}
+
+// TestGetLog_ByID covers GET /logs/{id}: the key's own event, one of another
+// project's (a 404, like one that does not exist), and the read scope it needs.
+func TestGetLog_ByID(t *testing.T) {
+	h, _ := newInternalTestServer(t)
+	reader := seedKey(t, projAlpha, data.ScopeRead)
+
+	w := do(h, keyRequest(http.MethodGet, "/logs/"+alphaLogID, reader, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /logs/{own id} = %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	if got := decodeData[data.LogEntry](t, w); got.ID != alphaLogID || got.Name != "alpha-event" {
+		t.Errorf("GET /logs/{own id} = %+v, want alpha-event", got)
+	}
+
+	for _, id := range []string{betaLogID, "dddddddddddddddddddddd99", "not-an-id"} {
+		if w := do(h, keyRequest(http.MethodGet, "/logs/"+id, reader, "")); w.Code != http.StatusNotFound {
+			t.Errorf("GET /logs/%s = %d, want 404 (body: %s)", id, w.Code, w.Body.String())
+		}
+	}
+
+	ingestOnly := seedKey(t, projAlpha, data.ScopeIngest)
+	if w := do(h, keyRequest(http.MethodGet, "/logs/"+alphaLogID, ingestOnly, "")); w.Code != http.StatusForbidden {
+		t.Errorf("GET /logs/{id} with an ingest-only key = %d, want 403", w.Code)
+	}
 }

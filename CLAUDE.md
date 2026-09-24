@@ -58,7 +58,7 @@ npm run coverage  # single run with coverage report
 npm run build     # tsc + rollup → dist/
 npm run lint      # oxlint
 npm run format    # oxfmt
-npm run typecheck # tsc --noEmit
+npx tsc --noEmit  # typecheck (no npm script for it here)
 ```
 
 ### Frontend (`logwolf-server/frontend`)
@@ -87,7 +87,7 @@ docker compose up
 **API authentication:**
 
 - SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting per client IP (in broker middleware; the IP comes from `X-Forwarded-For` only when the peer is in `TRUSTED_PROXIES`)
-- API keys carry scopes: `ingest` (`POST /logs`, `/logs/batch`), `read` (`GET /logs`), `delete` (`DELETE /logs`). `requireScope` answers 403 without the route's scope. New keys get `ingest` alone unless the creator picks more, because keys ship in browser bundles. Keys stored before scopes existed have none and are read back with all three (`Legacy`), so they keep working
+- API keys carry scopes: `ingest` (`POST /logs`, `/logs/batch`), `read` (`GET /logs`, `GET /logs/{id}`), `delete` (`DELETE /logs`). `requireScope` answers 403 without the route's scope. New keys get `ingest` alone unless the creator picks more, because keys ship in browser bundles. Keys stored before scopes existed have none and are read back with all three (`Legacy`), so they keep working
 - Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations. Sign-in is deny-by-default: a login must be in `LOGWOLF_ALLOWED_GITHUB_USERS` or belong to an org in `LOGWOLF_ALLOWED_GITHUB_ORGS`; with both empty nobody gets in (`app/lib/allowlist.server.ts`)
 - GitHub logins are case-insensitive: memberships store them lowercase and every lookup normalizes with `data.NormalizeGithubLogin` (the broker does it once, in `requireUserLogin`). The session keeps GitHub's casing for display
 
@@ -108,7 +108,7 @@ docker compose up
 Entry point: `cmd/api/main.go`. Key files: `routes.go`, `handlers.go`, `middleware.go`.
 
 - `POST /logs`, `POST /logs/batch` — enqueue events (async, 202)
-- `GET /logs`, `DELETE /logs` — proxy to Logger RPC
+- `GET /logs`, `GET /logs/{id}`, `DELETE /logs` — proxy to Logger RPC, scoped to the key's project
 - Internal routes (`X-Internal-Secret` + `X-User-Login`): `/projects` plus everything that acts on one project under `/projects/{id}/...` — members, `logs` (the dashboard's project-scoped read/write path for events), `keys`, `retention` and `metrics`. No route takes a project id from the query or the body
 - Project access on internal routes: 404 when the project does not exist (or the id is malformed), 403 for a non-member or a member on an owner-only route, the same on every route. `authorizeProject` (`access.go`) decides with one `RPCServer.ProjectAccess` call; every `/projects/{id}/...` route declares its level with `requireProject(anyMember|ownerOnly)` in `routes.go` and reads the project and logger connection from the context
 - `requireAPIKey` middleware validates keys over logger RPC and caches the result for 60s. Revoking a key or deleting its project evicts it from that broker's cache at once (`forgetCachedKeys`); another broker replica would keep it until the entry expires. `requireInternalSecret` guards dashboard routes. The broker has no MongoDB client: key storage (`/projects/{id}/keys`) goes through logger RPC too
