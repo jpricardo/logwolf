@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"logwolf-toolbox/data"
@@ -20,7 +21,7 @@ import (
 const bigProjectLogs = 25000
 
 // seedLogs inserts n logs for projectID, created at createdAt.
-func seedLogs(t *testing.T, logs *mongo.Collection, projectID string, n int, createdAt time.Time) {
+func seedLogs(t *testing.T, logs *mongo.Collection, projectID primitive.ObjectID, n int, createdAt time.Time) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -41,7 +42,7 @@ func seedLogs(t *testing.T, logs *mongo.Collection, projectID string, n int, cre
 			})
 		}
 		if _, err := logs.InsertMany(ctx, docs); err != nil {
-			t.Fatalf("seed %d logs for %s: %v", n, projectID, err)
+			t.Fatalf("seed %d logs for %s: %v", n, projectID.Hex(), err)
 		}
 	}
 }
@@ -62,8 +63,8 @@ func TestDeleteProject_ManyLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertProject: %v", err)
 	}
-	seedLogs(t, logs, doomed.ID.Hex(), bigProjectLogs, time.Now())
-	seedLogs(t, logs, other.ID.Hex(), 3, time.Now())
+	seedLogs(t, logs, doomed.ID, bigProjectLogs, time.Now())
+	seedLogs(t, logs, other.ID, 3, time.Now())
 
 	if err := m.DeleteProject(doomed.ID); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
@@ -71,21 +72,21 @@ func TestDeleteProject_ManyLogs(t *testing.T) {
 	if _, err := m.GetProject(doomed.ID); !errors.Is(err, mongo.ErrNoDocuments) {
 		t.Fatalf("project still present after delete: %v", err)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": doomed.ID.Hex()}); n != bigProjectLogs {
+	if n := countDocs(t, logs, bson.M{"project_id": doomed.ID}); n != bigProjectLogs {
 		t.Fatalf("DeleteProject touched the logs: %d left of %d, want all of them for the purge", n, bigProjectLogs)
 	}
 
-	purged, err := m.PurgeProjectLogs(context.Background(), doomed.ID.Hex())
+	purged, err := m.PurgeProjectLogs(context.Background(), doomed.ID)
 	if err != nil {
 		t.Fatalf("PurgeProjectLogs: %v", err)
 	}
 	if purged != bigProjectLogs {
 		t.Errorf("PurgeProjectLogs = %d, want %d", purged, bigProjectLogs)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": doomed.ID.Hex()}); n != 0 {
+	if n := countDocs(t, logs, bson.M{"project_id": doomed.ID}); n != 0 {
 		t.Errorf("%d log(s) of the deleted project left after the purge", n)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": other.ID.Hex()}); n != 3 {
+	if n := countDocs(t, logs, bson.M{"project_id": other.ID}); n != 3 {
 		t.Errorf("purge reached another project: %d of its 3 logs left", n)
 	}
 }
@@ -100,16 +101,16 @@ func TestPurgeProjectLogs_RefusesLiveProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertProject: %v", err)
 	}
-	seedLogs(t, logs, p.ID.Hex(), 2, time.Now())
+	seedLogs(t, logs, p.ID, 2, time.Now())
 
-	purged, err := m.PurgeProjectLogs(context.Background(), p.ID.Hex())
+	purged, err := m.PurgeProjectLogs(context.Background(), p.ID)
 	if !errors.Is(err, data.ErrProjectExists) {
 		t.Errorf("PurgeProjectLogs on a live project: want ErrProjectExists, got %v", err)
 	}
 	if purged != 0 {
 		t.Errorf("PurgeProjectLogs on a live project reported %d deleted", purged)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": p.ID.Hex()}); n != 2 {
+	if n := countDocs(t, logs, bson.M{"project_id": p.ID}); n != 2 {
 		t.Errorf("live project's logs: %d of 2 left", n)
 	}
 }
@@ -127,7 +128,7 @@ func TestPurgeProjectLogs_FailureIsFinishedBySweep(t *testing.T) {
 		t.Fatalf("InsertProject: %v", err)
 	}
 	// Older than the sweep's grace period, as they would be an hour later.
-	seedLogs(t, logs, p.ID.Hex(), bigProjectLogs, time.Now().Add(-time.Hour))
+	seedLogs(t, logs, p.ID, bigProjectLogs, time.Now().Add(-time.Hour))
 
 	if err := m.DeleteProject(p.ID); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
@@ -135,7 +136,7 @@ func TestPurgeProjectLogs_FailureIsFinishedBySweep(t *testing.T) {
 
 	// Let the first batch through, then fail the second with a non-transient error.
 	setFailPoint(t, client, bson.M{"skip": 1}, bson.M{"failCommands": bson.A{"delete"}, "errorCode": 2})
-	purged, err := m.PurgeProjectLogs(context.Background(), p.ID.Hex())
+	purged, err := m.PurgeProjectLogs(context.Background(), p.ID)
 	clearFailPoint(t, client)
 
 	if err == nil {
@@ -144,7 +145,7 @@ func TestPurgeProjectLogs_FailureIsFinishedBySweep(t *testing.T) {
 	if purged == 0 || purged >= bigProjectLogs {
 		t.Fatalf("PurgeProjectLogs reported %d deleted before failing, want one batch's worth", purged)
 	}
-	left := countDocs(t, logs, bson.M{"project_id": p.ID.Hex()})
+	left := countDocs(t, logs, bson.M{"project_id": p.ID})
 	if left != bigProjectLogs-purged {
 		t.Errorf("after the failed purge: %d logs left, but it reported %d of %d deleted", left, purged, bigProjectLogs)
 	}
@@ -160,7 +161,7 @@ func TestPurgeProjectLogs_FailureIsFinishedBySweep(t *testing.T) {
 	if swept[p.ID.Hex()] != left {
 		t.Errorf("DeleteOrphanedLogs deleted %d for the project, want the %d the purge left", swept[p.ID.Hex()], left)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": p.ID.Hex()}); n != 0 {
+	if n := countDocs(t, logs, bson.M{"project_id": p.ID}); n != 0 {
 		t.Errorf("%d log(s) of the deleted project left after the sweep", n)
 	}
 }

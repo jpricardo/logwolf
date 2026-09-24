@@ -70,9 +70,8 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			const name = fd.get('name')?.toString().trim() ?? '';
 			if (!name) return { error: 'Name is required.' };
 
-			// The slug is fixed at creation, so the stored one goes back unchanged —
-			// the broker rejects an update that carries no valid slug.
-			await api.updateProject(project.id, name, project.slug);
+			// Only the name changes: the slug is fixed at creation.
+			await api.updateProject(project.id, name);
 			return { success: `Renamed to ${name}.` };
 		}
 

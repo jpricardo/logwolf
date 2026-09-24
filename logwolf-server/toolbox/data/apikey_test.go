@@ -32,10 +32,11 @@ func TestErrKeyNotFound(t *testing.T) {
 // ErrKeyNotFound is the sentinel returned by GetAPIKeyByID on a miss.
 func TestAPIKeyStruct(t *testing.T) {
 	id := primitive.NewObjectID()
+	projectID := primitive.NewObjectID()
 	now := time.Now()
 	k := APIKey{
 		ID:        id,
-		ProjectID: "proj-abc",
+		ProjectID: projectID,
 		Prefix:    "lw_abc123",
 		Active:    true,
 		CreatedAt: now,
@@ -44,8 +45,8 @@ func TestAPIKeyStruct(t *testing.T) {
 	if k.ID != id {
 		t.Errorf("APIKey.ID mismatch")
 	}
-	if k.ProjectID != "proj-abc" {
-		t.Errorf("APIKey.ProjectID = %q, want %q", k.ProjectID, "proj-abc")
+	if k.ProjectID != projectID {
+		t.Errorf("APIKey.ProjectID = %s, want %s", k.ProjectID.Hex(), projectID.Hex())
 	}
 	if k.Prefix != "lw_abc123" {
 		t.Errorf("APIKey.Prefix = %q, want %q", k.Prefix, "lw_abc123")
@@ -77,13 +78,13 @@ func TestRPCCheckMembershipArgs(t *testing.T) {
 
 // TestGenerateAPIKey_ProjectID verifies GenerateAPIKey propagates ProjectID.
 func TestGenerateAPIKey_ProjectID(t *testing.T) {
-	projectID := "proj-unit-test"
+	projectID := primitive.NewObjectID()
 	_, key, err := GenerateAPIKey(projectID, nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
 	if key.ProjectID != projectID {
-		t.Errorf("generated key ProjectID = %q, want %q", key.ProjectID, projectID)
+		t.Errorf("generated key ProjectID = %s, want %s", key.ProjectID.Hex(), projectID.Hex())
 	}
 	if !key.Active {
 		t.Error("new key should be active")
@@ -99,7 +100,7 @@ func TestGenerateAPIKey_ProjectID(t *testing.T) {
 // TestGenerateAPIKey_Shape verifies generated keys have the shape ValidateAPIKey
 // accepts, and that the stored prefix is the head of the plaintext.
 func TestGenerateAPIKey_Shape(t *testing.T) {
-	plaintext, key, err := GenerateAPIKey("proj-unit-test", nil)
+	plaintext, key, err := GenerateAPIKey(primitive.NewObjectID(), nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestGenerateAPIKey_Shape(t *testing.T) {
 // have produced is refused before the database is touched. The zero Models has
 // no client, so reaching the query would panic.
 func TestValidateAPIKey_RejectsMalformed(t *testing.T) {
-	valid, _, err := GenerateAPIKey("proj-unit-test", nil)
+	valid, _, err := GenerateAPIKey(primitive.NewObjectID(), nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestValidateAPIKey_RejectsMalformed(t *testing.T) {
 // only ingest: keys end up in browser bundles, where read and delete would let
 // anyone who pulls one out read or wipe the project's logs.
 func TestGenerateAPIKey_DefaultsToIngest(t *testing.T) {
-	_, key, err := GenerateAPIKey("proj-unit-test", nil)
+	_, key, err := GenerateAPIKey(primitive.NewObjectID(), nil)
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestGenerateAPIKey_DefaultsToIngest(t *testing.T) {
 // TestGenerateAPIKey_RejectsUnknownScope verifies no key is minted with a scope
 // the broker would never check.
 func TestGenerateAPIKey_RejectsUnknownScope(t *testing.T) {
-	if _, _, err := GenerateAPIKey("proj-unit-test", []string{ScopeIngest, "admin"}); !errors.Is(err, ErrInvalidScope) {
+	if _, _, err := GenerateAPIKey(primitive.NewObjectID(), []string{ScopeIngest, "admin"}); !errors.Is(err, ErrInvalidScope) {
 		t.Errorf("err = %v, want ErrInvalidScope", err)
 	}
 }

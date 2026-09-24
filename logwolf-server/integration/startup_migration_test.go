@@ -63,7 +63,7 @@ func TestStartupMigration(t *testing.T) {
 	startLogger(t, mongoURI, "alice,Bob")
 
 	project := requireDefaultProject(t, db)
-	projectID := project.ID.Hex()
+	projectID := project.ID
 
 	// All three logs are readable in the Default project, including the one that
 	// carried an empty project_id.
@@ -99,7 +99,7 @@ func TestStartupMigration(t *testing.T) {
 
 	startLogger(t, mongoURI, "alice,Bob,carol")
 
-	assertCount(t, db, "projects", bson.M{"slug": data.DefaultProjectSlug}, 1)
+	assertCount(t, db, "projects", bson.M{"default": true}, 1)
 	assertCount(t, db, "logs", bson.M{"project_id": projectID}, 3)
 	assertCount(t, db, "api_keys", bson.M{"project_id": projectID}, 1)
 	assertCount(t, db, "settings", bson.M{"project_id": projectID, "key": "retention_days"}, 1)
@@ -248,7 +248,7 @@ func TestStartupMigration_OrgOnlyDeployment(t *testing.T) {
 	startLoggerWithOwners(t, mongoURI, "", "dave")
 
 	project := requireDefaultProject(t, db)
-	assertCount(t, db, "logs", bson.M{"project_id": project.ID.Hex()}, 1)
+	assertCount(t, db, "logs", bson.M{"project_id": project.ID}, 1)
 	assertOwner(t, db, project, "dave")
 	assertCount(t, db, "project_members", bson.M{"project_id": project.ID}, 1)
 }
@@ -312,6 +312,148 @@ func TestStartupMigration_NormalizesMemberLogins(t *testing.T) {
 	// Nothing left to do on the next boot.
 	startLogger(t, mongoURI, "")
 	assertCount(t, db, "project_members", bson.M{}, 4)
+}
+
+// TestStartupMigration_ConvertsProjectIDs seeds data the way multi-tenant
+// builds stored it before every project_id was an ObjectID — logs, an API key
+// and settings under the hex string of their project's id — and checks the
+// first boot converts it, and that retention then works off the converted data.
+func TestStartupMigration_ConvertsProjectIDs(t *testing.T) {
+	ctx := context.Background()
+	mongoURI, client := migrationMongo(t)
+	db := client.Database("logs")
+
+	// forever is inserted first, so the cleanup pass reaches it before expiring,
+	// and once expiring's log is gone, forever has been dealt with as well.
+	forever, expiring, both := newOID(), newOID(), newOID()
+	for _, p := range []bson.M{
+		{"_id": forever, "name": "Forever", "slug": "forever", "created_at": time.Now()},
+		{"_id": expiring, "name": "Expiring", "slug": "expiring", "created_at": time.Now()},
+		{"_id": both, "name": "Both", "slug": "both", "created_at": time.Now()},
+	} {
+		if _, err := db.Collection("projects").InsertOne(ctx, p); err != nil {
+			t.Fatalf("seed project: %v", err)
+		}
+	}
+
+	old := func(days int) time.Time { return time.Now().Add(-time.Duration(days) * 24 * time.Hour) }
+	logDoc := func(name string, projectID any, created time.Time) bson.M {
+		return bson.M{"name": name, "data": "{}", "severity": "info", "project_id": projectID, "created_at": created, "updated_at": created}
+	}
+	if _, err := db.Collection("logs").InsertMany(ctx, []any{
+		logDoc("kept-forever", forever.Hex(), old(365)),
+		// Past a 30-day retention but within the 90-day default: only deleted
+		// if the project's own setting was converted along with the log.
+		logDoc("expired-after-30", expiring.Hex(), old(31)),
+		logDoc("fresh", expiring.Hex(), time.Now()),
+		// Already an ObjectID: nothing to do.
+		logDoc("already-converted", both, time.Now()),
+		// Not hex, so not an ObjectID of anything: left as it is.
+		logDoc("not-hex", "no-such-project", time.Now()),
+	}); err != nil {
+		t.Fatalf("seed logs: %v", err)
+	}
+
+	if err := insertAPIKey(mongoURI, forever.Hex(), "lw_convertkey0000000000000000000000000000000001"); err != nil {
+		t.Fatalf("seed key: %v", err)
+	}
+	if _, err := db.Collection("api_keys").UpdateOne(ctx, bson.M{"project_id": forever}, bson.M{"$set": bson.M{"project_id": forever.Hex()}}); err != nil {
+		t.Fatalf("store the key's project_id as a string: %v", err)
+	}
+
+	if _, err := db.Collection("settings").InsertMany(ctx, []any{
+		bson.M{"project_id": forever.Hex(), "key": "retention_days", "value": 0},
+		bson.M{"project_id": expiring.Hex(), "key": "retention_days", "value": 30},
+		// A project that has its retention under both types: the string one is
+		// stale, and converting it would collide with the ObjectID one.
+		bson.M{"project_id": both.Hex(), "key": "retention_days", "value": 60},
+		bson.M{"project_id": both, "key": "retention_days", "value": 180},
+	}); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+	if _, err := db.Collection("settings").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "project_id", Value: 1}, {Key: "key", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("unique_project_key"),
+	}); err != nil {
+		t.Fatalf("seed settings index: %v", err)
+	}
+
+	startLogger(t, mongoURI, "")
+
+	stringIDs := bson.M{"project_id": bson.M{"$type": "string"}}
+	assertCount(t, db, "logs", stringIDs, 1)
+	assertCount(t, db, "logs", bson.M{"name": "not-hex", "project_id": "no-such-project"}, 1)
+	assertCount(t, db, "api_keys", stringIDs, 0)
+	assertCount(t, db, "api_keys", bson.M{"project_id": forever}, 1)
+	assertCount(t, db, "settings", stringIDs, 0)
+	assertCount(t, db, "settings", bson.M{"project_id": both, "value": 180}, 1)
+	assertCount(t, db, "settings", bson.M{"project_id": both}, 1)
+
+	// The cleanup pass at startup runs on converted data: expiring's own 30
+	// days apply, and forever's log survives the 90-day default.
+	logs := db.Collection("logs")
+	waitForLogGone(t, logs, "expired-after-30", 15*time.Second)
+	for _, name := range []string{"kept-forever", "fresh"} {
+		if n := countDocs(t, logs, bson.M{"name": name}); n != 1 {
+			t.Errorf("%s: deleted by the cleanup, should have been kept", name)
+		}
+	}
+
+	// Nothing left to do on the next boot.
+	startLogger(t, mongoURI, "")
+	assertCount(t, db, "logs", stringIDs, 1)
+	assertCount(t, db, "settings", bson.M{}, 3)
+}
+
+// TestStartupMigration_MarksDefaultProject boots on a database a build with
+// globally unique slugs left behind: the unique slug index, and a Default
+// project known only by its slug. The index must go, and the project must be
+// found by its flag from then on, even once another project takes its slug.
+func TestStartupMigration_MarksDefaultProject(t *testing.T) {
+	ctx := context.Background()
+	mongoURI, client := migrationMongo(t)
+	db := client.Database("logs")
+	projects := db.Collection("projects")
+
+	if _, err := projects.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "slug", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("unique_slug"),
+	}); err != nil {
+		t.Fatalf("seed unique_slug: %v", err)
+	}
+	legacyDefault := newOID()
+	if _, err := projects.InsertOne(ctx, bson.M{
+		"_id": legacyDefault, "name": data.DefaultProjectName, "slug": data.DefaultProjectSlug, "created_at": time.Now(),
+	}); err != nil {
+		t.Fatalf("seed Default project: %v", err)
+	}
+
+	startLogger(t, mongoURI, "alice")
+
+	if hasIndex(t, db, "projects", "unique_slug") {
+		t.Error("the unique slug index should be dropped")
+	}
+	if !hasIndex(t, db, "projects", "unique_default") {
+		t.Error("the index that allows one Default project is missing")
+	}
+	if got := requireDefaultProject(t, db); got.ID != legacyDefault {
+		t.Fatalf("Default project = %s, want the one the old build created, %s", got.ID.Hex(), legacyDefault.Hex())
+	}
+	// Ownerless, so the owner repair found it by its flag.
+	assertOwner(t, db, data.Project{ID: legacyDefault}, "alice")
+
+	// A user's project with the same slug is allowed now, and changes nothing.
+	if _, err := projects.InsertOne(ctx, bson.M{
+		"_id": newOID(), "name": "Default", "slug": data.DefaultProjectSlug, "created_at": time.Now(),
+	}); err != nil {
+		t.Fatalf("a second project with slug %q: %v", data.DefaultProjectSlug, err)
+	}
+	seedOrphanLog(t, db)
+
+	startLogger(t, mongoURI, "alice")
+
+	assertCount(t, db, "logs", bson.M{"project_id": legacyDefault}, 1)
+	assertCount(t, db, "projects", bson.M{"default": true}, 1)
 }
 
 // --- helpers ---
@@ -413,12 +555,12 @@ func requireDefaultProject(t *testing.T, db *mongo.Database) data.Project {
 	t.Helper()
 
 	var project data.Project
-	err := db.Collection("projects").FindOne(context.Background(), bson.M{"slug": data.DefaultProjectSlug}).Decode(&project)
+	err := db.Collection("projects").FindOne(context.Background(), bson.M{"default": true}).Decode(&project)
 	if err != nil {
-		t.Fatalf("the migration should have created the %q project: %v", data.DefaultProjectSlug, err)
+		t.Fatalf("the migration should have created the %q project: %v", data.DefaultProjectName, err)
 	}
-	if project.Name != data.DefaultProjectName {
-		t.Errorf("project name = %q, want %q", project.Name, data.DefaultProjectName)
+	if project.Name != data.DefaultProjectName || project.Slug != data.DefaultProjectSlug {
+		t.Errorf("project = %q (%s), want %q (%s)", project.Name, project.Slug, data.DefaultProjectName, data.DefaultProjectSlug)
 	}
 	return project
 }

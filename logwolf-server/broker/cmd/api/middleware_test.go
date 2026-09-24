@@ -21,7 +21,7 @@ func (a alwaysInvalidKey) ValidateAPIKey(string) (bool, *data.APIKey, error) { r
 type validKeyWithProject struct{ projectID string }
 
 func (v validKeyWithProject) ValidateAPIKey(string) (bool, *data.APIKey, error) {
-	return true, &data.APIKey{ProjectID: v.projectID}, nil
+	return true, &data.APIKey{ProjectID: mustObjectID(v.projectID)}, nil
 }
 
 func okHandler(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
@@ -97,7 +97,7 @@ func TestRequireAPIKey_ExpiredCache(t *testing.T) {
 }
 
 func TestRequireAPIKey_PropagatesProjectID(t *testing.T) {
-	const wantProjectID = "proj-abc123"
+	const wantProjectID = "aaaaaaaaaaaaaaaaaaaa0123"
 	app := newApp()
 
 	var gotProjectID string

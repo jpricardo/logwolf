@@ -44,9 +44,9 @@ A key without the route's scope gets 403.
 | `PATCH`  | `/settings/retention`            | Update retention TTL                        |
 | `GET`    | `/metrics`                       | Usage analytics                             |
 | `GET`    | `/projects`                      | Projects the caller belongs to, with `role` |
-| `POST`   | `/projects`                      | Create a project (409 if the slug is taken) |
+| `POST`   | `/projects`                      | Create a project, owned by the caller       |
 | `GET`    | `/projects/{id}`                 | Get one project                             |
-| `PATCH`  | `/projects/{id}`                 | Rename a project                            |
+| `PATCH`  | `/projects/{id}`                 | Rename a project (the slug stays)           |
 | `DELETE` | `/projects/{id}`                 | Delete a project and everything under it    |
 | `GET`    | `/projects/{id}/members`         | List members                                |
 | `POST`   | `/projects/{id}/members`         | Add a member                                |
@@ -60,6 +60,12 @@ A key without the route's scope gets 403.
 Internal routes also require `X-User-Login`; project access is checked against
 that login on every call. `requireUserLogin` lowercases it first, as memberships
 are stored: GitHub logins are case-insensitive.
+
+Creating a project is one logger call: the logger writes the project and the
+caller's owner membership in one transaction, so a failure leaves no project
+behind that nobody could reach. Slugs are display labels, fixed at creation and
+not unique, so creating a project never reveals that someone else's has the same
+one.
 
 Renaming or deleting a project and adding, removing or changing the role of a
 member are owner-only. A project always keeps one owner: removing or demoting the last one is a 400
@@ -80,13 +86,13 @@ the cause back out of the message in one place (`classifyRPCError`) and
 `rpcErrorJSON` maps it to a status, replacing Mongo's wording with a message of
 the handler's choosing:
 
-| Cause                                                  | Status | Example                                                                   |
-| ------------------------------------------------------ | ------ | ------------------------------------------------------------------------- |
-| Unique index violation (`E11000`)                      | 409    | Adding an existing member; renaming to a slug another project already has |
-| No document matched, or the id is not a valid ObjectID | 404    | A malformed project id on any project-scoped route                        |
-| `data.ErrKeyNotFound`                                  | 404    | Revoking a key that does not exist                                        |
-| `data.ErrLastOwner`                                    | 400    | Removing or demoting the last owner                                       |
-| Anything else                                          | 500    | The logger or MongoDB failed                                              |
+| Cause                                                  | Status | Example                                            |
+| ------------------------------------------------------ | ------ | -------------------------------------------------- |
+| Unique index violation (`E11000`)                      | 409    | Adding an existing member                          |
+| No document matched, or the id is not a valid ObjectID | 404    | A malformed project id on any project-scoped route |
+| `data.ErrKeyNotFound`                                  | 404    | Revoking a key that does not exist                 |
+| `data.ErrLastOwner`                                    | 400    | Removing or demoting the last owner                |
+| Anything else                                          | 500    | The logger or MongoDB failed                       |
 
 Retention days are checked against `data.ValidRetentionDays` before the logger is
 called. A missing `days` is a 400 as well, rather than 0 (keep forever).

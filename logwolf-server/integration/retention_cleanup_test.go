@@ -33,11 +33,9 @@ func TestRetentionCleanup(t *testing.T) {
 
 	// Project A: 30-day retention, has an expired log and a fresh log.
 	projectA := primitive.NewObjectID()
-	projectAStr := projectA.Hex()
 
 	// Project B: infinite retention (days=0), has an old log that must NOT be deleted.
 	projectB := primitive.NewObjectID()
-	projectBStr := projectB.Hex()
 
 	// Insert projects into the projects collection.
 	_, err := db.Collection("projects").InsertMany(ctx, []interface{}{
@@ -50,8 +48,8 @@ func TestRetentionCleanup(t *testing.T) {
 
 	// Set retention settings.
 	_, err = db.Collection("settings").InsertMany(ctx, []interface{}{
-		bson.M{"project_id": projectAStr, "key": "retention_days", "value": 30},
-		bson.M{"project_id": projectBStr, "key": "retention_days", "value": 0},
+		bson.M{"project_id": projectA, "key": "retention_days", "value": 30},
+		bson.M{"project_id": projectB, "key": "retention_days", "value": 0},
 	})
 	if err != nil {
 		t.Fatalf("insert settings: %v", err)
@@ -65,7 +63,7 @@ func TestRetentionCleanup(t *testing.T) {
 
 	_, err = db.Collection("logs").InsertMany(ctx, []interface{}{
 		bson.M{
-			"project_id": projectAStr,
+			"project_id": projectA,
 			"name":       expiredLogName,
 			"data":       "{}",
 			"severity":   "info",
@@ -74,7 +72,7 @@ func TestRetentionCleanup(t *testing.T) {
 			"updated_at": time.Now().Add(-31 * 24 * time.Hour),
 		},
 		bson.M{
-			"project_id": projectAStr,
+			"project_id": projectA,
 			"name":       freshLogName,
 			"data":       "{}",
 			"severity":   "info",
@@ -83,7 +81,7 @@ func TestRetentionCleanup(t *testing.T) {
 			"updated_at": time.Now(),
 		},
 		bson.M{
-			"project_id": projectBStr,
+			"project_id": projectB,
 			"name":       oldLogName,
 			"data":       "{}",
 			"severity":   "info",
@@ -94,7 +92,7 @@ func TestRetentionCleanup(t *testing.T) {
 		// Its project is in no collection — deleted after this event passed the
 		// Logger's check. Not expired by any retention setting; deleted anyway.
 		bson.M{
-			"project_id": primitive.NewObjectID().Hex(),
+			"project_id": primitive.NewObjectID(),
 			"name":       orphanLogName,
 			"data":       "{}",
 			"severity":   "info",
@@ -162,21 +160,21 @@ func TestDeleteExpiredLogs_ManyLogs(t *testing.T) {
 		t.Fatalf("InsertProject: %v", err)
 	}
 	old := time.Now().Add(-31 * 24 * time.Hour)
-	seedLogs(t, logs, p.ID.Hex(), bigProjectLogs, old)
-	seedLogs(t, logs, p.ID.Hex(), 2, time.Now())
-	seedLogs(t, logs, other.ID.Hex(), 3, old)
+	seedLogs(t, logs, p.ID, bigProjectLogs, old)
+	seedLogs(t, logs, p.ID, 2, time.Now())
+	seedLogs(t, logs, other.ID, 3, old)
 
-	deleted, err := m.DeleteExpiredLogs(context.Background(), p.ID.Hex(), time.Now().Add(-30*24*time.Hour))
+	deleted, err := m.DeleteExpiredLogs(context.Background(), p.ID, time.Now().Add(-30*24*time.Hour))
 	if err != nil {
 		t.Fatalf("DeleteExpiredLogs: %v", err)
 	}
 	if deleted != bigProjectLogs {
 		t.Errorf("DeleteExpiredLogs = %d, want %d", deleted, bigProjectLogs)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": p.ID.Hex()}); n != 2 {
+	if n := countDocs(t, logs, bson.M{"project_id": p.ID}); n != 2 {
 		t.Errorf("project has %d logs left, want its 2 fresh ones", n)
 	}
-	if n := countDocs(t, logs, bson.M{"project_id": other.ID.Hex()}); n != 3 {
+	if n := countDocs(t, logs, bson.M{"project_id": other.ID}); n != 3 {
 		t.Errorf("DeleteExpiredLogs reached another project: %d of its 3 logs left", n)
 	}
 }

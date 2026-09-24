@@ -89,7 +89,7 @@ type RPCRevokeAPIKeyArgs struct {
 
 type APIKey struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	ProjectID string             `bson:"project_id" json:"project_id"`
+	ProjectID primitive.ObjectID `bson:"project_id" json:"project_id"`
 	Prefix    string             `bson:"prefix" json:"prefix"` // e.g. "lw_A3kB9m" — safe to log
 	Hash      string             `bson:"hash" json:"-"`        // bcrypt hash, never serialized
 	Scopes    []string           `bson:"scopes" json:"scopes"`
@@ -139,7 +139,7 @@ func NormalizeScopes(scopes []string) ([]string, error) {
 
 // Generate creates a new API key, returning the plaintext (shown once) and the model to persist.
 // scopes goes through NormalizeScopes, so an empty list yields DefaultScopes.
-func GenerateAPIKey(projectID string, scopes []string) (plaintext string, key APIKey, err error) {
+func GenerateAPIKey(projectID primitive.ObjectID, scopes []string) (plaintext string, key APIKey, err error) {
 	scopes, err = NormalizeScopes(scopes)
 	if err != nil {
 		return
@@ -224,7 +224,7 @@ func (m *Models) EnsureAPIKeyIndexes() error {
 // RevokeAPIKey deactivates the key id of projectID. The project is part of the
 // filter, so an id belonging to another project is ErrKeyNotFound, the same as
 // one that never existed.
-func (m *Models) RevokeAPIKey(projectID, id string) error {
+func (m *Models) RevokeAPIKey(projectID primitive.ObjectID, id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -269,7 +269,7 @@ func (m *Models) GetAPIKeyByID(id string) (*APIKey, error) {
 	return &key, nil
 }
 
-func (m *Models) ListAPIKeysByProject(projectID string) ([]APIKey, error) {
+func (m *Models) ListAPIKeysByProject(projectID primitive.ObjectID) ([]APIKey, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

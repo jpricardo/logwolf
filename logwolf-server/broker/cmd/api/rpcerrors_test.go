@@ -51,21 +51,27 @@ func TestAddProjectMember_ExistingMemberIsConflict(t *testing.T) {
 	}
 }
 
-func TestUpdateProject_SlugTakenIsConflict(t *testing.T) {
-	handler, _ := newInternalTestServer(t)
+// The slug is fixed at creation: a rename changes the name only, and a slug in
+// the body (older dashboards send one) is not passed on.
+func TestUpdateProject_RenamesWithoutTouchingTheSlug(t *testing.T) {
+	handler, fake := newInternalTestServer(t)
 
 	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha, "owner-a",
-		map[string]string{"name": "Alpha", "slug": "beta"}))
-	if w.Code != http.StatusConflict {
-		t.Errorf("take beta's slug: got %d, want 409 (body: %s)", w.Code, w.Body.String())
+		map[string]string{"name": "Alpha renamed", "slug": "beta"}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("rename: got %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	got := decodeData[data.Project](t, w)
+	if got.Name != "Alpha renamed" || got.Slug != "alpha" {
+		t.Errorf("renamed project = %q (%s), want %q (alpha)", got.Name, got.Slug, "Alpha renamed")
 	}
 
-	// Keeping its own slug is not a collision.
-	w = do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha, "owner-a",
-		map[string]string{"name": "Alpha renamed", "slug": "alpha"}))
-	if w.Code != http.StatusOK {
-		t.Errorf("rename keeping the slug: got %d, want 200 (body: %s)", w.Code, w.Body.String())
-	}
+	fake.snapshot(func(f *fakeLogger) {
+		want := data.RPCUpdateProjectArgs{ID: projAlpha, Name: "Alpha renamed"}
+		if len(f.updatedProjects) != 1 || f.updatedProjects[0] != want {
+			t.Errorf("UpdateProject forwarded %+v, want [%+v]", f.updatedProjects, want)
+		}
+	})
 }
 
 func TestUpdateRetention_RejectsInvalidDays(t *testing.T) {

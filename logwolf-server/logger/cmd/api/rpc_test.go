@@ -2,10 +2,13 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"logwolf-toolbox/data"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // TestCheckMembership_InvalidProjectID verifies that CheckMembership returns
@@ -61,15 +64,16 @@ func TestLogInfo_UnknownProject(t *testing.T) {
 // TestRequestPurge_Queues checks that a deleted project reaches the cleanup
 // loop's queue.
 func TestRequestPurge_Queues(t *testing.T) {
-	purges := make(chan string, 1)
+	purges := make(chan primitive.ObjectID, 1)
 	srv := &RPCServer{purges: purges}
 
-	srv.requestPurge("doomed")
+	doomed := primitive.NewObjectID()
+	srv.requestPurge(doomed)
 
 	select {
 	case got := <-purges:
-		if got != "doomed" {
-			t.Errorf("queued %q, want %q", got, "doomed")
+		if got != doomed {
+			t.Errorf("queued %s, want %s", got.Hex(), doomed.Hex())
 		}
 	default:
 		t.Fatal("requestPurge queued nothing")
@@ -80,8 +84,9 @@ func TestRequestPurge_Queues(t *testing.T) {
 // purge queue: a full queue drops the request (the orphan sweep deletes those
 // logs later), and a server with no queue at all asks no one.
 func TestRequestPurge_NeverBlocks(t *testing.T) {
-	full := make(chan string, 1)
-	full <- "earlier"
+	earlier := primitive.NewObjectID()
+	full := make(chan primitive.ObjectID, 1)
+	full <- earlier
 
 	for name, srv := range map[string]*RPCServer{
 		"full queue": {purges: full},
@@ -89,7 +94,7 @@ func TestRequestPurge_NeverBlocks(t *testing.T) {
 	} {
 		done := make(chan struct{})
 		go func() {
-			srv.requestPurge("doomed")
+			srv.requestPurge(primitive.NewObjectID())
 			close(done)
 		}()
 
@@ -100,8 +105,8 @@ func TestRequestPurge_NeverBlocks(t *testing.T) {
 		}
 	}
 
-	if got := <-full; got != "earlier" {
-		t.Errorf("full queue: now holds %q, want the earlier %q", got, "earlier")
+	if got := <-full; got != earlier {
+		t.Errorf("full queue: now holds %s, want the earlier %s", got.Hex(), earlier.Hex())
 	}
 }
 
@@ -124,7 +129,7 @@ func TestCreateAPIKey_UnknownScope(t *testing.T) {
 	srv := &RPCServer{}
 
 	var reply data.RPCCreateAPIKeyReply
-	err := srv.CreateAPIKey(&data.RPCCreateAPIKeyArgs{ProjectID: "p", Scopes: []string{"admin"}}, &reply)
+	err := srv.CreateAPIKey(&data.RPCCreateAPIKeyArgs{ProjectID: primitive.NewObjectID().Hex(), Scopes: []string{"admin"}}, &reply)
 	if !errors.Is(err, data.ErrInvalidScope) {
 		t.Errorf("CreateAPIKey with an unknown scope: want ErrInvalidScope, got %v", err)
 	}
@@ -141,8 +146,74 @@ func TestAPIKeyMethods_MalformedID(t *testing.T) {
 		t.Error("GetAPIKey accepted a malformed id")
 	}
 	var reply string
-	if err := srv.RevokeAPIKey(&data.RPCRevokeAPIKeyArgs{ProjectID: "p", ID: "not-an-id"}, &reply); err == nil {
+	if err := srv.RevokeAPIKey(&data.RPCRevokeAPIKeyArgs{ProjectID: primitive.NewObjectID().Hex(), ID: "not-an-id"}, &reply); err == nil {
 		t.Error("RevokeAPIKey accepted a malformed id")
+	}
+}
+
+// TestProjectScopedMethods_MalformedProjectID checks that every method taking a
+// project id refuses one that is not an ObjectID before touching the database,
+// and says so in the words the broker answers with 404.
+func TestProjectScopedMethods_MalformedProjectID(t *testing.T) {
+	srv := &RPCServer{}
+	const bad = "not-a-project"
+
+	for name, call := range map[string]func() error{
+		"GetLogs": func() error {
+			var reply []data.LogEntry
+			return srv.GetLogs(data.QueryParams{ProjectID: bad}, &reply)
+		},
+		"GetLog": func() error {
+			var reply data.LogEntry
+			return srv.GetLog(data.RPCLogEntryFilter{ID: primitive.NewObjectID().Hex(), ProjectID: bad}, &reply)
+		},
+		"DeleteLog": func() error {
+			var reply int64
+			return srv.DeleteLog(data.RPCLogEntryFilter{ID: primitive.NewObjectID().Hex(), ProjectID: bad}, &reply)
+		},
+		"GetRetention": func() error {
+			var reply int
+			return srv.GetRetention(&data.RetentionArgs{ProjectID: bad}, &reply)
+		},
+		"UpdateRetention": func() error {
+			var reply string
+			return srv.UpdateRetention(&data.RetentionArgs{ProjectID: bad, Days: 30}, &reply)
+		},
+		"GetMetrics": func() error {
+			var reply data.Metrics
+			return srv.GetMetrics(&data.ProjectArgs{ProjectID: bad}, &reply)
+		},
+		"ListAPIKeys": func() error {
+			var reply []data.APIKey
+			return srv.ListAPIKeys(&data.ProjectArgs{ProjectID: bad}, &reply)
+		},
+		"CreateAPIKey": func() error {
+			var reply data.RPCCreateAPIKeyReply
+			return srv.CreateAPIKey(&data.RPCCreateAPIKeyArgs{ProjectID: bad}, &reply)
+		},
+		"RevokeAPIKey": func() error {
+			var reply string
+			return srv.RevokeAPIKey(&data.RPCRevokeAPIKeyArgs{ProjectID: bad, ID: primitive.NewObjectID().Hex()}, &reply)
+		},
+	} {
+		err := call()
+		if err == nil || !strings.Contains(err.Error(), "not a valid ObjectID") {
+			t.Errorf("%s: want a \"not a valid ObjectID\" error, got %v", name, err)
+		}
+	}
+}
+
+// TestCreateProject_RequiresOwner checks that no project is created without the
+// owner it is created with: one without an owner could never be reached.
+func TestCreateProject_RequiresOwner(t *testing.T) {
+	srv := &RPCServer{} // zero-value models: reaching MongoDB would panic
+
+	for _, owner := range []string{"", "   "} {
+		var reply data.Project
+		err := srv.CreateProject(&data.RPCCreateProjectArgs{Name: "App", Slug: "app", Owner: owner}, &reply)
+		if err == nil || !strings.Contains(err.Error(), "owner is required") {
+			t.Errorf("CreateProject with owner %q: want \"owner is required\", got %v", owner, err)
+		}
 	}
 }
 

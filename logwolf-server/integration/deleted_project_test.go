@@ -105,7 +105,7 @@ func TestDeletedProject_LateEventsAreDropped(t *testing.T) {
 	// still in flight behind the barrier.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if n := countDocs(t, logs, bson.M{"project_id": project.ID}); n != 0 {
+		if n := countDocs(t, logs, bson.M{"project_id": oid(t, project.ID)}); n != 0 {
 			t.Fatalf("%d log(s) persisted for the deleted project", n)
 		}
 		if time.Now().After(deadline) {
@@ -126,7 +126,7 @@ func TestDeleteOrphanedLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertProject: %v", err)
 	}
-	deleted := primitive.NewObjectID().Hex()
+	deleted := primitive.NewObjectID()
 	old := time.Now().Add(-time.Hour)
 
 	entry := func(name string, fields bson.M) bson.M {
@@ -137,9 +137,13 @@ func TestDeleteOrphanedLogs(t *testing.T) {
 		return doc
 	}
 	if _, err := logs.InsertMany(ctx, []any{
-		entry("live-log", bson.M{"project_id": live.ID.Hex()}),
+		entry("live-log", bson.M{"project_id": live.ID}),
+		// Stored the way builds before ConvertProjectIDs did: still its project's,
+		// so it is waiting to be converted, not deleted.
+		entry("live-unconverted", bson.M{"project_id": live.ID.Hex()}),
 		entry("orphan-log-1", bson.M{"project_id": deleted}),
 		entry("orphan-log-2", bson.M{"project_id": deleted}),
+		entry("orphan-unconverted", bson.M{"project_id": deleted.Hex()}),
 		entry("orphan-not-hex", bson.M{"project_id": "gone-project"}),
 		// Written a moment ago: within the grace period, left for a later pass.
 		entry("orphan-recent", bson.M{"project_id": deleted, "created_at": time.Now()}),
@@ -154,16 +158,16 @@ func TestDeleteOrphanedLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeleteOrphanedLogs: %v", err)
 	}
-	if got[deleted] != 2 || got["gone-project"] != 1 || len(got) != 2 {
-		t.Errorf("DeleteOrphanedLogs = %v, want {%s: 2, gone-project: 1}", got, deleted)
+	if got[deleted.Hex()] != 3 || got["gone-project"] != 1 || len(got) != 2 {
+		t.Errorf("DeleteOrphanedLogs = %v, want {%s: 3, gone-project: 1}", got, deleted.Hex())
 	}
 
-	for _, name := range []string{"orphan-log-1", "orphan-log-2", "orphan-not-hex"} {
+	for _, name := range []string{"orphan-log-1", "orphan-log-2", "orphan-unconverted", "orphan-not-hex"} {
 		if n := countDocs(t, logs, bson.M{"name": name}); n != 0 {
 			t.Errorf("%s: still present after the sweep", name)
 		}
 	}
-	for _, name := range []string{"live-log", "orphan-recent", "legacy-missing", "legacy-empty"} {
+	for _, name := range []string{"live-log", "live-unconverted", "orphan-recent", "legacy-missing", "legacy-empty"} {
 		if n := countDocs(t, logs, bson.M{"name": name}); n != 1 {
 			t.Errorf("%s: deleted by the sweep, should have been kept", name)
 		}

@@ -52,17 +52,21 @@ Replies never carry a key's bcrypt hash. `gob` sends every exported field whatev
 
 Each log entry stored in MongoDB contains:
 
-| Field        | Type      | Description                   |
-| ------------ | --------- | ----------------------------- |
-| `_id`        | ObjectID  | MongoDB document ID           |
-| `project_id` | string    | Owning project (hex ObjectID) |
-| `name`       | string    | Event name                    |
-| `data`       | any       | Arbitrary payload             |
-| `severity`   | string    | `INFO`, `WARNING`, or `ERROR` |
-| `tags`       | []string  | Searchable tags               |
-| `duration`   | int64     | Duration in milliseconds      |
-| `created_at` | time.Time | Timestamp (drives retention)  |
-| `updated_at` | time.Time | Last update timestamp         |
+| Field        | Type      | Description                     |
+| ------------ | --------- | ------------------------------- |
+| `_id`        | ObjectID  | MongoDB document ID             |
+| `project_id` | ObjectID  | Owning project (`projects._id`) |
+| `name`       | string    | Event name                      |
+| `data`       | any       | Arbitrary payload               |
+| `severity`   | string    | `INFO`, `WARNING`, or `ERROR`   |
+| `tags`       | []string  | Searchable tags                 |
+| `duration`   | int64     | Duration in milliseconds        |
+| `created_at` | time.Time | Timestamp (drives retention)    |
+| `updated_at` | time.Time | Last update timestamp           |
+
+`api_keys.project_id`, `settings.project_id` and `project_members.project_id` are ObjectIDs too. RPC arguments carry project ids as hex strings; each RPC method parses them (`parseProjectID`) and refuses a malformed one with a `not a valid ObjectID` error, which the broker answers with 404.
+
+`CreateProject` takes the owner's login with the project, and writes both in one transaction (`CreateProjectWithOwner`). `UpdateProject` renames only: the slug is fixed at creation.
 
 ## Retention
 
@@ -83,12 +87,16 @@ Pre-multi-tenancy builds enforced retention with a single global TTL index on `l
 
 ## Startup migration
 
-Before the RPC server accepts connections, Logger rewrites any `project_members` login that is not lowercase. Membership lookups normalize the login (GitHub logins are case-insensitive), so a row stored as `JDoe` would never match again. Where a project holds one login in several casings, the rows merge into one that keeps the highest role and the oldest join date. Each login merges in its own transaction.
+Before the RPC server accepts connections, Logger converts every `project_id` in `logs`, `api_keys` and `settings` still stored as a hex string, as builds before ObjectIDs everywhere wrote them, to an ObjectID (`ConvertProjectIDs`). It works project by project in batches of 10,000, so a run cut short keeps its progress. A string that is not hex names no project and is left alone; the orphan sweep deletes such logs. If a settings document exists under both types, the string one is stale and is dropped. Until a start converts everything, the retention cleanup does not run: it looks retention up by ObjectID, and would expire a project whose setting was not converted yet on the 90-day default.
+
+Next, if the `projects` collection still has the unique slug index of earlier builds, Logger sets the `default` flag on the project with slug `default`, which is the one those builds adopted old data into, and drops the index (`MarkDefaultProject`). From then on the Default project is found by that flag, and slugs are free for anyone.
+
+Then it rewrites any `project_members` login that is not lowercase. Membership lookups normalize the login (GitHub logins are case-insensitive), so a row stored as `JDoe` would never match again. Where a project holds one login in several casings, the rows merge into one that keeps the highest role and the oldest join date. Each login merges in its own transaction.
 
 Then it adopts any data written by a pre-multi-tenancy build:
 
 1. Count documents in `logs`, `api_keys`, and `settings` that carry no project ID. If there are none, nothing happens and nothing is logged.
-2. Otherwise, find or create a project named `Default` (slug `default`).
+2. Otherwise, find the project with the `default` flag, or create it (name `Default`, slug `default`). A partial unique index lets only one project have the flag.
 3. Stamp every orphaned document with that project's ID.
 4. Give each owner login (see below) an owner membership on the project, leaving existing memberships alone.
 5. Log a summary line with the project ID and the per-collection counts.

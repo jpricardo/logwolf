@@ -29,11 +29,21 @@ const (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
+// Project is a tenant: logs, API keys, settings and members all belong to one.
+//
+// Its Slug is a label derived from the name when the project is created, for
+// display only. Nothing looks a project up by it and it is not unique: projects
+// of different users may share one, so creating a project never tells anyone
+// that another user's project exists. The Default project that holds
+// pre-multi-tenancy data is found by its Default flag instead.
 type Project struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	Name      string             `bson:"name" json:"name"`
 	Slug      string             `bson:"slug" json:"slug"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	// Default marks the project the startup migration adopts project-less data
+	// into. At most one project has it; see EnsureProjectIndexes.
+	Default bool `bson:"default,omitempty" json:"-"`
 }
 
 type ProjectMember struct {
@@ -54,10 +64,12 @@ type UserProject struct {
 
 // RPC argument types for project and member operations.
 
-// RPCCreateProjectArgs is the RPC argument for CreateProject.
+// RPCCreateProjectArgs is the RPC argument for CreateProject. Owner is the login
+// that gets the owner membership, created with the project in one transaction.
 type RPCCreateProjectArgs struct {
-	Name string
-	Slug string
+	Name  string
+	Slug  string
+	Owner string
 }
 
 // RPCProjectIDArgs is the RPC argument for calls that take only a project ID.
@@ -65,11 +77,11 @@ type RPCProjectIDArgs struct {
 	ID string
 }
 
-// RPCUpdateProjectArgs is the RPC argument for UpdateProject.
+// RPCUpdateProjectArgs is the RPC argument for UpdateProject. Only the name
+// changes: the slug is fixed when the project is created.
 type RPCUpdateProjectArgs struct {
 	ID   string
 	Name string
-	Slug string
 }
 
 // RPCUserProjectsArgs is the RPC argument for ListUserProjects.
@@ -125,16 +137,23 @@ func NormalizeGithubLogin(login string) string {
 
 // EnsureProjectIndexes creates the required indexes for projects and project_members.
 // Safe to call on startup — CreateOne is idempotent for identical index definitions.
+//
+// Slugs used to have a unique index of their own; MarkDefaultProject retires it
+// during the startup migration, once it has done its last job.
 func (m *Models) EnsureProjectIndexes() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	// Unique over the projects that have the flag, and only those: every other
+	// project leaves it out, so this admits one Default project and any number
+	// of others.
 	projects := m.client.Database("logs").Collection("projects")
 	if _, err := projects.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys:    bson.D{{Key: "slug", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("unique_slug"),
+		Keys: bson.D{{Key: "default", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName(defaultProjectIndexName).
+			SetPartialFilterExpression(bson.M{"default": true}),
 	}); err != nil {
-		return fmt.Errorf("EnsureProjectIndexes projects.slug: %w", err)
+		return fmt.Errorf("EnsureProjectIndexes projects.default: %w", err)
 	}
 
 	members := m.client.Database("logs").Collection("project_members")
@@ -161,6 +180,53 @@ func (m *Models) InsertProject(p Project) (*Project, error) {
 	return &p, nil
 }
 
+// CreateProjectWithOwner inserts a project and an owner membership for login in
+// one transaction. Only an owner can add members, so a project that exists
+// without one is unreachable for good; here either both documents are written or
+// neither is.
+func (m *Models) CreateProjectWithOwner(p Project, login string) (*Project, error) {
+	login = NormalizeGithubLogin(login)
+	if login == "" {
+		return nil, errors.New("CreateProjectWithOwner: owner login is required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	session, err := m.client.StartSession()
+	if err != nil {
+		return nil, fmt.Errorf("CreateProjectWithOwner start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	p.ID = primitive.NewObjectID()
+	p.CreatedAt = time.Now()
+	owner := ProjectMember{
+		ID:          primitive.NewObjectID(),
+		ProjectID:   p.ID,
+		GithubLogin: login,
+		Role:        RoleOwner,
+		CreatedAt:   p.CreatedAt,
+	}
+
+	// The ids are fixed before the transaction, so a retry by WithTransaction
+	// writes the same two documents again rather than a second project.
+	db := m.client.Database("logs")
+	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
+		if _, err := db.Collection("projects").InsertOne(sc, p); err != nil {
+			return nil, fmt.Errorf("CreateProjectWithOwner project: %w", err)
+		}
+		if _, err := db.Collection("project_members").InsertOne(sc, owner); err != nil {
+			return nil, fmt.Errorf("CreateProjectWithOwner owner: %w", err)
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func (m *Models) GetProject(id primitive.ObjectID) (*Project, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -173,32 +239,13 @@ func (m *Models) GetProject(id primitive.ObjectID) (*Project, error) {
 	return &p, nil
 }
 
-// ProjectExists reports whether a project with the given hex id exists. A string
-// that is not a valid ObjectID names no project, so it answers false rather than
-// an error — callers only ever want to know whether to accept data for it.
-func (m *Models) ProjectExists(ctx context.Context, projectID string) (bool, error) {
-	id, err := primitive.ObjectIDFromHex(projectID)
-	if err != nil {
-		return false, nil
-	}
-
+// ProjectExists reports whether a project with the given id exists.
+func (m *Models) ProjectExists(ctx context.Context, id primitive.ObjectID) (bool, error) {
 	n, err := m.client.Database("logs").Collection("projects").CountDocuments(ctx, bson.M{"_id": id}, options.Count().SetLimit(1))
 	if err != nil {
 		return false, fmt.Errorf("ProjectExists: %w", err)
 	}
 	return n > 0, nil
-}
-
-func (m *Models) GetProjectBySlug(slug string) (*Project, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var p Project
-	err := m.client.Database("logs").Collection("projects").FindOne(ctx, bson.M{"slug": slug}).Decode(&p)
-	if err != nil {
-		return nil, fmt.Errorf("GetProjectBySlug: %w", err)
-	}
-	return &p, nil
 }
 
 func (m *Models) InsertProjectMember(pm ProjectMember) (*ProjectMember, error) {
@@ -232,11 +279,9 @@ func (m *Models) GetProjectMembers(projectID primitive.ObjectID) ([]ProjectMembe
 	return members, nil
 }
 
-func (m *Models) UpdateProject(id primitive.ObjectID, name, slug string) (*Project, error) {
-	if !ValidSlug(slug) {
-		return nil, fmt.Errorf("UpdateProject: invalid slug %q", slug)
-	}
-
+// RenameProject changes a project's name. Its slug stays what it was when the
+// project was created.
+func (m *Models) RenameProject(id primitive.ObjectID, name string) (*Project, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -245,16 +290,15 @@ func (m *Models) UpdateProject(id primitive.ObjectID, name, slug string) (*Proje
 		bson.M{"_id": id},
 		bson.D{{Key: "$set", Value: bson.D{
 			{Key: "name", Value: name},
-			{Key: "slug", Value: slug},
 		}}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
 	)
 	if sr.Err() != nil {
-		return nil, fmt.Errorf("UpdateProject: %w", sr.Err())
+		return nil, fmt.Errorf("RenameProject: %w", sr.Err())
 	}
 	var p Project
 	if err := sr.Decode(&p); err != nil {
-		return nil, fmt.Errorf("UpdateProject decode: %w", err)
+		return nil, fmt.Errorf("RenameProject decode: %w", err)
 	}
 	return &p, nil
 }
@@ -279,16 +323,15 @@ func (m *Models) DeleteProject(id primitive.ObjectID) error {
 	}
 	defer session.EndSession(ctx)
 
-	projectIDStr := id.Hex()
 	db := m.client.Database("logs")
 
 	// WithTransaction may run the callback more than once on a transient error;
 	// every step is a delete by filter, so a rerun is harmless.
 	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
-		if _, err := db.Collection("api_keys").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
+		if _, err := db.Collection("api_keys").DeleteMany(sc, bson.M{"project_id": id}); err != nil {
 			return nil, fmt.Errorf("DeleteProject api_keys: %w", err)
 		}
-		if _, err := db.Collection("settings").DeleteMany(sc, bson.M{"project_id": projectIDStr}); err != nil {
+		if _, err := db.Collection("settings").DeleteMany(sc, bson.M{"project_id": id}); err != nil {
 			return nil, fmt.Errorf("DeleteProject settings: %w", err)
 		}
 		if _, err := db.Collection("project_members").DeleteMany(sc, bson.M{"project_id": id}); err != nil {

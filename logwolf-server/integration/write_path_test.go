@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // TestWritePathRoundTrip drives an event through the whole write path —
@@ -57,15 +58,17 @@ func TestWritePathRoundTrip(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 	}
 
+	// Decoding into an ObjectID fails for any other BSON type, so this also
+	// checks project_id is stored as one, like the project's own _id.
 	var doc struct {
-		ProjectID string `bson:"project_id"`
+		ProjectID primitive.ObjectID `bson:"project_id"`
 	}
 	err = collection.FindOne(ctx, bson.M{"name": "integration-test-event"}).Decode(&doc)
 	if err != nil {
-		t.Fatalf("log entry never appeared in MongoDB: %v", err)
+		t.Fatalf("log entry never appeared in MongoDB, or its project_id is not an ObjectID: %v", err)
 	}
-	if doc.ProjectID != projectID {
-		t.Errorf("project_id = %q, want %q", doc.ProjectID, projectID)
+	if doc.ProjectID.Hex() != projectID {
+		t.Errorf("project_id = %s, want %s", doc.ProjectID.Hex(), projectID)
 	}
 }
 
@@ -107,14 +110,14 @@ func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
 
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		count, err := coll.CountDocuments(ctx, bson.M{"project_id": batchProject})
+		count, err := coll.CountDocuments(ctx, bson.M{"project_id": oid(t, batchProject)})
 		if err == nil && count == int64(len(batch)) {
 			break
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
 
-	count, err := coll.CountDocuments(ctx, bson.M{"project_id": batchProject})
+	count, err := coll.CountDocuments(ctx, bson.M{"project_id": oid(t, batchProject)})
 	if err != nil {
 		t.Fatalf("count batch entries: %v", err)
 	}
@@ -123,7 +126,7 @@ func TestWritePathBatch_ScopedToKeysProject(t *testing.T) {
 	}
 
 	// The forged project_id must not have created anything.
-	stray, err := coll.CountDocuments(ctx, bson.M{"project_id": victimProject})
+	stray, err := coll.CountDocuments(ctx, bson.M{"project_id": oid(t, victimProject)})
 	if err != nil {
 		t.Fatalf("count forged entries: %v", err)
 	}

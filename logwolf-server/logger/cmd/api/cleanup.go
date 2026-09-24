@@ -6,6 +6,8 @@ import (
 	"logwolf-toolbox/data"
 	"os"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func cleanupInterval() time.Duration {
@@ -52,13 +54,13 @@ const purgeQueueSize = 64
 // project is gone while its logs, however many, are deleted in the background.
 // A purge that fails or is cut short by shutdown is not retried: the logs belong
 // to no project now, and the orphan sweep in the next pass deletes them.
-func (app *Config) purgeProjectLogs(ctx context.Context, projectID string) {
+func (app *Config) purgeProjectLogs(ctx context.Context, projectID primitive.ObjectID) {
 	deleted, err := app.Models.PurgeProjectLogs(ctx, projectID)
 	if err != nil {
-		log.Printf("Retention cleanup: deleted project %s: error purging logs after %d: %v", projectID, deleted, err)
+		log.Printf("Retention cleanup: deleted project %s: error purging logs after %d: %v", projectID.Hex(), deleted, err)
 		return
 	}
-	log.Printf("Retention cleanup: deleted project %s: purged %d logs", projectID, deleted)
+	log.Printf("Retention cleanup: deleted project %s: purged %d logs", projectID.Hex(), deleted)
 }
 
 func (app *Config) cleanupPass(ctx context.Context) {
@@ -99,8 +101,8 @@ const (
 // retentionStore is what the retention cleanup needs from the database.
 type retentionStore interface {
 	GetAllProjects(ctx context.Context) ([]data.Project, error)
-	GetRetentionDays(ctx context.Context, projectID string) (int, error)
-	DeleteExpiredLogs(ctx context.Context, projectID string, before time.Time) (int64, error)
+	GetRetentionDays(ctx context.Context, projectID primitive.ObjectID) (int, error)
+	DeleteExpiredLogs(ctx context.Context, projectID primitive.ObjectID, before time.Time) (int64, error)
 }
 
 // modelsRetentionStore is the retentionStore of a running Logger. data.Models
@@ -110,7 +112,7 @@ type modelsRetentionStore struct {
 	*data.Models
 }
 
-func (s modelsRetentionStore) GetRetentionDays(ctx context.Context, projectID string) (int, error) {
+func (s modelsRetentionStore) GetRetentionDays(ctx context.Context, projectID primitive.ObjectID) (int, error) {
 	return s.Settings.GetRetentionDays(ctx, projectID)
 }
 
@@ -133,17 +135,17 @@ func expireLogs(ctx context.Context, store retentionStore, projectTimeout time.D
 		if ctx.Err() != nil {
 			return
 		}
-		expireProjectLogs(ctx, store, p.ID.Hex(), projectTimeout)
+		expireProjectLogs(ctx, store, p.ID, projectTimeout)
 	}
 }
 
-func expireProjectLogs(ctx context.Context, store retentionStore, projectID string, timeout time.Duration) {
+func expireProjectLogs(ctx context.Context, store retentionStore, projectID primitive.ObjectID, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	days, err := store.GetRetentionDays(ctx, projectID)
 	if err != nil {
-		log.Printf("Retention cleanup: project %s: error reading retention: %v", projectID, err)
+		log.Printf("Retention cleanup: project %s: error reading retention: %v", projectID.Hex(), err)
 		return
 	}
 
@@ -154,11 +156,11 @@ func expireProjectLogs(ctx context.Context, store retentionStore, projectID stri
 	threshold := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
 	deleted, err := store.DeleteExpiredLogs(ctx, projectID, threshold)
 	if err != nil {
-		log.Printf("Retention cleanup: project %s: error after deleting %d expired logs, the rest are left for the next pass: %v", projectID, deleted, err)
+		log.Printf("Retention cleanup: project %s: error after deleting %d expired logs, the rest are left for the next pass: %v", projectID.Hex(), deleted, err)
 		return
 	}
 
 	if deleted > 0 {
-		log.Printf("Retention cleanup: project %s: deleted %d expired logs (retention=%dd)", projectID, deleted, days)
+		log.Printf("Retention cleanup: project %s: deleted %d expired logs (retention=%dd)", projectID.Hex(), deleted, days)
 	}
 }

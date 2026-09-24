@@ -48,9 +48,8 @@ type fakeLogger struct {
 	revokedKeys     []data.RPCRevokeAPIKeyArgs
 
 	// Failure injection.
-	duplicateSlug  string // CreateProject returns an E11000 error for this slug
-	failAddMember  bool   // AddMember always fails (exercises the create-project rollback)
-	lastOwnerLogin string // RemoveMember and UpdateMemberRole refuse to remove or demote this login
+	failCreateProject bool   // CreateProject fails, as its transaction would, and creates nothing
+	lastOwnerLogin    string // RemoveMember and UpdateMemberRole refuse to remove or demote this login
 
 	// openConns counts the broker's connections the fake has not yet seen
 	// closed. It goes back to zero only if every handler closed its client.
@@ -110,13 +109,15 @@ func (f *fakeLogger) CreateProject(args *data.RPCCreateProjectArgs, reply *data.
 	defer f.mu.Unlock()
 
 	f.createdProjects = append(f.createdProjects, *args)
-	if args.Slug == f.duplicateSlug {
-		return errDuplicateKey("slug_1")
+	if f.failCreateProject {
+		return fmt.Errorf("CreateProjectWithOwner owner: injected failure")
 	}
 
+	// Like the logger, the project and its owner come into being together.
 	id := nextProjectID()
 	p := data.Project{ID: mustObjectID(id), Name: args.Name, Slug: args.Slug}
 	f.projects[id] = p
+	f.members[id] = []data.ProjectMember{{ProjectID: p.ID, GithubLogin: args.Owner, Role: data.RoleOwner}}
 	*reply = p
 	return nil
 }
@@ -133,12 +134,7 @@ func (f *fakeLogger) UpdateProject(args *data.RPCUpdateProjectArgs, reply *data.
 	if !ok {
 		return errNoDocuments
 	}
-	for id, other := range f.projects {
-		if id != args.ID && other.Slug == args.Slug {
-			return errDuplicateKey("slug_1")
-		}
-	}
-	p.Name, p.Slug = args.Name, args.Slug
+	p.Name = args.Name
 	f.projects[args.ID] = p
 	*reply = p
 	return nil
@@ -212,9 +208,6 @@ func (f *fakeLogger) AddMember(args *data.RPCAddMemberArgs, reply *string) error
 	defer f.mu.Unlock()
 
 	f.addedMembers = append(f.addedMembers, *args)
-	if f.failAddMember {
-		return fmt.Errorf("AddMember: injected failure")
-	}
 	if err := checkObjectID("AddMember", args.ProjectID); err != nil {
 		return err
 	}
@@ -369,7 +362,7 @@ func (f *fakeLogger) ListAPIKeys(args *data.ProjectArgs, reply *[]data.APIKey) e
 
 	var out []data.APIKey
 	for _, k := range f.keys {
-		if k.ProjectID == args.ProjectID {
+		if k.ProjectID.Hex() == args.ProjectID {
 			out = append(out, k)
 		}
 	}
@@ -410,7 +403,7 @@ func (f *fakeLogger) RevokeAPIKey(args *data.RPCRevokeAPIKeyArgs, reply *string)
 
 	f.revokedKeys = append(f.revokedKeys, *args)
 	k, ok := f.keys[args.ID]
-	if !ok || k.ProjectID != args.ProjectID {
+	if !ok || k.ProjectID.Hex() != args.ProjectID {
 		return data.ErrKeyNotFound
 	}
 	k.Active = false
@@ -431,7 +424,7 @@ func (f *fakeLogger) storeKey(projectID string, scopes []string) (string, data.A
 	plaintext := fmt.Sprintf("lw_fakelogger%033d", n)
 	k := data.APIKey{
 		ID:        mustObjectID(id),
-		ProjectID: projectID,
+		ProjectID: mustObjectID(projectID),
 		Prefix:    plaintext[:10],
 		Scopes:    scopes,
 		Active:    true,
@@ -468,7 +461,7 @@ func (f *fakeLogger) addLog(projectID, logID, name string) {
 	defer f.mu.Unlock()
 	f.logs[projectID] = append(f.logs[projectID], data.LogEntry{
 		ID:        logID,
-		ProjectID: projectID,
+		ProjectID: mustObjectID(projectID),
 		Name:      name,
 		Data:      "{}",
 		Severity:  "info",
