@@ -101,7 +101,7 @@ called. A missing `days` is a 400 as well, rather than 0 (keep forever).
 
 Two middleware layers:
 
-- **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token through the logger (`RPCServer.ValidateAPIKey`); results are cached with TTL + rate limiting so the hot path does not make an RPC call per request.
+- **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token through the logger (`RPCServer.ValidateAPIKey`); results are cached with TTL + rate limiting so the hot path does not make an RPC call per request. The key cache and the per-IP failure counters are each capped at 10,000 entries. A background sweep deletes expired entries every minute, so a flood of bogus keys from many addresses cannot grow them without bound.
   - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too, so like revocation, nothing about a key changes for up to 60 seconds.
 - **`requireInternalSecret`** — validates the `X-Internal-Secret` header; used exclusively by the dashboard backend.
 

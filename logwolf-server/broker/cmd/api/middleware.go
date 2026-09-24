@@ -55,7 +55,28 @@ var (
 	keyCache   = make(map[string]cacheEntry)
 	keyCacheMu sync.RWMutex
 	cacheTTL   = 60 * time.Second
+
+	// maxKeyCacheEntries caps keyCache. Invalid keys are cached too, so without
+	// a cap a flood of made-up keys from many addresses would grow it without
+	// bound between two sweeps.
+	maxKeyCacheEntries = 10_000
 )
+
+// cacheKeyResult stores entry under cacheKey, first evicting an arbitrary
+// entry if the cache is full. Evicting a live entry costs one extra RPC the
+// next time its key is seen, nothing more.
+func cacheKeyResult(cacheKey string, entry cacheEntry) {
+	keyCacheMu.Lock()
+	defer keyCacheMu.Unlock()
+
+	if _, ok := keyCache[cacheKey]; !ok && len(keyCache) >= maxKeyCacheEntries {
+		for k := range keyCache {
+			delete(keyCache, k)
+			break
+		}
+	}
+	keyCache[cacheKey] = entry
+}
 
 func hashKey(plaintext string) string {
 	sum := sha256.Sum256([]byte(plaintext))
@@ -79,6 +100,10 @@ type ipEntry struct {
 var (
 	ipLimiter   = make(map[string]*ipEntry)
 	ipLimiterMu sync.Mutex
+
+	// maxIPLimiterEntries caps ipLimiter, which gains an entry for every
+	// address that fails once, whether or not it ever comes back.
+	maxIPLimiterEntries = 10_000
 )
 
 // recordFailure increments the failure counter for addr and returns true if
@@ -90,7 +115,15 @@ func recordFailure(addr string) bool {
 	now := time.Now()
 	entry, ok := ipLimiter[addr]
 	if !ok || now.After(entry.windowEnd) {
-		// First failure in this window (or previous window expired).
+		// First failure in this window (or previous window expired). When the
+		// limiter is full, make room by forgetting an arbitrary address; the
+		// sweep keeps that rare by removing expired windows first.
+		if !ok && len(ipLimiter) >= maxIPLimiterEntries {
+			for a := range ipLimiter {
+				delete(ipLimiter, a)
+				break
+			}
+		}
 		ipLimiter[addr] = &ipEntry{failures: 1, windowEnd: now.Add(rateLimitWindow)}
 		return false
 	}
@@ -114,6 +147,50 @@ func isRateLimited(addr string) bool {
 		return false
 	}
 	return entry.failures >= maxFailures
+}
+
+// --- Sweeping ---
+// Reads ignore expired entries but never delete them, so both maps would
+// otherwise keep every key and address they have ever seen.
+
+// authCacheSweepInterval is how often sweepAuthCachesEvery clears expired
+// entries. It matches cacheTTL and rateLimitWindow, so nothing outlives its
+// expiry by more than one interval.
+const authCacheSweepInterval = time.Minute
+
+// sweepAuthCaches deletes the keyCache entries and ipLimiter windows that have
+// expired by now.
+func sweepAuthCaches(now time.Time) {
+	keyCacheMu.Lock()
+	for k, e := range keyCache {
+		if !now.Before(e.expiresAt) {
+			delete(keyCache, k)
+		}
+	}
+	keyCacheMu.Unlock()
+
+	ipLimiterMu.Lock()
+	for a, e := range ipLimiter {
+		if now.After(e.windowEnd) {
+			delete(ipLimiter, a)
+		}
+	}
+	ipLimiterMu.Unlock()
+}
+
+// sweepAuthCachesEvery runs sweepAuthCaches every interval until ctx is done.
+func sweepAuthCachesEvery(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			sweepAuthCaches(now)
+		}
+	}
 }
 
 // remoteIP extracts the IP portion of an addr:port string. Falls back to the
@@ -217,9 +294,7 @@ func (app *Config) requireAPIKeyWith(v keyValidator, next http.Handler) http.Han
 		}
 
 		// Write result to cache (keyed on hash).
-		keyCacheMu.Lock()
-		keyCache[cacheKey] = cacheEntry{valid: valid, projectID: projectID, scopes: scopes, expiresAt: time.Now().Add(cacheTTL)}
-		keyCacheMu.Unlock()
+		cacheKeyResult(cacheKey, cacheEntry{valid: valid, projectID: projectID, scopes: scopes, expiresAt: time.Now().Add(cacheTTL)})
 
 		if !valid {
 			limited := recordFailure(ip)
