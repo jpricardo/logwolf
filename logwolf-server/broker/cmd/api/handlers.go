@@ -381,14 +381,28 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 	defer client.Close()
 
 	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, payload.ProjectID, userLogin)
+	role, err := getProjectRole(client, payload.ProjectID, userLogin)
 	if err != nil {
 		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	if role == "" {
+		app.denyProjectAccess(w, client, payload.ProjectID)
 		return
+	}
+	// Any member may keep logs longer; shortening retention deletes whatever
+	// falls outside the new window on the next cleanup pass, so that is an
+	// owner's call.
+	if role != data.RoleOwner {
+		var current int
+		if err := client.Call("RPCServer.GetRetention", &data.RetentionArgs{ProjectID: payload.ProjectID}, &current); err != nil {
+			app.rpcErrorJSON(w, err, nil)
+			return
+		}
+		if data.LowersRetention(current, *payload.Days) {
+			app.errorJSON(w, fmt.Errorf("only an owner can lower retention"), http.StatusForbidden)
+			return
+		}
 	}
 
 	args := data.RetentionArgs{ProjectID: payload.ProjectID, Days: *payload.Days}

@@ -222,8 +222,9 @@ func TestProjectRoutes_MembershipEnforced(t *testing.T) {
 		{"member reads retention", http.MethodGet, "/settings/retention?project_id=" + projAlpha, "member-a", nil, http.StatusOK},
 		{"outsider writes retention", http.MethodPatch, "/settings/retention", "owner-b",
 			map[string]any{"project_id": projAlpha, "days": 30}, http.StatusForbidden},
+		// Raising it from the default 90; lowering is covered in TestUpdateRetention_OnlyOwnersLowerIt.
 		{"member writes retention", http.MethodPatch, "/settings/retention", "member-a",
-			map[string]any{"project_id": projAlpha, "days": 30}, http.StatusOK},
+			map[string]any{"project_id": projAlpha, "days": 180}, http.StatusOK},
 
 		{"outsider reads metrics", http.MethodGet, "/metrics?project_id=" + projAlpha, "owner-b", nil, http.StatusForbidden},
 		{"member reads metrics", http.MethodGet, "/metrics?project_id=" + projAlpha, "member-a", nil, http.StatusOK},
@@ -622,12 +623,60 @@ func TestCreateProject_FailureIsServerError(t *testing.T) {
 	})
 }
 
+// --- retention: members may raise it, only owners lower it ---
+
+func TestUpdateRetention_OnlyOwnersLowerIt(t *testing.T) {
+	// Each step runs against the retention the previous one left; alpha starts
+	// on the default 90 days.
+	steps := []struct {
+		name       string
+		user       string
+		days       int
+		wantStatus int
+		wantDays   int
+	}{
+		{"member raises 90 to 180", "member-a", 180, http.StatusOK, 180},
+		{"member lowers 180 to 30", "member-a", 30, http.StatusForbidden, 180},
+		{"member keeps 180", "member-a", 180, http.StatusOK, 180},
+		{"member raises 180 to forever", "member-a", 0, http.StatusOK, 0},
+		{"member lowers forever to 365", "member-a", 365, http.StatusForbidden, 0},
+		{"owner lowers forever to 60", "owner-a", 60, http.StatusOK, 60},
+		{"owner lowers 60 to 30", "owner-a", 30, http.StatusOK, 30},
+		{"member raises 30 to 60", "member-a", 60, http.StatusOK, 60},
+		{"outsider raises 60 to 365", "owner-b", 365, http.StatusForbidden, 60},
+	}
+
+	handler, fake := newInternalTestServer(t)
+	for _, step := range steps {
+		w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", step.user,
+			map[string]any{"project_id": projAlpha, "days": step.days}))
+		if w.Code != step.wantStatus {
+			t.Fatalf("%s: got %d, want %d (body: %s)", step.name, w.Code, step.wantStatus, w.Body.String())
+		}
+		fake.snapshot(func(f *fakeLogger) {
+			if got, ok := f.retention[projAlpha]; !ok || got != step.wantDays {
+				t.Fatalf("%s: retention is %d (set: %v), want %d", step.name, got, ok, step.wantDays)
+			}
+		})
+	}
+}
+
+func TestUpdateRetention_UnknownProjectIsNotFound(t *testing.T) {
+	handler, _ := newInternalTestServer(t)
+
+	w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "member-a",
+		map[string]any{"project_id": projMissing, "days": 30}))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404 (body: %s)", w.Code, w.Body.String())
+	}
+}
+
 // --- retention and metrics carry the project through ---
 
 func TestRetentionAndMetrics_ForwardTheProjectID(t *testing.T) {
 	handler, fake := newInternalTestServer(t)
 
-	if w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "member-a",
+	if w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "owner-a",
 		map[string]any{"project_id": projAlpha, "days": 30})); w.Code != http.StatusOK {
 		t.Fatalf("update retention: got %d (body: %s)", w.Code, w.Body.String())
 	}

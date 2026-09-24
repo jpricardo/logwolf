@@ -18,6 +18,17 @@ var ValidRetentionDays = map[int]bool{
 	30: true, 60: true, 90: true, 180: true, 365: true, 0: true, // 0 = forever
 }
 
+// LowersRetention reports whether moving a project from `from` days of
+// retention to `to` shortens it. Lowering it is a bulk delete, since the next
+// cleanup pass drops everything older than the new window, so only owners
+// may. 0 is forever, the longest of all.
+func LowersRetention(from, to int) bool {
+	if to == 0 {
+		return false
+	}
+	return from == 0 || to < from
+}
+
 type Settings struct {
 	client *mongo.Client
 }

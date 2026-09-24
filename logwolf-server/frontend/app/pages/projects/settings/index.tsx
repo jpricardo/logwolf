@@ -5,6 +5,7 @@ import { eventContext } from '~/context';
 import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
+import { lowersRetention } from '~/lib/retention';
 import { commitSession, getSession } from '~/lib/session.server';
 
 import type { Route } from './+types';
@@ -58,9 +59,10 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 	const intent = fd.get('intent')?.toString() ?? '';
 	event?.set('intent', intent);
 
-	// Retention is the one setting any member may change; the broker enforces
-	// the same split, but repeating it here turns a bare "forbidden" from a
-	// stale tab into a message the page can show next to the control.
+	// Retention is the one setting any member may change, and only upwards; the
+	// broker enforces the same split, but repeating it here turns a bare
+	// "forbidden" from a stale tab into a message the page can show next to the
+	// control.
 	if (intent !== 'retention' && project.role !== 'owner') {
 		return { error: 'Only an owner can change this.' };
 	}
@@ -77,6 +79,11 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 
 		if (intent === 'retention') {
 			const days = Number(fd.get('days'));
+			if (project.role !== 'owner') {
+				const current = await api.getRetention(project.id);
+				if (lowersRetention(current.days, days)) return { error: 'Only an owner can lower retention.' };
+			}
+
 			const res = await api.updateRetention(project.id, days);
 			event?.set('actionData', res);
 			return { success: 'Retention updated.' };
@@ -138,7 +145,7 @@ export default function ProjectSettings({ loaderData }: Route.ComponentProps) {
 		<Page title={`${project.name} settings`}>
 			<div className='flex flex-col gap-8'>
 				<GeneralSection project={project} canEdit={isOwner} />
-				<RetentionSection days={days} />
+				<RetentionSection days={days} canLower={isOwner} />
 				<MembersSection members={members} currentUser={currentUser} canManage={isOwner} />
 				{isOwner && <DangerZone project={project} />}
 			</div>
