@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"logwolf-toolbox/data"
@@ -10,10 +9,6 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
-
-// errUnknownProject is what LogInfo answers for an event whose project does not
-// exist — usually one that was deleted while the event sat in RabbitMQ.
-var errUnknownProject = errors.New("project does not exist")
 
 type RPCServer struct {
 	models   data.Models
@@ -61,7 +56,7 @@ func (r *RPCServer) LogInfo(p data.RPCLogPayload, resp *string) error {
 	}
 	if !exists {
 		log.Printf("Dropping event %q: project %q does not exist", p.Name, p.ProjectID)
-		return fmt.Errorf("LogInfo: %w: %q", errUnknownProject, p.ProjectID)
+		return fmt.Errorf("LogInfo: %w: %q", data.ErrUnknownProject, p.ProjectID)
 	}
 	// projectExists answers true only for a valid ObjectID.
 	projectID, _ := primitive.ObjectIDFromHex(p.ProjectID)

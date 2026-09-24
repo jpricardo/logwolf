@@ -22,6 +22,12 @@ var ErrLastOwner = errors.New("cannot remove the last owner of a project")
 // been deleted.
 var ErrProjectExists = errors.New("project still exists")
 
+// ErrUnknownProject is what the logger's LogInfo answers for an event whose
+// project does not exist, usually one deleted while the event sat in RabbitMQ.
+// The listener reads it back out of the RPC error and drops the event rather
+// than retrying it.
+var ErrUnknownProject = errors.New("project does not exist")
+
 const (
 	RoleOwner  = "owner"
 	RoleMember = "member"

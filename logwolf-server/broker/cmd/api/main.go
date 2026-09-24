@@ -6,6 +6,7 @@ import (
 	"log"
 	"logwolf-toolbox/rabbitmq"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,9 +21,18 @@ const (
 
 type Config struct {
 	Rabbit *amqp.Connection
+
+	// TrustedProxies are the peers whose X-Forwarded-For is believed when
+	// working out a client's address (see clientIP). Empty trusts no one.
+	TrustedProxies []netip.Prefix
 }
 
 func main() {
+	trusted, err := trustedProxiesFromEnv()
+	if err != nil {
+		log.Panic(err)
+	}
+
 	// RabbitMQ
 	conn, err := rabbitmq.ConnectToRabbitMQ(rabbitConnectionString())
 	if err != nil {
@@ -31,7 +41,8 @@ func main() {
 	defer conn.Close()
 
 	app := Config{
-		Rabbit: conn,
+		Rabbit:         conn,
+		TrustedProxies: trusted,
 	}
 
 	srv := &http.Server{

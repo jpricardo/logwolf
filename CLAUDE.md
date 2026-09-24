@@ -86,7 +86,7 @@ docker compose up
 
 **API authentication:**
 
-- SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting (in broker middleware)
+- SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting per client IP (in broker middleware; the IP comes from `X-Forwarded-For` only when the peer is in `TRUSTED_PROXIES`)
 - API keys carry scopes: `ingest` (`POST /logs`, `/logs/batch`), `read` (`GET /logs`), `delete` (`DELETE /logs`). `requireScope` answers 403 without the route's scope. New keys get `ingest` alone unless the creator picks more, because keys ship in browser bundles. Keys stored before scopes existed have none and are read back with all three (`Legacy`), so they keep working
 - Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations. Sign-in is deny-by-default: a login must be in `LOGWOLF_ALLOWED_GITHUB_USERS` or belong to an org in `LOGWOLF_ALLOWED_GITHUB_ORGS`; with both empty nobody gets in (`app/lib/allowlist.server.ts`)
 - GitHub logins are case-insensitive: memberships store them lowercase and every lookup normalizes with `data.NormalizeGithubLogin` (the broker does it once, in `requireUserLogin`). The session keeps GitHub's casing for display
@@ -114,7 +114,7 @@ Entry point: `cmd/api/main.go`. Key files: `routes.go`, `handlers.go`, `middlewa
 
 ### Listener (`logwolf-server/listener`)
 
-Entry point: `cmd/api/main.go`. No external dependencies beyond toolbox. Pure consumer — no HTTP server.
+Entry point: `cmd/api/main.go`. No external dependencies beyond toolbox. Pure consumer — no HTTP server. The consumer loop lives in `toolbox/event`: it keeps one RPC connection to logger, acknowledges a message only once the event is stored or dropped for good, and retries an unreachable logger with back-off, so a logger outage delays events instead of losing them. Delivery is at least once.
 
 ### Logger (`logwolf-server/logger`)
 
@@ -181,6 +181,7 @@ Per-service env vars:
 | `MONGO_URL`                      | logger           | `mongodb://mongo:27017`       | MongoDB connection                                                     |
 | `RABBITMQ_URL`                   | broker, listener | `amqp://guest:guest@rabbitmq` | RabbitMQ connection                                                    |
 | `BROKER_PORT`                    | broker           | `80`                          | HTTP listen port                                                       |
+| `TRUSTED_PROXIES`                | broker           | private ranges (compose)      | Peers whose `X-Forwarded-For` names the client for rate limiting       |
 | `LOGGER_RPC_PORT`                | logger           | `5001`                        | RPC listen port                                                        |
 | `LOGGER_HTTP_PORT`               | logger           | `80`                          | HTTP health check port                                                 |
 | `CLEANUP_INTERVAL`               | logger           | `1h`                          | Per-project retention cleanup frequency                                |

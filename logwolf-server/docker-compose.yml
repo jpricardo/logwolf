@@ -32,6 +32,11 @@ services:
       replicas: 1
     environment:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      # Peers whose X-Forwarded-For names the real client, so the failed-auth
+      # rate limiter counts per client and not per Caddy. The broker publishes
+      # no port, so only containers reach it; Caddy's address is assigned by
+      # Docker, hence the private ranges.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
     networks:
       - public
       - internal

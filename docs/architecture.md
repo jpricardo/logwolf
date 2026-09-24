@@ -42,7 +42,7 @@ Logger ────────────────────────�
 
 **RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`). If the Listener restarts, in-flight messages are not lost.
 
-**Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping.
+**Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping. A message is acknowledged only once the Logger has stored it; while the Logger is unreachable the Listener retries with back-off and the queue holds the rest, so an outage delays events rather than losing them.
 
 **Logger** is the only service with direct access to MongoDB. It runs a Go RPC server on port `5001` and handles all reads and writes. The Logger also manages the retention TTL index and runs metric aggregations via a MongoDB `$facet` pipeline.
 
@@ -82,7 +82,7 @@ Every read hits MongoDB directly. There is no read cache.
 
 Logwolf uses two separate authentication mechanisms for two different surfaces.
 
-**API keys** protect the SDK ingestion endpoints (`POST /api/logs`, `GET /api/logs`, `DELETE /api/logs`). Keys use a `lw_` prefix, are stored bcrypt-hashed in MongoDB, and are validated in `requireAPIKey` middleware on the Broker. Validation looks keys up by their stored 10-character prefix, so it runs one bcrypt compare, not one per key. A 60-second in-memory cache avoids a database hit on every request. Revoking a key, or deleting its project, evicts it from the cache at once, so it stops working immediately. With more than one Broker replica, only the one that handled the revoke evicts it; the others keep it until the entry expires. Failed attempts are rate-limited per IP: 10 failures within 60 seconds triggers a `429`.
+**API keys** protect the SDK ingestion endpoints (`POST /api/logs`, `GET /api/logs`, `DELETE /api/logs`). Keys use a `lw_` prefix, are stored bcrypt-hashed in MongoDB, and are validated in `requireAPIKey` middleware on the Broker. Validation looks keys up by their stored 10-character prefix, so it runs one bcrypt compare, not one per key. A 60-second in-memory cache avoids a database hit on every request. Revoking a key, or deleting its project, evicts it from the cache at once, so it stops working immediately. With more than one Broker replica, only the one that handled the revoke evicts it; the others keep it until the entry expires. Failed attempts are rate-limited per client IP: 10 failures within 60 seconds triggers a `429`. Behind Caddy, the client IP is read from `X-Forwarded-For`, believed only from the peers listed in `TRUSTED_PROXIES`. 
 
 **GitHub OAuth** protects the dashboard. The Frontend handles the OAuth callback, validates the user against a configured allow-list (`LOGWOLF_ALLOWED_GITHUB_USERS` or `LOGWOLF_ALLOWED_GITHUB_ORGS`), and sets a signed HTTP-only session cookie. Dashboard routes are protected at the layout level via `requireAuth`.
 
