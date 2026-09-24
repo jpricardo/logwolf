@@ -15,7 +15,8 @@ cmd/api/
 ├── migrate.go  # Startup migration of pre-multi-tenancy data into the Default project
 ├── cleanup.go  # Background per-project retention cleanup loop, plus the sweep of deleted projects' logs
 ├── projects.go # Short-lived cache of project ids known to exist, used by LogInfo
-├── routes.go   # HTTP route handlers (health check only)
+├── startup.go  # Startup passes (indexes + migration), background retries, the state /health reports
+├── routes.go   # HTTP route handlers (/ping, /health)
 └── rpc.go      # RPCServer type and all RPC method implementations
 ```
 
@@ -44,9 +45,12 @@ Replies never carry a key's bcrypt hash. `gob` sends every exported field whatev
 
 ## HTTP interface
 
-| Method | Path    | Description                   |
-| ------ | ------- | ----------------------------- |
-| `GET`  | `/ping` | Health check — returns 200 OK |
+| Method | Path      | Description                                                                                          |
+| ------ | --------- | ---------------------------------------------------------------------------------------------------- |
+| `GET`  | `/ping`   | Liveness — returns 200 OK while the process is up                                                    |
+| `GET`  | `/health` | Startup state (`data.LoggerStatus`): 200 once every startup task succeeded, 503 while it is degraded |
+
+The same status is available over RPC as `RPCServer.Status`, which the broker's `/health` asks for.
 
 ## Data model
 
@@ -87,7 +91,7 @@ Pre-multi-tenancy builds enforced retention with a single global TTL index on `l
 
 ## Startup migration
 
-Before the RPC server accepts connections, Logger converts every `project_id` in `logs`, `api_keys` and `settings` still stored as a hex string, as builds before ObjectIDs everywhere wrote them, to an ObjectID (`ConvertProjectIDs`). It works project by project in batches of 10,000, so a run cut short keeps its progress. A string that is not hex names no project and is left alone; the orphan sweep deletes such logs. If a settings document exists under both types, the string one is stale and is dropped. Until a start converts everything, the retention cleanup does not run: it looks retention up by ObjectID, and would expire a project whose setting was not converted yet on the 90-day default.
+Before the RPC server accepts connections, Logger converts every `project_id` in `logs`, `api_keys` and `settings` still stored as a hex string, as builds before ObjectIDs everywhere wrote them, to an ObjectID (`ConvertProjectIDs`). It works project by project in batches of 10,000, so a run cut short keeps its progress. A string that is not hex names no project and is left alone; the orphan sweep deletes such logs. If a settings document exists under both types, the string one is stale and is dropped. Until a startup pass converts everything, the retention cleanup does not run: it looks retention up by ObjectID, and would expire a project whose setting was not converted yet on the 90-day default.
 
 Next, if the `projects` collection still has the unique slug index of earlier builds, Logger sets the `default` flag on the project with slug `default`, which is the one those builds adopted old data into, and drops the index (`MarkDefaultProject`). From then on the Default project is found by that flag, and slugs are free for anyone.
 
@@ -105,7 +109,13 @@ Then, on every start and whatever the orphan count, Logger checks that the `Defa
 
 The owner logins are `LOGWOLF_ALLOWED_GITHUB_USERS` plus `LOGWOLF_DEFAULT_PROJECT_OWNERS`.
 
-The migration is idempotent — once no orphaned documents remain and `Default` has an owner it is a no-op, so it runs safely on every start. A run that fails partway leaves the rest for the next start and does not stop the service from booting; the failure is logged as `Migration: FAILED`. That includes the owner step: if it fails after the data has moved, the next start finishes it.
+The migration is idempotent — once no orphaned documents remain and `Default` has an owner it is a no-op, so it runs safely on every start. A run that fails partway does not stop the service from booting; the failure is logged as `Migration: FAILED`.
+
+### Failed startup passes
+
+A startup pass is the indexes (`ensureIndexes`) followed by the migration; see `startup.go`. The first pass runs before the RPC server accepts connections. If any step fails, including an index, several of which are unique constraints, Logger still serves, but degraded. It retries the whole pass in the background, 30s after the failure and then doubling up to every 10 minutes, until one succeeds and it logs `Startup: pass N succeeded; no longer degraded`. Every step is idempotent, so a retry picks up where the last one stopped; that includes the owner step, if it failed after the data had moved. The retention cleanup starts as soon as a pass has converted every `project_id`, even if another step still fails.
+
+While degraded, `GET /health` answers 503 with the last error, and so does the broker's public `/api/health`, which reports the logger as `degraded`.
 
 During an upgrade, a Broker that validated an API key just before the migration caches that key's project (still empty at the time) for up to 60 seconds, so reads with it can come back empty until the entry expires.
 

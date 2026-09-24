@@ -149,6 +149,8 @@ A healthy response looks like:
 }
 ```
 
+Anything else answers `503` with `"status": "degraded"`. A service is `down` if it cannot be reached, and the logger is `degraded` while its startup tasks (indexes and the data migration) are failing: it keeps serving and retries them in the background, and its `error` says what failed. The logger logs the same error as `Startup: pass N FAILED`.
+
 Use this endpoint with an uptime monitor (UptimeRobot, Betterstack, etc.) to get alerted if the stack goes down.
 
 ## Network security

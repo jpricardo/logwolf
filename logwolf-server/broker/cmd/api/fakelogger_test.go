@@ -48,8 +48,9 @@ type fakeLogger struct {
 	revokedKeys     []data.RPCRevokeAPIKeyArgs
 
 	// Failure injection.
-	failCreateProject bool   // CreateProject fails, as its transaction would, and creates nothing
-	lastOwnerLogin    string // RemoveMember and UpdateMemberRole refuse to remove or demote this login
+	failCreateProject bool               // CreateProject fails, as its transaction would, and creates nothing
+	lastOwnerLogin    string             // RemoveMember and UpdateMemberRole refuse to remove or demote this login
+	status            *data.LoggerStatus // what Status answers; nil is ready
 
 	// openConns counts the broker's connections the fake has not yet seen
 	// closed. It goes back to zero only if every handler closed its client.
@@ -137,6 +138,18 @@ func (f *fakeLogger) UpdateProject(args *data.RPCUpdateProjectArgs, reply *data.
 	p.Name = args.Name
 	f.projects[args.ID] = p
 	*reply = p
+	return nil
+}
+
+func (f *fakeLogger) Status(_ string, reply *data.LoggerStatus) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.status == nil {
+		*reply = data.LoggerStatus{Ready: true, RetentionCleanup: true}
+		return nil
+	}
+	*reply = *f.status
 	return nil
 }
 

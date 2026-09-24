@@ -106,9 +106,12 @@ called. A missing `days` is a 400 as well, rather than 0 (keep forever).
 
 ### Health
 
-| Method | Path    | Description            |
-| ------ | ------- | ---------------------- |
-| `GET`  | `/ping` | Health check (no auth) |
+| Method | Path      | Description                                                                             |
+| ------ | --------- | --------------------------------------------------------------------------------------- |
+| `GET`  | `/ping`   | Liveness (no auth)                                                                      |
+| `GET`  | `/health` | RabbitMQ and logger status (no auth); 503 unless both are `up`                          |
+
+The logger check calls `RPCServer.Status`. It is `down` if the logger cannot be reached or does not answer within 2s, and `degraded` while the logger's startup tasks are failing and being retried; the error carries the logger's last startup error.
 
 ## Authentication
 

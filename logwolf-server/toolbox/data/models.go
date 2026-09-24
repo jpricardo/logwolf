@@ -55,6 +55,21 @@ type QueryParams struct {
 	Pagination PaginationParams
 }
 
+// LoggerStatus is the reply of the logger's Status RPC and the body of its
+// /health endpoint: whether its startup tasks (indexes and the startup
+// migration) have all succeeded. Until they have, the logger serves in a
+// degraded state and retries them in the background.
+type LoggerStatus struct {
+	Ready bool `json:"ready"`
+	// RetentionCleanup is whether the retention cleanup is running. It waits for
+	// every project_id to be converted to an ObjectID.
+	RetentionCleanup bool `json:"retention_cleanup"`
+	// StartupAttempts counts the startup passes run so far.
+	StartupAttempts int `json:"startup_attempts"`
+	// StartupError is the last failed pass's error, until one succeeds.
+	StartupError string `json:"startup_error,omitempty"`
+}
+
 func New(mongo *mongo.Client) Models {
 	return Models{
 		client:   mongo,

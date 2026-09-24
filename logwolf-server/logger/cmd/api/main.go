@@ -26,6 +26,9 @@ type Config struct {
 	// purges carries the ids of just-deleted projects from the DeleteProject RPC
 	// to the cleanup loop, which deletes their logs. See requestPurge.
 	purges chan primitive.ObjectID
+
+	// startup is how far the startup tasks have got; see runStartup.
+	startup *startupState
 }
 
 func main() {
@@ -45,39 +48,22 @@ func main() {
 	}()
 
 	app := Config{
-		Models: data.New(client),
-		purges: make(chan primitive.ObjectID, purgeQueueSize),
+		Models:  data.New(client),
+		purges:  make(chan primitive.ObjectID, purgeQueueSize),
+		startup: &startupState{},
 	}
-
-	if err := app.Models.Settings.EnsureSettingsIndex(); err != nil {
-		log.Printf("Warning: could not ensure settings index: %v", err)
-	}
-	if err := app.Models.EnsureLogsIndexes(); err != nil {
-		log.Printf("Warning: could not ensure logs indexes: %v", err)
-	}
-	if err := app.Models.EnsureProjectIndexes(); err != nil {
-		log.Printf("Warning: could not ensure project indexes: %v", err)
-	}
-	if err := app.Models.EnsureAPIKeyIndexes(); err != nil {
-		log.Printf("Warning: could not ensure api key indexes: %v", err)
-	}
-
-	// Adopt any data that predates projects before the RPC server comes up, so no
-	// caller ever reads a half-migrated database.
-	converted := app.runStartupMigration()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	// Indexes and the startup migration, before the RPC server comes up. A
+	// failed pass is retried in the background; see runStartup.
+	//
 	// Retention is looked up by an ObjectID project_id. A setting still stored
 	// under the old string one would be missed, and the project's logs expired on
-	// the 90-day default however long it had chosen to keep them; no cleanup
-	// until the next start has converted everything.
-	if converted {
-		go app.runCleanup(ctx)
-	} else {
-		log.Println("Retention cleanup: DISABLED until a start converts every project_id; see the migration error above")
-	}
+	// the 90-day default however long it had chosen to keep them; so the cleanup
+	// starts only once every project_id is converted.
+	runStartup(ctx, app.startup, app.runStartupTasks, func() { go app.runCleanup(ctx) })
 
 	app.serve(ctx)
 }
@@ -87,6 +73,7 @@ func (app *Config) serve(ctx context.Context) {
 		models:   app.Models,
 		projects: newProjectCache(projectCacheTTL),
 		purges:   app.purges,
+		startup:  app.startup,
 	})
 	if err != nil {
 		log.Panic(err)
