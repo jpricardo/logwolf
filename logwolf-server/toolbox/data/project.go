@@ -115,10 +115,18 @@ type RPCUpdateMemberRoleArgs struct {
 	Role        string
 }
 
-// RPCCheckMembershipArgs is the RPC argument for CheckMembership.
-type RPCCheckMembershipArgs struct {
+// RPCProjectAccessArgs is the RPC argument for ProjectAccess.
+type RPCProjectAccessArgs struct {
 	ProjectID   string
 	GithubLogin string
+}
+
+// ProjectAccess is the reply of the logger's ProjectAccess RPC: whether the
+// project exists, and the login's role in it, empty for a non-member. The
+// broker answers every project route from it, in one round trip.
+type ProjectAccess struct {
+	Exists bool
+	Role   string
 }
 
 // ValidSlug reports whether s is a valid URL-safe slug.
@@ -460,18 +468,24 @@ func refuseLastOwner(sc mongo.SessionContext, coll *mongo.Collection, projectID 
 	return nil
 }
 
-func (m *Models) IsMember(projectID primitive.ObjectID, githubLogin string) (bool, error) {
+// MemberRole returns githubLogin's role in the project, or "" if it is not a
+// member, including when the project does not exist.
+func (m *Models) MemberRole(projectID primitive.ObjectID, githubLogin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	n, err := m.client.Database("logs").Collection("project_members").CountDocuments(ctx, bson.M{
+	var member ProjectMember
+	err := m.client.Database("logs").Collection("project_members").FindOne(ctx, bson.M{
 		"project_id":   projectID,
 		"github_login": NormalizeGithubLogin(githubLogin),
-	})
-	if err != nil {
-		return false, fmt.Errorf("IsMember: %w", err)
+	}, options.FindOne().SetProjection(bson.M{"role": 1})).Decode(&member)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return "", nil
 	}
-	return n > 0, nil
+	if err != nil {
+		return "", fmt.Errorf("MemberRole: %w", err)
+	}
+	return member.Role, nil
 }
 
 func (m *Models) GetAllProjects(ctx context.Context) ([]Project, error) {

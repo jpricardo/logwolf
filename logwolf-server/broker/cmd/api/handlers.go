@@ -10,7 +10,6 @@ import (
 	"net/rpc"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -107,15 +106,14 @@ func (app *Config) CreateLogBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
 	var result []data.LogEntry
-	err = client.Call("RPCServer.GetLogs", data.QueryParams{
+	err := client.Call("RPCServer.GetLogs", data.QueryParams{
 		ProjectID:  projectIDFromContext(r),
 		Pagination: paginationFromQuery(r.URL.Query()),
 	}, &result)
@@ -157,9 +155,8 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 
 	requestBody.ProjectID = projectIDFromContext(r)
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
@@ -181,21 +178,13 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
-	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, projectID, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	if _, ok := app.authorizeProject(w, r, client, projectID, anyMember); !ok {
 		return
 	}
 
@@ -234,21 +223,13 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
-	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, body.ProjectID, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	if _, ok := app.authorizeProject(w, r, client, body.ProjectID, anyMember); !ok {
 		return
 	}
 
@@ -272,12 +253,13 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RevokeAPIKey revokes a key by id alone: the key names its project, and the
+// caller has to be a member of that one.
 func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
@@ -288,14 +270,7 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, key.ProjectID.Hex(), userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	if _, ok := app.authorizeProject(w, r, client, key.ProjectID.Hex(), anyMember); !ok {
 		return
 	}
 
@@ -320,21 +295,13 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
-	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, projectID, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	if _, ok := app.authorizeProject(w, r, client, projectID, anyMember); !ok {
 		return
 	}
 
@@ -375,21 +342,14 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
-	userLogin := userLoginFromContext(r)
-	role, err := getProjectRole(client, payload.ProjectID, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, payload.ProjectID)
+	role, ok := app.authorizeProject(w, r, client, payload.ProjectID, anyMember)
+	if !ok {
 		return
 	}
 	// Any member may keep logs longer; shortening retention deletes whatever
@@ -424,21 +384,13 @@ func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
-	userLogin := userLoginFromContext(r)
-	isMember, err := checkProjectMembership(client, projectID, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if !isMember {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
+	if _, ok := app.authorizeProject(w, r, client, projectID, anyMember); !ok {
 		return
 	}
 
@@ -535,29 +487,14 @@ func checkLogger() serviceStatus {
 
 // --- Project management ---
 
-// denyProjectAccess sends a 404 if the project doesn't exist, or 403 if it exists
-// but the user has no access. Used when getProjectRole returns an empty role.
-func (app *Config) denyProjectAccess(w http.ResponseWriter, client *rpc.Client, id string) {
-	var proj data.Project
-	err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &proj)
-	if err == nil {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-	app.rpcErrorJSON(w, err, projectNotFound)
-}
-
 func (app *Config) ListProjects(w http.ResponseWriter, r *http.Request) {
-	userLogin := userLoginFromContext(r)
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
 
-	args := data.RPCUserProjectsArgs{GithubLogin: userLogin}
+	args := data.RPCUserProjectsArgs{GithubLogin: userLoginFromContext(r)}
 	var projects []data.UserProject
 	if err := client.Call("RPCServer.ListUserProjects", &args, &projects); err != nil {
 		app.rpcErrorJSON(w, err, nil)
@@ -590,11 +527,8 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userLogin := userLoginFromContext(r)
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
+	client, ok := app.dialLogger(w)
+	if !ok {
 		return
 	}
 	defer client.Close()
@@ -603,7 +537,7 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 	// in one transaction, so a failure leaves no project nobody can reach.
 	// Slugs are not unique, so there is no collision to report.
 	var project data.Project
-	args := data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug, Owner: userLogin}
+	args := data.RPCCreateProjectArgs{Name: body.Name, Slug: body.Slug, Owner: userLoginFromContext(r)}
 	if err := client.Call("RPCServer.CreateProject", &args, &project); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
@@ -612,29 +546,15 @@ func (app *Config) CreateProject(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusCreated, jsonResponse{Error: false, Message: "Project created.", Data: project})
 }
 
+// The handlers from here on sit behind requireProject, which has checked the
+// caller's access to the project in the path (routes.go says to which level)
+// and hands them the project and an open logger connection.
+
 func (app *Config) GetProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	userLogin := userLoginFromContext(r)
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
+	p := projectFromContext(r)
 
 	var project data.Project
-	if err := client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: id}, &project); err != nil {
+	if err := p.client.Call("RPCServer.GetProject", &data.RPCProjectIDArgs{ID: p.id}, &project); err != nil {
 		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
@@ -643,8 +563,7 @@ func (app *Config) GetProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	userLogin := userLoginFromContext(r)
+	p := projectFromContext(r)
 
 	// Only the name changes: the slug is fixed when the project is created.
 	var body struct {
@@ -660,29 +579,8 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
-	if role != data.RoleOwner {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-
 	var project data.Project
-	if err := client.Call("RPCServer.UpdateProject", &data.RPCUpdateProjectArgs{ID: id, Name: body.Name}, &project); err != nil {
+	if err := p.client.Call("RPCServer.UpdateProject", &data.RPCUpdateProjectArgs{ID: p.id, Name: body.Name}, &project); err != nil {
 		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
@@ -691,70 +589,25 @@ func (app *Config) UpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	userLogin := userLoginFromContext(r)
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
-	if role != data.RoleOwner {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
+	p := projectFromContext(r)
 
 	var reply string
-	if err := client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: id}, &reply); err != nil {
+	if err := p.client.Call("RPCServer.DeleteProject", &data.RPCProjectIDArgs{ID: p.id}, &reply); err != nil {
 		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
-	// DeleteProject deleted the project's keys along with it. The cache holds
-	// ids as ObjectID.Hex writes them, in lower case; the path may not.
-	forgetCachedProjectKeys(strings.ToLower(id))
+	// DeleteProject deleted the project's keys along with it.
+	forgetCachedProjectKeys(p.id)
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Project deleted."})
 }
 
 func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	userLogin := userLoginFromContext(r)
+	p := projectFromContext(r)
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	// Single ListMembers call: reuse the result for both the access check and the response.
-	args := data.ProjectArgs{ProjectID: id}
 	var members []data.ProjectMember
-	if err := client.Call("RPCServer.ListMembers", &args, &members); err != nil {
+	if err := p.client.Call("RPCServer.ListMembers", &data.ProjectArgs{ProjectID: p.id}, &members); err != nil {
 		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-
-	isMember := false
-	for _, m := range members {
-		if m.GithubLogin == userLogin {
-			isMember = true
-			break
-		}
-	}
-	if !isMember {
-		app.denyProjectAccess(w, client, id)
 		return
 	}
 
@@ -762,8 +615,7 @@ func (app *Config) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	userLogin := userLoginFromContext(r)
+	p := projectFromContext(r)
 
 	var body struct {
 		Login string `json:"login"`
@@ -784,30 +636,9 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
-	if role != data.RoleOwner {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-
 	var reply string
-	if err := client.Call("RPCServer.AddMember", &data.RPCAddMemberArgs{
-		ProjectID:   id,
+	if err := p.client.Call("RPCServer.AddMember", &data.RPCAddMemberArgs{
+		ProjectID:   p.id,
 		GithubLogin: login,
 		Role:        body.Role,
 	}, &reply); err != nil {
@@ -823,34 +654,12 @@ func (app *Config) AddProjectMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	p := projectFromContext(r)
 	login := data.NormalizeGithubLogin(chi.URLParam(r, "login"))
-	userLogin := userLoginFromContext(r)
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
-	if role != data.RoleOwner {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
 
 	var reply string
-	if err := client.Call("RPCServer.RemoveMember", &data.RPCRemoveMemberArgs{
-		ProjectID:   id,
+	if err := p.client.Call("RPCServer.RemoveMember", &data.RPCRemoveMemberArgs{
+		ProjectID:   p.id,
 		GithubLogin: login,
 	}, &reply); err != nil {
 		app.rpcErrorJSON(w, err, rpcErrorMessages{
@@ -867,9 +676,8 @@ func (app *Config) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
 // a self-demotion it is how an owner hands a project over, so demoting yourself
 // is allowed as long as another owner remains.
 func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	p := projectFromContext(r)
 	login := data.NormalizeGithubLogin(chi.URLParam(r, "login"))
-	userLogin := userLoginFromContext(r)
 
 	var body struct {
 		Role string `json:"role"`
@@ -883,30 +691,9 @@ func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	role, err := getProjectRole(client, id, userLogin)
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return
-	}
-	if role == "" {
-		app.denyProjectAccess(w, client, id)
-		return
-	}
-	if role != data.RoleOwner {
-		app.errorJSON(w, fmt.Errorf("forbidden"), http.StatusForbidden)
-		return
-	}
-
 	var reply string
-	if err := client.Call("RPCServer.UpdateMemberRole", &data.RPCUpdateMemberRoleArgs{
-		ProjectID:   id,
+	if err := p.client.Call("RPCServer.UpdateMemberRole", &data.RPCUpdateMemberRoleArgs{
+		ProjectID:   p.id,
 		GithubLogin: login,
 		Role:        body.Role,
 	}, &reply); err != nil {
@@ -924,44 +711,15 @@ func (app *Config) UpdateProjectMemberRole(w http.ResponseWriter, r *http.Reques
 
 // The dashboard reads and writes events through the routes below instead of the
 // public SDK ones. It authenticates as a user rather than as an API key, so the
-// project cannot come from a key: it comes from the path, and the caller has to
-// be a member of it.
-
-// requireProjectAccess confirms the caller belongs to the project named in the
-// path, over the connection the handler already opened. It returns false once a
-// response has been written, so the handler only has to return — and the client
-// stays the handler's to close.
-func (app *Config) requireProjectAccess(w http.ResponseWriter, r *http.Request, client *rpc.Client, projectID string) bool {
-	isMember, err := checkProjectMembership(client, projectID, userLoginFromContext(r))
-	if err != nil {
-		app.rpcErrorJSON(w, err, projectNotFound)
-		return false
-	}
-	if !isMember {
-		app.denyProjectAccess(w, client, projectID)
-		return false
-	}
-
-	return true
-}
+// project cannot come from a key: it comes from the path, and requireProject
+// has checked the caller is a member of it.
 
 func (app *Config) ListProjectLogs(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	if !app.requireProjectAccess(w, r, client, projectID) {
-		return
-	}
+	p := projectFromContext(r)
 
 	var result []data.LogEntry
-	err = client.Call("RPCServer.GetLogs", data.QueryParams{
-		ProjectID:  projectID,
+	err := p.client.Call("RPCServer.GetLogs", data.QueryParams{
+		ProjectID:  p.id,
 		Pagination: paginationFromQuery(r.URL.Query()),
 	}, &result)
 	if err != nil {
@@ -977,23 +735,11 @@ func (app *Config) ListProjectLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetProjectLog(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	if !app.requireProjectAccess(w, r, client, projectID) {
-		return
-	}
-
-	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "logID"), ProjectID: projectID}
+	p := projectFromContext(r)
+	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "logID"), ProjectID: p.id}
 
 	var entry data.LogEntry
-	if err := client.Call("RPCServer.GetLog", filter, &entry); err != nil {
+	if err := p.client.Call("RPCServer.GetLog", filter, &entry); err != nil {
 		app.rpcErrorJSON(w, err, logNotFound)
 		return
 	}
@@ -1002,18 +748,7 @@ func (app *Config) GetProjectLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) CreateProjectLog(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	if !app.requireProjectAccess(w, r, client, projectID) {
-		return
-	}
+	p := projectFromContext(r)
 
 	var payload data.JSONLogPayload
 	if err := app.readJSON(w, r, &payload); err != nil {
@@ -1022,8 +757,8 @@ func (app *Config) CreateProjectLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Whatever project the body named is discarded: the event belongs to the one
-	// in the path, which the caller was just checked against.
-	payload.ProjectID = projectID
+	// in the path, which the caller was checked against.
+	payload.ProjectID = p.id
 
 	evp := event.Payload{Action: "log", Log: payload}
 
@@ -1048,23 +783,11 @@ func (app *Config) CreateProjectLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) DeleteProjectLog(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "id")
-
-	client, err := rpc.Dial("tcp", loggerRPCAddr())
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer client.Close()
-
-	if !app.requireProjectAccess(w, r, client, projectID) {
-		return
-	}
-
-	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "logID"), ProjectID: projectID}
+	p := projectFromContext(r)
+	filter := data.RPCLogEntryFilter{ID: chi.URLParam(r, "logID"), ProjectID: p.id}
 
 	var deleted int64
-	if err := client.Call("RPCServer.DeleteLog", filter, &deleted); err != nil {
+	if err := p.client.Call("RPCServer.DeleteLog", filter, &deleted); err != nil {
 		app.rpcErrorJSON(w, err, logNotFound)
 		return
 	}

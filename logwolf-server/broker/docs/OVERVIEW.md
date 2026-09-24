@@ -16,6 +16,7 @@ cmd/api/
 ├── routes.go        # Route registration (chi)
 ├── handlers.go      # Request handlers
 ├── middleware.go    # Auth middleware (Bearer token, internal secret)
+├── access.go        # Project access: authorizeProject, requireProject
 ├── clientip.go      # Client address behind trusted proxies (TRUSTED_PROXIES)
 ├── rpcerrors.go     # Maps the logger's RPC errors to HTTP statuses
 └── helpers.go       # JSON read/write utilities
@@ -61,6 +62,13 @@ A key without the route's scope gets 403.
 Internal routes also require `X-User-Login`; project access is checked against
 that login on every call. `requireUserLogin` lowercases it first, as memberships
 are stored: GitHub logins are case-insensitive.
+
+Every route that acts on a project denies access the same way (`access.go`):
+
+- **404** if the project does not exist, or the id is not an ObjectID;
+- **403** if it exists and the caller is not a member, or is a member on an owner-only route.
+
+`authorizeProject` is that rule. It costs one logger call, `RPCServer.ProjectAccess`, which answers both whether the project exists and the caller's role. The `/projects/{id}/...` routes get it from the `requireProject(anyMember|ownerOnly)` middleware, so `routes.go` states each route's access level. The middleware also hands the handler the checked project (with its canonical lower-case id) and the logger connection it checked over, which the handler reuses and the middleware closes. `/keys`, `/settings/retention` and `/metrics`, which take the project from the query or the body, and `DELETE /keys/{id}`, which takes it from the key, call `authorizeProject` themselves.
 
 Creating a project is one logger call: the logger writes the project and the
 caller's owner membership in one transaction, so a failure leaves no project
@@ -118,7 +126,7 @@ The logger check calls `RPCServer.Status`. It is `down` if the logger cannot be 
 Two middleware layers:
 
 - **`requireAPIKey`** — validates the `Authorization: Bearer lw_...` token through the logger (`RPCServer.ValidateAPIKey`); results are cached with TTL + rate limiting so the hot path does not make an RPC call per request. A cached key is evicted as soon as it is revoked (`DELETE /keys/{id}`) or its project deleted (`DELETE /projects/{id}`), via `forgetCachedKeys`, so it stops working at once rather than after the 60s TTL. A validation already in flight during an eviction is not cached, since it may have read the key before the revoke. The eviction is local: a second broker replica would keep its entry until it expires. The key cache and the per-IP failure counters are each capped at 10,000 entries. A background sweep deletes expired entries every minute, so a flood of bogus keys from many addresses cannot grow them without bound.
-  - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too, so like revocation, nothing about a key changes for up to 60 seconds.
+  - **`requireScope`** — runs after it, per public route, and refuses with 403 a key that lacks the route's scope. Keys can end up in browser bundles, so `POST /keys` gives a key only `ingest` unless the caller asks for `read` or `delete`. A key created before scopes existed has none stored and is read back with all three, so it keeps working. The key cache holds the scopes too.
 - **`requireInternalSecret`** — validates the `X-Internal-Secret` header; used exclusively by the dashboard backend.
 
 ## Write path
@@ -133,7 +141,7 @@ Events are published to the `logs_topic` exchange with routing key `log.<SEVERIT
 
 ```
 Client    → GET /logs                   → requireAPIKey       → RPC call to Logger:5001 → response
-Dashboard → GET /projects/{id}/logs     → membership check    → RPC call to Logger:5001 → response
+Dashboard → GET /projects/{id}/logs     → requireProject      → RPC call to Logger:5001 → response
 ```
 
 ## Environment variables

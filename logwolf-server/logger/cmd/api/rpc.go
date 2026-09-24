@@ -348,16 +348,29 @@ func (r *RPCServer) UpdateMemberRole(args *data.RPCUpdateMemberRoleArgs, reply *
 	return nil
 }
 
-func (r *RPCServer) CheckMembership(args *data.RPCCheckMembershipArgs, reply *bool) error {
-	projectID, err := primitive.ObjectIDFromHex(args.ProjectID)
-	if err != nil {
-		return fmt.Errorf("CheckMembership: invalid project ID: %w", err)
-	}
-	isMember, err := r.models.IsMember(projectID, args.GithubLogin)
+// ProjectAccess reports whether the project exists and the login's role in it.
+// A member's project exists, so only a non-member costs a second query.
+func (r *RPCServer) ProjectAccess(args *data.RPCProjectAccessArgs, reply *data.ProjectAccess) error {
+	projectID, err := parseProjectID("ProjectAccess", args.ProjectID)
 	if err != nil {
 		return err
 	}
-	*reply = isMember
+	role, err := r.models.MemberRole(projectID, args.GithubLogin)
+	if err != nil {
+		return err
+	}
+	if role != "" {
+		*reply = data.ProjectAccess{Exists: true, Role: role}
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	exists, err := r.models.ProjectExists(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	*reply = data.ProjectAccess{Exists: exists}
 	return nil
 }
 

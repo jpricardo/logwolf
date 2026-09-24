@@ -11,37 +11,22 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// TestCheckMembership_InvalidProjectID verifies that CheckMembership returns
-// an error (not a silent false) when the project ID is not a valid ObjectID hex.
-func TestCheckMembership_InvalidProjectID(t *testing.T) {
-	srv := &RPCServer{} // zero-value models — no DB connection needed for this path
-
-	args := &data.RPCCheckMembershipArgs{
-		ProjectID:   "not-a-valid-object-id",
-		GithubLogin: "jpricardo",
-	}
-	var reply bool
-	err := srv.CheckMembership(args, &reply)
-	if err == nil {
-		t.Error("CheckMembership should return an error for an invalid project ID hex")
-	}
-	if reply {
-		t.Error("reply should remain false on error")
-	}
-}
-
-// TestCheckMembership_EmptyProjectID verifies that an empty project ID is rejected.
-func TestCheckMembership_EmptyProjectID(t *testing.T) {
+// TestProjectAccess_MalformedProjectID verifies that ProjectAccess answers a
+// project id that is not an ObjectID hex, or an empty one, with the "invalid
+// project ID" error the broker turns into a 404, rather than "not a member".
+// That path needs no database, so the zero-value server is enough.
+func TestProjectAccess_MalformedProjectID(t *testing.T) {
 	srv := &RPCServer{}
 
-	args := &data.RPCCheckMembershipArgs{
-		ProjectID:   "",
-		GithubLogin: "jpricardo",
-	}
-	var reply bool
-	err := srv.CheckMembership(args, &reply)
-	if err == nil {
-		t.Error("CheckMembership should return an error for an empty project ID")
+	for _, id := range []string{"not-a-valid-object-id", ""} {
+		var reply data.ProjectAccess
+		err := srv.ProjectAccess(&data.RPCProjectAccessArgs{ProjectID: id, GithubLogin: "jpricardo"}, &reply)
+		if err == nil || !strings.Contains(err.Error(), "invalid project ID") {
+			t.Errorf("ProjectAccess(%q): want an invalid project ID error, got %v", id, err)
+		}
+		if reply != (data.ProjectAccess{}) {
+			t.Errorf("ProjectAccess(%q): reply should stay empty on error, got %+v", id, reply)
+		}
 	}
 }
 

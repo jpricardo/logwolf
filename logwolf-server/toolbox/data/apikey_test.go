@@ -62,20 +62,6 @@ func TestAPIKeyStruct(t *testing.T) {
 	}
 }
 
-// TestRPCCheckMembershipArgs verifies that the struct exists with the expected fields.
-func TestRPCCheckMembershipArgs(t *testing.T) {
-	args := RPCCheckMembershipArgs{
-		ProjectID:   "507f1f77bcf86cd799439011",
-		GithubLogin: "jpricardo",
-	}
-	if args.ProjectID == "" {
-		t.Error("RPCCheckMembershipArgs.ProjectID must not be empty")
-	}
-	if args.GithubLogin == "" {
-		t.Error("RPCCheckMembershipArgs.GithubLogin must not be empty")
-	}
-}
-
 // TestGenerateAPIKey_ProjectID verifies GenerateAPIKey propagates ProjectID.
 func TestGenerateAPIKey_ProjectID(t *testing.T) {
 	projectID := primitive.NewObjectID()

@@ -46,6 +46,7 @@ type fakeLogger struct {
 	removedMembers  []data.RPCRemoveMemberArgs
 	roleChanges     []data.RPCUpdateMemberRoleArgs
 	revokedKeys     []data.RPCRevokeAPIKeyArgs
+	accessChecks    int // ProjectAccess calls
 
 	// Failure injection.
 	failCreateProject bool               // CreateProject fails, as its transaction would, and creates nothing
@@ -205,20 +206,21 @@ func (f *fakeLogger) ListMembers(args *data.ProjectArgs, reply *[]data.ProjectMe
 	return nil
 }
 
-func (f *fakeLogger) CheckMembership(args *data.RPCCheckMembershipArgs, reply *bool) error {
+func (f *fakeLogger) ProjectAccess(args *data.RPCProjectAccessArgs, reply *data.ProjectAccess) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if err := checkObjectID("CheckMembership", args.ProjectID); err != nil {
+	f.accessChecks++
+	if err := checkObjectID("ProjectAccess", args.ProjectID); err != nil {
 		return err
 	}
+	_, exists := f.projects[args.ProjectID]
+	*reply = data.ProjectAccess{Exists: exists}
 	for _, m := range f.members[args.ProjectID] {
 		if m.GithubLogin == args.GithubLogin {
-			*reply = true
-			return nil
+			reply.Role = m.Role
 		}
 	}
-	*reply = false
 	return nil
 }
 
