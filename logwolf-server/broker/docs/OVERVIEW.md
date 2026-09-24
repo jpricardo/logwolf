@@ -16,6 +16,7 @@ cmd/api/
 ├── routes.go        # Route registration (chi)
 ├── handlers.go      # Request handlers
 ├── middleware.go    # Auth middleware (Bearer token, internal secret)
+├── clientip.go      # Client address behind trusted proxies (TRUSTED_PROXIES)
 ├── rpcerrors.go     # Maps the logger's RPC errors to HTTP statuses
 └── helpers.go       # JSON read/write utilities
 ```
@@ -140,6 +141,9 @@ Dashboard → GET /projects/{id}/logs     → membership check    → RPC call t
 | `BROKER_PORT`         | `80`                          | HTTP listen port               |
 | `LOGGER_RPC_ADDR`     | `logger:5001`                 | Logger RPC address             |
 | `INTERNAL_API_SECRET` | —                             | Shared secret for `/keys` etc. |
+| `TRUSTED_PROXIES`     | — (trust no one)              | See below                      |
+
+`TRUSTED_PROXIES` is a comma-separated list of IPs and CIDR ranges. A request from one of them is attributed to the right-most `X-Forwarded-For` entry that is not itself trusted (`clientIP` in `clientip.go`); any other request is attributed to its peer address, and its `X-Forwarded-For` is ignored. The failed-auth rate limiter counts per that address. Behind Caddy it must cover Caddy, or every internet client shares Caddy's counter and ten bad keys from anyone lock out all SDK clients for a minute. `docker-compose.yml` trusts the private ranges, which is safe only while the broker publishes no port. An entry that is not an IP or range stops the broker at start.
 
 ## Key dependencies
 
