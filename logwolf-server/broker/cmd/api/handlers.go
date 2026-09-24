@@ -465,7 +465,7 @@ func (app *Config) Health(w http.ResponseWriter, r *http.Request) {
 	logger := checkLogger()
 
 	overall := "healthy"
-	if rabbitmq.Status == "down" || logger.Status == "down" {
+	if rabbitmq.Status != "up" || logger.Status != "up" {
 		overall = "degraded"
 	}
 
@@ -497,13 +497,37 @@ func checkRabbitMQ(app *Config) serviceStatus {
 	return serviceStatus{Status: "up"}
 }
 
+// loggerHealthTimeout bounds the whole logger check: dial and Status call.
+const loggerHealthTimeout = 2 * time.Second
+
+// checkLogger asks the logger for its status. It is "down" if the logger cannot
+// be reached or does not answer in time, and "degraded" while its startup tasks
+// are failing: it serves then, but its startup migration or indexes are not
+// done, and it retries them in the background.
 func checkLogger() serviceStatus {
-	conn, err := net.DialTimeout("tcp", loggerRPCAddr(), 2*time.Second)
+	conn, err := net.DialTimeout("tcp", loggerRPCAddr(), loggerHealthTimeout)
 	if err != nil {
 		return serviceStatus{Status: "down", Error: err.Error()}
 	}
-	conn.Close()
+	client := rpc.NewClient(conn)
+	defer client.Close()
 
+	var st data.LoggerStatus
+	call := client.Go("RPCServer.Status", "", &st, nil)
+	timer := time.NewTimer(loggerHealthTimeout)
+	defer timer.Stop()
+	select {
+	case <-call.Done:
+		if call.Error != nil {
+			return serviceStatus{Status: "down", Error: call.Error.Error()}
+		}
+	case <-timer.C:
+		return serviceStatus{Status: "down", Error: "logger status timed out"}
+	}
+
+	if !st.Ready {
+		return serviceStatus{Status: "degraded", Error: "startup tasks failing, retrying: " + st.StartupError}
+	}
 	return serviceStatus{Status: "up"}
 }
 

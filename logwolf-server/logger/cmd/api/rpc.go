@@ -17,6 +17,21 @@ type RPCServer struct {
 	// purges hands deleted projects to the cleanup loop; nil hands them to no
 	// one, and the orphan sweep deletes their logs instead.
 	purges chan<- primitive.ObjectID
+
+	// startup is what Status reports; nil reports ready.
+	startup *startupState
+}
+
+// Status reports whether the logger's startup tasks have all succeeded. The
+// broker's /health asks for it. The argument is unused: gob cannot encode an
+// empty struct.
+func (r *RPCServer) Status(_ string, reply *data.LoggerStatus) error {
+	if r.startup == nil {
+		*reply = data.LoggerStatus{Ready: true, RetentionCleanup: true}
+		return nil
+	}
+	*reply = r.startup.status()
+	return nil
 }
 
 // parseProjectID turns the hex project id an RPC argument carries into the
