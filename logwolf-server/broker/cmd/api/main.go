@@ -4,15 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"logwolf-toolbox/rabbitmq"
+	"logwolf-toolbox/event"
 	"net/http"
 	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
@@ -20,7 +18,8 @@ const (
 )
 
 type Config struct {
-	Rabbit *amqp.Connection
+	// Events publishes to RabbitMQ; see event.Emitter.
+	Events publisher
 
 	// TrustedProxies are the peers whose X-Forwarded-For is believed when
 	// working out a client's address (see clientIP). Empty trusts no one.
@@ -34,14 +33,14 @@ func main() {
 	}
 
 	// RabbitMQ
-	conn, err := rabbitmq.ConnectToRabbitMQ(rabbitConnectionString())
+	emitter, err := event.NewEmitter(rabbitConnectionString())
 	if err != nil {
 		log.Panic(err)
 	}
-	defer conn.Close()
+	defer emitter.Close()
 
 	app := Config{
-		Rabbit:         conn,
+		Events:         emitter,
 		TrustedProxies: trusted,
 	}
 

@@ -136,8 +136,15 @@ Two middleware layers:
 ## Write path
 
 ```
-Client → POST /logs → requireAPIKey → publish to RabbitMQ → 202 Accepted
+Client → POST /logs → requireAPIKey → publish to RabbitMQ → confirmed → 202 Accepted
 ```
+
+A 202 means RabbitMQ holds the event on disk (`event.Emitter`, `events.go`):
+
+- **Persistent** messages on the durable `logwolf_logs` queue survive a RabbitMQ restart.
+- **Publisher confirms:** the broker answers only once RabbitMQ has confirmed every event of the request, within 10s. If it does not, the answer is **503**, which the SDK retries. A batch is published on one channel and confirmed as a whole; one that fails part-way may have queued some events, so a retry can store those twice.
+- **The broker declares the queue** and its `log.*` binding at start, as the listener does. The exchange drops what no queue is bound for, so before, events sent before the listener had first run went nowhere.
+- **Reconnects:** the emitter dials RabbitMQ again once its connection has closed, as it does when RabbitMQ restarts. The request that finds it closed tries once; `/health` reconnects too.
 
 Events are published to the `logs_topic` exchange with routing key `log.<severity>` (`data.SeverityRoutingKey`): `log.info`, `log.warning`, `log.error` or `log.critical`, case-insensitively, and `log.unknown` for any other severity, which is stored as sent. A batch publishes each event under its own. The broker has no MongoDB client at all: API keys, like everything else it stores or reads, go through the logger's RPC methods.
 

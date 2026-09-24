@@ -80,7 +80,7 @@ docker compose up
 
 ## Architecture notes
 
-**Event flow:** Client SDK → Broker (HTTP) → RabbitMQ → Listener → Logger (RPC) → MongoDB
+**Event flow:** Client SDK → Broker (HTTP) → RabbitMQ → Listener → Logger (RPC) → MongoDB. The broker's `202` means RabbitMQ has confirmed the event: `event.Emitter` publishes persistent messages with publisher confirms (503 otherwise), declares the `logwolf_logs` queue itself so events queue before the listener runs, and redials after a RabbitMQ restart. Delivery is at least once end to end
 
 **Networks:** Only Caddy, Broker, and Frontend are on the public network. Logger, Listener, RabbitMQ, and MongoDB are isolated on an internal network.
 

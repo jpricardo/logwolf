@@ -40,7 +40,7 @@ Logger ────────────────────────�
 
 **Broker** is the HTTP API gateway, written in Go using the `chi` router. All SDK traffic enters here. It validates API keys, pushes log events to RabbitMQ asynchronously, and proxies read requests to the Logger via RPC. The Broker responds `202 Accepted` to write requests immediately — before the event hits the database. It exposes two write endpoints: `POST /logs` for single events and `POST /logs/batch` for batched delivery (max 1000 events per request).
 
-**RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`). If the Listener restarts, in-flight messages are not lost.
+**RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`), which the Broker declares too, so events are queued even before the Listener first runs. Messages are persistent, and the Broker answers `202` only once RabbitMQ has confirmed them, so an accepted event survives a Listener, Logger or RabbitMQ restart.
 
 **Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping. A message is acknowledged only once the Logger has stored it; while the Logger is unreachable the Listener retries with back-off and the queue holds the rest, so an outage delays events rather than losing them.
 
@@ -65,7 +65,7 @@ When your application calls `logwolf.capture(event)`:
 
 When `logwolf.create(event)` is used instead, step 1–2 are skipped — the event is sent immediately via `POST /api/logs` and the call awaits the server response.
 
-The HTTP response comes back before the database write completes. This keeps ingestion latency low and protects your application from any slowness in the persistence layer.
+The HTTP response comes back before the database write completes, but after RabbitMQ has the event on disk. This keeps ingestion latency low and protects your application from any slowness in the persistence layer.
 
 ## Read path
 
