@@ -118,12 +118,10 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 		}
 	}
 
-	// --- The key it minted reads nothing back ---
+	// --- The key it minted no longer authenticates ---
 	//
-	// The Broker caches key lookups for 60s, so the key may still authenticate
-	// here. Either answer is acceptable — rejected outright, or accepted and
-	// scoped to a project that no longer has any events. What must not happen
-	// is events coming back.
+	// The Broker caches key lookups for 60s, but the one that deleted the
+	// project dropped the project's keys from its cache.
 	req, _ := http.NewRequest(http.MethodGet, stack.brokerURL+"/logs", nil)
 	req.Header.Set("Authorization", "Bearer "+created.Key)
 
@@ -133,21 +131,8 @@ func TestProjectDeleteCascade_EndToEnd(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	switch resp.StatusCode {
-	case http.StatusUnauthorized:
-		// The key was revoked along with its project.
-	case http.StatusOK:
-		var envelope struct {
-			Data []json.RawMessage `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-			t.Fatalf("decode GET /logs: %v", err)
-		}
-		if len(envelope.Data) != 0 {
-			t.Errorf("deleted project's key still reads %d event(s)", len(envelope.Data))
-		}
-	default:
-		t.Errorf("GET /logs with the deleted project's key: got %d, want 200 or 401", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("GET /logs with the deleted project's key: got %d, want 401", resp.StatusCode)
 	}
 
 	// --- Deleting it again is a 404, not a second success ---

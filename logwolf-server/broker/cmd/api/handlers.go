@@ -10,6 +10,7 @@ import (
 	"net/rpc"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -304,6 +305,7 @@ func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		app.rpcErrorJSON(w, err, keyNotFound)
 		return
 	}
+	forgetCachedKey(key.ID.Hex())
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Key revoked."})
 }
 
@@ -694,6 +696,9 @@ func (app *Config) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		app.rpcErrorJSON(w, err, projectNotFound)
 		return
 	}
+	// DeleteProject deleted the project's keys along with it. The cache holds
+	// ids as ObjectID.Hex writes them, in lower case; the path may not.
+	forgetCachedProjectKeys(strings.ToLower(id))
 
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Project deleted."})
 }

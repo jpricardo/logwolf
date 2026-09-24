@@ -152,6 +152,12 @@ func (f *fakeLogger) DeleteProject(args *data.RPCProjectIDArgs, reply *string) e
 	delete(f.members, args.ID)
 	delete(f.logs, args.ID)
 	delete(f.retention, args.ID)
+	// The real DeleteProject deletes the project's API keys in its transaction.
+	for id, k := range f.keys {
+		if k.ProjectID.Hex() == args.ID {
+			delete(f.keys, id)
+		}
+	}
 	*reply = "ok"
 	return nil
 }
