@@ -111,6 +111,7 @@ func (app *Config) GetLogs(w http.ResponseWriter, r *http.Request) {
 		app.errorJSON(w, err)
 		return
 	}
+	defer client.Close()
 
 	var result []data.LogEntry
 	err = client.Call("RPCServer.GetLogs", data.QueryParams{
@@ -160,6 +161,7 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 		app.errorJSON(w, err)
 		return
 	}
+	defer client.Close()
 
 	var result int64
 	err = client.Call("RPCServer.DeleteLog", data.RPCLogEntryFilter(requestBody), &result)

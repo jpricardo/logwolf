@@ -44,6 +44,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	go sweepAuthCachesEvery(ctx, authCacheSweepInterval)
+
 	go func() {
 		log.Printf("Starting server on port %s\n", httpPort())
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

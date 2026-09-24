@@ -51,6 +51,10 @@ type fakeLogger struct {
 	duplicateSlug  string // CreateProject returns an E11000 error for this slug
 	failAddMember  bool   // AddMember always fails (exercises the create-project rollback)
 	lastOwnerLogin string // RemoveMember and UpdateMemberRole refuse to remove or demote this login
+
+	// openConns counts the broker's connections the fake has not yet seen
+	// closed. It goes back to zero only if every handler closed its client.
+	openConns atomic.Int64
 }
 
 // errNoDocuments mirrors the driver error the logger passes back when a lookup
@@ -495,7 +499,35 @@ func serveFakeLogger(t *testing.T, f *fakeLogger) {
 	t.Cleanup(func() { l.Close() })
 
 	// Accept returns as soon as the listener closes, which Cleanup handles.
-	go srv.Accept(l)
+	go srv.Accept(countingListener{Listener: l, open: &f.openConns})
 
 	t.Setenv("LOGGER_RPC_ADDR", l.Addr().String())
+}
+
+// countingListener tracks how many accepted connections are still open. The
+// RPC server closes its end once the broker closes the client, so a connection
+// the broker leaks stays counted.
+type countingListener struct {
+	net.Listener
+	open *atomic.Int64
+}
+
+func (l countingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	l.open.Add(1)
+	return &countedConn{Conn: c, open: l.open}, nil
+}
+
+type countedConn struct {
+	net.Conn
+	open   *atomic.Int64
+	closed sync.Once
+}
+
+func (c *countedConn) Close() error {
+	c.closed.Do(func() { c.open.Add(-1) })
+	return c.Conn.Close()
 }
