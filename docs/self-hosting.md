@@ -53,6 +53,7 @@ Create a `.env` file in `logwolf-server/`. The full reference:
 | `LOGWOLF_ALLOWED_GITHUB_ORGS`    | ✅ (one of)   | Comma-separated list of GitHub orgs. Any member is allowed.                                                                                                                              |
 | `LOGWOLF_DEFAULT_PROJECT_OWNERS` | Upgrades only | GitHub usernames made owners of the `Default` project that holds pre-multi-tenancy data, on top of `LOGWOLF_ALLOWED_GITHUB_USERS`. Needed for org-only deployments. Read on every start. |
 | `API_KEY`                        | ✅            | An `lw_`-prefixed API key used by the frontend to instrument itself. Generate one after first boot.                                                                                      |
+| `TRUSTED_PROXIES`                | No            | IPs/CIDR ranges whose `X-Forwarded-For` the broker believes, to rate-limit failed API key attempts per client. Compose trusts private ranges; narrow it if you publish the broker port.  |
 
 Generate secrets with:
 
