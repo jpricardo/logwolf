@@ -403,21 +403,6 @@ func (f *fakeLogger) CreateAPIKey(args *data.RPCCreateAPIKeyArgs, reply *data.RP
 	return nil
 }
 
-func (f *fakeLogger) GetAPIKey(args *data.RPCAPIKeyIDArgs, reply *data.APIKey) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if _, err := primitive.ObjectIDFromHex(args.ID); err != nil {
-		return err
-	}
-	k, ok := f.keys[args.ID]
-	if !ok {
-		return data.ErrKeyNotFound
-	}
-	*reply = k
-	return nil
-}
-
 func (f *fakeLogger) RevokeAPIKey(args *data.RPCRevokeAPIKeyArgs, reply *string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

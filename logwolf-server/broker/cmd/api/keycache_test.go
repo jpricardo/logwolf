@@ -28,9 +28,9 @@ func TestRevokedKey_RefusedAtOnce(t *testing.T) {
 		t.Fatalf("GET /logs with the other key = %d, want 200", code)
 	}
 
-	w := do(h, internalRequest(http.MethodDelete, "/keys/"+key.ID.Hex(), "member-a", nil))
+	w := do(h, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/keys/"+key.ID.Hex(), "member-a", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("DELETE /keys/{id} = %d, want 200 (body: %s)", w.Code, w.Body.String())
+		t.Fatalf("DELETE /projects/{id}/keys/{keyID} = %d, want 200 (body: %s)", w.Code, w.Body.String())
 	}
 
 	if code := readLogs(h, plaintext); code != http.StatusUnauthorized {

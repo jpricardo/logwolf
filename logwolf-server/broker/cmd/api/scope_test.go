@@ -144,12 +144,11 @@ func TestRequireScope_NoKeyInContextIsRefused(t *testing.T) {
 func TestCreateAPIKey_RejectsUnknownScope(t *testing.T) {
 	h, _ := newInternalTestServer(t)
 
-	w := do(h, internalRequest(http.MethodPost, "/keys", "owner-a", map[string]any{
-		"project_id": projAlpha,
-		"scopes":     []string{data.ScopeIngest, "admin"},
+	w := do(h, internalRequest(http.MethodPost, "/projects/"+projAlpha+"/keys", "owner-a", map[string]any{
+		"scopes": []string{data.ScopeIngest, "admin"},
 	}))
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("POST /keys with an unknown scope = %d, want 400", w.Code)
+		t.Errorf("POST /projects/{id}/keys with an unknown scope = %d, want 400", w.Code)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
 	"logwolf-toolbox/data"
 )
 
@@ -79,17 +81,17 @@ func TestUpdateRetention_RejectsInvalidDays(t *testing.T) {
 		name string
 		body map[string]any
 	}{
-		{"unsupported value", map[string]any{"project_id": projAlpha, "days": 7}},
-		{"negative", map[string]any{"project_id": projAlpha, "days": -1}},
+		{"unsupported value", map[string]any{"days": 7}},
+		{"negative", map[string]any{"days": -1}},
 		// Would otherwise decode as 0 and keep logs forever.
-		{"missing", map[string]any{"project_id": projAlpha}},
+		{"missing", map[string]any{}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			handler, fake := newInternalTestServer(t)
 
-			w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "member-a", tc.body))
+			w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/retention", "member-a", tc.body))
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("got %d, want 400 (body: %s)", w.Code, w.Body.String())
 			}
@@ -103,8 +105,8 @@ func TestUpdateRetention_RejectsInvalidDays(t *testing.T) {
 
 	// 0 is a real choice, forever, not a missing value.
 	handler, _ := newInternalTestServer(t)
-	w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "member-a",
-		map[string]any{"project_id": projAlpha, "days": 0}))
+	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/retention", "member-a",
+		map[string]any{"days": 0}))
 	if w.Code != http.StatusOK {
 		t.Errorf("days 0: got %d, want 200 (body: %s)", w.Code, w.Body.String())
 	}
@@ -131,12 +133,14 @@ func TestProjectRoutes_MalformedIDIsNotFound(t *testing.T) {
 		{http.MethodPost, "/projects/" + bad + "/logs", map[string]string{"name": "e", "data": "{}", "severity": "info"}},
 		{http.MethodGet, "/projects/" + bad + "/logs/" + alphaLogID, nil},
 		{http.MethodDelete, "/projects/" + bad + "/logs/" + alphaLogID, nil},
-		{http.MethodGet, "/keys?project_id=" + bad, nil},
-		{http.MethodPost, "/keys", map[string]string{"project_id": bad}},
-		{http.MethodDelete, "/keys/" + bad, nil},
-		{http.MethodGet, "/settings/retention?project_id=" + bad, nil},
-		{http.MethodPatch, "/settings/retention", map[string]any{"project_id": bad, "days": 30}},
-		{http.MethodGet, "/metrics?project_id=" + bad, nil},
+		{http.MethodGet, "/projects/" + bad + "/keys", nil},
+		{http.MethodPost, "/projects/" + bad + "/keys", map[string]any{}},
+		{http.MethodDelete, "/projects/" + bad + "/keys/" + primitive.NewObjectID().Hex(), nil},
+		{http.MethodGet, "/projects/" + bad + "/retention", nil},
+		{http.MethodPatch, "/projects/" + bad + "/retention", map[string]any{"days": 30}},
+		{http.MethodGet, "/projects/" + bad + "/metrics", nil},
+		// A malformed key id in a real project names no key either.
+		{http.MethodDelete, "/projects/" + projAlpha + "/keys/" + bad, nil},
 	}
 
 	for _, tc := range cases {

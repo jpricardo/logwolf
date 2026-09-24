@@ -76,7 +76,7 @@ export interface IApi {
 	removeMember(projectId: string, login: string): Promise<void>;
 	getKeys(projectId: string): Promise<ApiKey[]>;
 	createKey(projectId: string, scopes: ApiKeyScope[]): Promise<CreatedApiKey>;
-	deleteKey(id: string): Promise<void>;
+	deleteKey(projectId: string, id: string): Promise<void>;
 	getRetention(projectId: string): Promise<{ days: RetentionDays }>;
 	updateRetention(projectId: string, days: number): Promise<{ days: RetentionDays }>;
 	getMetrics(projectId: string): Promise<Metrics>;
@@ -189,9 +189,7 @@ export class Api implements IApi {
 	}
 
 	public async getKeys(projectId: string): Promise<ApiKey[]> {
-		const url = new URL(`${this.baseUrl}keys`);
-		url.searchParams.set('project_id', projectId);
-		const res = await fetch(url.toString(), {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/keys`, {
 			method: 'GET',
 			headers: this.internalHeaders(),
 		});
@@ -203,10 +201,10 @@ export class Api implements IApi {
 
 	/** An empty `scopes` leaves the choice to the broker, which gives the key ingest only. */
 	public async createKey(projectId: string, scopes: ApiKeyScope[]): Promise<CreatedApiKey> {
-		const res = await fetch(`${this.baseUrl}keys`, {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/keys`, {
 			method: 'POST',
 			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ project_id: projectId, scopes }),
+			body: JSON.stringify({ scopes }),
 		});
 		const json = (await res.json()) as ApiResponse<CreatedApiKey>;
 		if (json.error) throw new Error(json.message);
@@ -214,8 +212,9 @@ export class Api implements IApi {
 		return json.data;
 	}
 
-	public async deleteKey(id: string): Promise<void> {
-		const res = await fetch(`${this.baseUrl}keys/${id}`, {
+	/** Revokes a key of the project; another project's key is "key not found". */
+	public async deleteKey(projectId: string, id: string): Promise<void> {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/keys/${encodeURIComponent(id)}`, {
 			method: 'DELETE',
 			headers: this.internalHeaders(),
 		});
@@ -225,9 +224,7 @@ export class Api implements IApi {
 	}
 
 	public async getRetention(projectId: string): Promise<{ days: RetentionDays }> {
-		const url = new URL(`${this.baseUrl}settings/retention`);
-		url.searchParams.set('project_id', projectId);
-		const res = await fetch(url.toString(), {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/retention`, {
 			method: 'GET',
 			headers: this.internalHeaders(),
 		});
@@ -238,10 +235,10 @@ export class Api implements IApi {
 	}
 
 	public async updateRetention(projectId: string, days: number): Promise<{ days: RetentionDays }> {
-		const res = await fetch(`${this.baseUrl}settings/retention`, {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/retention`, {
 			method: 'PATCH',
 			headers: this.internalHeaders({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ project_id: projectId, days }),
+			body: JSON.stringify({ days }),
 		});
 		const json = (await res.json()) as ApiResponse<{ days: RetentionDays }>;
 		if (json.error) throw new Error(json.message);
@@ -250,9 +247,7 @@ export class Api implements IApi {
 	}
 
 	public async getMetrics(projectId: string): Promise<Metrics> {
-		const url = new URL(`${this.baseUrl}metrics`);
-		url.searchParams.set('project_id', projectId);
-		const res = await fetch(url.toString(), {
+		const res = await fetch(`${this.baseUrl}projects/${projectId}/metrics`, {
 			method: 'GET',
 			headers: this.internalHeaders(),
 		});

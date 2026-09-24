@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func (app *Config) CreateLog(w http.ResponseWriter, r *http.Request) {
@@ -171,25 +172,16 @@ func (app *Config) DeleteLog(w http.ResponseWriter, r *http.Request) {
 	app.writeJSON(w, http.StatusAccepted, jsonResponse{Error: false, Message: "OK!", Data: fmt.Sprintf("Deleted entries: %d", result)})
 }
 
+// --- Project keys, retention and metrics ---
+//
+// Behind requireProject, like the project routes below: the project is the one
+// in the path.
+
 func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	projectID := r.URL.Query().Get("project_id")
-	if projectID == "" {
-		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
-		return
-	}
-
-	client, ok := app.dialLogger(w)
-	if !ok {
-		return
-	}
-	defer client.Close()
-
-	if _, ok := app.authorizeProject(w, r, client, projectID, anyMember); !ok {
-		return
-	}
+	p := projectFromContext(r)
 
 	var keys []data.APIKey
-	if err := client.Call("RPCServer.ListAPIKeys", &data.ProjectArgs{ProjectID: projectID}, &keys); err != nil {
+	if err := p.client.Call("RPCServer.ListAPIKeys", &data.ProjectArgs{ProjectID: p.id}, &keys); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
 	}
@@ -202,18 +194,14 @@ func (app *Config) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	p := projectFromContext(r)
+
 	var body struct {
-		ProjectID string `json:"project_id"`
 		// Scopes left out, or empty, mean data.DefaultScopes: ingest only.
 		Scopes []string `json:"scopes"`
 	}
 	if err := app.readJSON(w, r, &body); err != nil {
 		app.errorJSON(w, err)
-		return
-	}
-
-	if body.ProjectID == "" {
-		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
 		return
 	}
 
@@ -223,19 +211,9 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, ok := app.dialLogger(w)
-	if !ok {
-		return
-	}
-	defer client.Close()
-
-	if _, ok := app.authorizeProject(w, r, client, body.ProjectID, anyMember); !ok {
-		return
-	}
-
 	var created data.RPCCreateAPIKeyReply
-	args := data.RPCCreateAPIKeyArgs{ProjectID: body.ProjectID, Scopes: scopes}
-	if err := client.Call("RPCServer.CreateAPIKey", &args, &created); err != nil {
+	args := data.RPCCreateAPIKeyArgs{ProjectID: p.id, Scopes: scopes}
+	if err := p.client.Call("RPCServer.CreateAPIKey", &args, &created); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
 	}
@@ -253,34 +231,25 @@ func (app *Config) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RevokeAPIKey revokes a key by id alone: the key names its project, and the
-// caller has to be a member of that one.
+// RevokeAPIKey revokes a key of the project in the path. The logger matches
+// the project as well as the key id, so another project's key is a 404, the
+// same as one that does not exist.
 func (app *Config) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	p := projectFromContext(r)
 
-	client, ok := app.dialLogger(w)
-	if !ok {
-		return
-	}
-	defer client.Close()
-
-	var key data.APIKey
-	if err := client.Call("RPCServer.GetAPIKey", &data.RPCAPIKeyIDArgs{ID: id}, &key); err != nil {
-		app.rpcErrorJSON(w, err, keyNotFound)
-		return
-	}
-
-	if _, ok := app.authorizeProject(w, r, client, key.ProjectID.Hex(), anyMember); !ok {
+	keyID, err := primitive.ObjectIDFromHex(chi.URLParam(r, "keyID"))
+	if err != nil {
+		app.errorJSON(w, fmt.Errorf("key not found"), http.StatusNotFound)
 		return
 	}
 
 	var reply string
-	args := data.RPCRevokeAPIKeyArgs{ProjectID: key.ProjectID.Hex(), ID: id}
-	if err := client.Call("RPCServer.RevokeAPIKey", &args, &reply); err != nil {
+	args := data.RPCRevokeAPIKeyArgs{ProjectID: p.id, ID: keyID.Hex()}
+	if err := p.client.Call("RPCServer.RevokeAPIKey", &args, &reply); err != nil {
 		app.rpcErrorJSON(w, err, keyNotFound)
 		return
 	}
-	forgetCachedKey(key.ID.Hex())
+	forgetCachedKey(keyID.Hex())
 	app.writeJSON(w, http.StatusOK, jsonResponse{Error: false, Message: "Key revoked."})
 }
 
@@ -289,25 +258,10 @@ type retentionResponse struct {
 }
 
 func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
-	projectID := r.URL.Query().Get("project_id")
-	if projectID == "" {
-		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
-		return
-	}
-
-	client, ok := app.dialLogger(w)
-	if !ok {
-		return
-	}
-	defer client.Close()
-
-	if _, ok := app.authorizeProject(w, r, client, projectID, anyMember); !ok {
-		return
-	}
+	p := projectFromContext(r)
 
 	var days int
-	args := data.RetentionArgs{ProjectID: projectID}
-	if err := client.Call("RPCServer.GetRetention", &args, &days); err != nil {
+	if err := p.client.Call("RPCServer.GetRetention", &data.RetentionArgs{ProjectID: p.id}, &days); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
 	}
@@ -316,21 +270,17 @@ func (app *Config) GetRetention(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
+	p := projectFromContext(r)
+
 	var payload struct {
-		ProjectID string `json:"project_id"`
 		// A pointer, because a missing days would otherwise read as 0: forever.
 		Days *int `json:"days"`
 	}
-
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 
-	if payload.ProjectID == "" {
-		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
-		return
-	}
 	if payload.Days == nil {
 		app.errorJSON(w, fmt.Errorf("days is required"), http.StatusBadRequest)
 		return
@@ -342,22 +292,12 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, ok := app.dialLogger(w)
-	if !ok {
-		return
-	}
-	defer client.Close()
-
-	role, ok := app.authorizeProject(w, r, client, payload.ProjectID, anyMember)
-	if !ok {
-		return
-	}
 	// Any member may keep logs longer; shortening retention deletes whatever
 	// falls outside the new window on the next cleanup pass, so that is an
 	// owner's call.
-	if role != data.RoleOwner {
+	if p.role != data.RoleOwner {
 		var current int
-		if err := client.Call("RPCServer.GetRetention", &data.RetentionArgs{ProjectID: payload.ProjectID}, &current); err != nil {
+		if err := p.client.Call("RPCServer.GetRetention", &data.RetentionArgs{ProjectID: p.id}, &current); err != nil {
 			app.rpcErrorJSON(w, err, nil)
 			return
 		}
@@ -367,9 +307,9 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	args := data.RetentionArgs{ProjectID: payload.ProjectID, Days: *payload.Days}
+	args := data.RetentionArgs{ProjectID: p.id, Days: *payload.Days}
 	var reply string
-	if err := client.Call("RPCServer.UpdateRetention", &args, &reply); err != nil {
+	if err := p.client.Call("RPCServer.UpdateRetention", &args, &reply); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
 	}
@@ -378,25 +318,10 @@ func (app *Config) UpdateRetention(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Config) GetMetrics(w http.ResponseWriter, r *http.Request) {
-	projectID := r.URL.Query().Get("project_id")
-	if projectID == "" {
-		app.errorJSON(w, fmt.Errorf("project_id is required"), http.StatusBadRequest)
-		return
-	}
+	p := projectFromContext(r)
 
-	client, ok := app.dialLogger(w)
-	if !ok {
-		return
-	}
-	defer client.Close()
-
-	if _, ok := app.authorizeProject(w, r, client, projectID, anyMember); !ok {
-		return
-	}
-
-	args := data.ProjectArgs{ProjectID: projectID}
 	var result data.Metrics
-	if err := client.Call("RPCServer.GetMetrics", &args, &result); err != nil {
+	if err := p.client.Call("RPCServer.GetMetrics", &data.ProjectArgs{ProjectID: p.id}, &result); err != nil {
 		app.rpcErrorJSON(w, err, nil)
 		return
 	}

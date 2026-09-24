@@ -76,11 +76,6 @@ type RPCCreateAPIKeyReply struct {
 	Key       APIKey
 }
 
-// RPCAPIKeyIDArgs names a key by id, for RPCServer.GetAPIKey.
-type RPCAPIKeyIDArgs struct {
-	ID string
-}
-
 // RPCRevokeAPIKeyArgs names a key of a project, for RPCServer.RevokeAPIKey.
 type RPCRevokeAPIKeyArgs struct {
 	ProjectID string
@@ -246,27 +241,6 @@ func (m *Models) RevokeAPIKey(projectID primitive.ObjectID, id string) error {
 		return ErrKeyNotFound
 	}
 	return nil
-}
-
-func (m *Models) GetAPIKeyByID(id string) (*APIKey, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	docID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		return nil, err
-	}
-
-	var key APIKey
-	err = m.client.Database("logs").Collection("api_keys").FindOne(ctx, bson.M{"_id": docID}).Decode(&key)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, ErrKeyNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	key.fillLegacyScopes()
-	return &key, nil
 }
 
 func (m *Models) ListAPIKeysByProject(projectID primitive.ObjectID) ([]APIKey, error) {

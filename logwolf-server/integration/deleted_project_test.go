@@ -38,8 +38,8 @@ func TestDeletedProject_LateEventsAreDropped(t *testing.T) {
 		t.Fatalf("decode created project: %v (%s)", err, body)
 	}
 
-	body = mustInternalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner,
-		map[string]string{"project_id": project.ID}, http.StatusCreated)
+	body = mustInternalCall(t, stack.brokerURL, http.MethodPost, "/projects/"+project.ID+"/keys", owner,
+		map[string]string{}, http.StatusCreated)
 	var created struct {
 		Key string `json:"key"`
 	}

@@ -450,17 +450,6 @@ func (r *RPCServer) CreateAPIKey(args *data.RPCCreateAPIKeyArgs, reply *data.RPC
 	return nil
 }
 
-// GetAPIKey fetches a key by id alone, so the broker can learn its project and
-// check the caller's membership before revoking it. A miss is data.ErrKeyNotFound.
-func (r *RPCServer) GetAPIKey(args *data.RPCAPIKeyIDArgs, reply *data.APIKey) error {
-	key, err := r.models.GetAPIKeyByID(args.ID)
-	if err != nil {
-		return err
-	}
-	*reply = withoutHash(*key)
-	return nil
-}
-
 // RevokeAPIKey deactivates a key of a project. An id that names no key of that
 // project is data.ErrKeyNotFound.
 func (r *RPCServer) RevokeAPIKey(args *data.RPCRevokeAPIKeyArgs, reply *string) error {

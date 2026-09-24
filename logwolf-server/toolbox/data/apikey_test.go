@@ -29,7 +29,7 @@ func TestErrKeyNotFound(t *testing.T) {
 }
 
 // TestAPIKeyStruct verifies that APIKey carries a ProjectID field and that
-// ErrKeyNotFound is the sentinel returned by GetAPIKeyByID on a miss.
+// ErrKeyNotFound is the sentinel returned by RevokeAPIKey on a miss.
 func TestAPIKeyStruct(t *testing.T) {
 	id := primitive.NewObjectID()
 	projectID := primitive.NewObjectID()

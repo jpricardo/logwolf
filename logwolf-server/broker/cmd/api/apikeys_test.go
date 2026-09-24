@@ -16,12 +16,11 @@ import (
 func TestAPIKeys_CreateListRevokeThroughLogger(t *testing.T) {
 	h, f := newInternalTestServer(t)
 
-	w := do(h, internalRequest(http.MethodPost, "/keys", "member-a", map[string]any{
-		"project_id": projAlpha,
-		"scopes":     []string{data.ScopeRead, data.ScopeIngest},
+	w := do(h, internalRequest(http.MethodPost, "/projects/"+projAlpha+"/keys", "member-a", map[string]any{
+		"scopes": []string{data.ScopeRead, data.ScopeIngest},
 	}))
 	if w.Code != http.StatusCreated {
-		t.Fatalf("POST /keys = %d, want 201 (body: %s)", w.Code, w.Body.String())
+		t.Fatalf("POST /projects/{id}/keys = %d, want 201 (body: %s)", w.Code, w.Body.String())
 	}
 	created := decodeData[struct {
 		Key    string   `json:"key"`
@@ -39,18 +38,18 @@ func TestAPIKeys_CreateListRevokeThroughLogger(t *testing.T) {
 		t.Errorf("created scopes = %v, want %v", created.Scopes, want)
 	}
 
-	w = do(h, internalRequest(http.MethodGet, "/keys?project_id="+projAlpha, "member-a", nil))
+	w = do(h, internalRequest(http.MethodGet, "/projects/"+projAlpha+"/keys", "member-a", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /keys = %d, want 200 (body: %s)", w.Code, w.Body.String())
+		t.Fatalf("GET /projects/{id}/keys = %d, want 200 (body: %s)", w.Code, w.Body.String())
 	}
 	listed := decodeData[[]data.APIKey](t, w)
 	if len(listed) != 1 || listed[0].ID.Hex() != created.ID || !listed[0].Active {
-		t.Fatalf("GET /keys = %+v, want the one active key just created", listed)
+		t.Fatalf("GET /projects/{id}/keys = %+v, want the one active key just created", listed)
 	}
 
-	w = do(h, internalRequest(http.MethodDelete, "/keys/"+created.ID, "member-a", nil))
+	w = do(h, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/keys/"+created.ID, "member-a", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("DELETE /keys/{id} = %d, want 200 (body: %s)", w.Code, w.Body.String())
+		t.Fatalf("DELETE /projects/{id}/keys/{keyID} = %d, want 200 (body: %s)", w.Code, w.Body.String())
 	}
 	f.snapshot(func(f *fakeLogger) {
 		want := data.RPCRevokeAPIKeyArgs{ProjectID: projAlpha, ID: created.ID}
@@ -58,24 +57,34 @@ func TestAPIKeys_CreateListRevokeThroughLogger(t *testing.T) {
 			t.Errorf("RevokeAPIKey calls = %+v, want %+v", f.revokedKeys, want)
 		}
 		if f.keys[created.ID].Active {
-			t.Error("key still active after DELETE /keys/{id}")
+			t.Error("key still active after DELETE /projects/{id}/keys/{keyID}")
 		}
 	})
 }
 
-// Revoking checks membership in the key's own project, and names that project
-// to the logger, so a key of another project stays untouched.
-func TestRevokeAPIKey_OtherProjectsKeyIsForbidden(t *testing.T) {
+// A key is revoked through its own project's path. Through another project's
+// path it names no key of that project, so it is a 404 and stays active; through
+// its own project's path, an outsider is refused before anything is forwarded.
+func TestRevokeAPIKey_OtherProjectsKey(t *testing.T) {
 	h, f := newInternalTestServer(t)
 	_, betaKey := f.addKey(projBeta, data.ScopeIngest)
 
-	w := do(h, internalRequest(http.MethodDelete, "/keys/"+betaKey.ID.Hex(), "owner-a", nil))
-	if w.Code != http.StatusForbidden {
-		t.Errorf("revoke another project's key = %d, want 403 (body: %s)", w.Code, w.Body.String())
+	w := do(h, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/keys/"+betaKey.ID.Hex(), "owner-a", nil))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("revoke beta's key through alpha = %d, want 404 (body: %s)", w.Code, w.Body.String())
 	}
+
+	w = do(h, internalRequest(http.MethodDelete, "/projects/"+projBeta+"/keys/"+betaKey.ID.Hex(), "owner-a", nil))
+	if w.Code != http.StatusForbidden {
+		t.Errorf("revoke beta's key through beta as an outsider = %d, want 403 (body: %s)", w.Code, w.Body.String())
+	}
+
 	f.snapshot(func(f *fakeLogger) {
-		if len(f.revokedKeys) != 0 {
-			t.Errorf("RevokeAPIKey forwarded for a non-member: %+v", f.revokedKeys)
+		// The first attempt reaches the logger, which matches the project and
+		// finds nothing; the second never does.
+		want := []data.RPCRevokeAPIKeyArgs{{ProjectID: projAlpha, ID: betaKey.ID.Hex()}}
+		if !slices.Equal(f.revokedKeys, want) {
+			t.Errorf("RevokeAPIKey calls = %+v, want %+v", f.revokedKeys, want)
 		}
 		if !f.keys[betaKey.ID.Hex()].Active {
 			t.Error("another project's key was revoked")
@@ -86,7 +95,7 @@ func TestRevokeAPIKey_OtherProjectsKeyIsForbidden(t *testing.T) {
 func TestRevokeAPIKey_UnknownKeyIsNotFound(t *testing.T) {
 	h, _ := newInternalTestServer(t)
 
-	w := do(h, internalRequest(http.MethodDelete, "/keys/"+primitive.NewObjectID().Hex(), "owner-a", nil))
+	w := do(h, internalRequest(http.MethodDelete, "/projects/"+projAlpha+"/keys/"+primitive.NewObjectID().Hex(), "owner-a", nil))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("revoke an unknown key = %d, want 404 (body: %s)", w.Code, w.Body.String())
 	}

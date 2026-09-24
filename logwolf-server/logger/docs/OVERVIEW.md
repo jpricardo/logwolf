@@ -40,7 +40,6 @@ API keys live here too, so the Broker needs no database of its own:
 | `RPCServer.ValidateAPIKey` | `RPCValidateAPIKeyArgs` | `RPCValidateAPIKeyReply` | Resolve a plaintext key; unknown or revoked is `Valid` false     |
 | `RPCServer.ListAPIKeys`    | `ProjectArgs`           | `[]APIKey`               | A project's keys, newest first                                   |
 | `RPCServer.CreateAPIKey`   | `RPCCreateAPIKeyArgs`   | `RPCCreateAPIKeyReply`   | Generate and store a key; the plaintext is returned once         |
-| `RPCServer.GetAPIKey`      | `RPCAPIKeyIDArgs`       | `APIKey`                 | Fetch a key by id, so the Broker can check access to its project |
 | `RPCServer.RevokeAPIKey`   | `RPCRevokeAPIKeyArgs`   | `string`                 | Revoke a key of a project; another project's is `ErrKeyNotFound` |
 
 Replies never carry a key's bcrypt hash. `gob` sends every exported field whatever its `json` tag says, so the logger clears it first.

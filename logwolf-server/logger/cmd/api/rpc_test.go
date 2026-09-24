@@ -126,10 +126,6 @@ func TestCreateAPIKey_UnknownScope(t *testing.T) {
 func TestAPIKeyMethods_MalformedID(t *testing.T) {
 	srv := &RPCServer{}
 
-	var key data.APIKey
-	if err := srv.GetAPIKey(&data.RPCAPIKeyIDArgs{ID: "not-an-id"}, &key); err == nil {
-		t.Error("GetAPIKey accepted a malformed id")
-	}
 	var reply string
 	if err := srv.RevokeAPIKey(&data.RPCRevokeAPIKeyArgs{ProjectID: primitive.NewObjectID().Hex(), ID: "not-an-id"}, &reply); err == nil {
 		t.Error("RevokeAPIKey accepted a malformed id")

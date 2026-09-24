@@ -32,11 +32,11 @@ func TestScopedKeys_IngestOnlyByDefault(t *testing.T) {
 
 	mint := func(scopes []string) (key string, got []string) {
 		t.Helper()
-		req := map[string]any{"project_id": project.ID}
+		req := map[string]any{}
 		if scopes != nil {
 			req["scopes"] = scopes
 		}
-		body := mustInternalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner, req, http.StatusCreated)
+		body := mustInternalCall(t, stack.brokerURL, http.MethodPost, "/projects/"+project.ID+"/keys", owner, req, http.StatusCreated)
 		var created struct {
 			Key    string   `json:"key"`
 			Scopes []string `json:"scopes"`
@@ -80,8 +80,8 @@ func TestScopedKeys_IngestOnlyByDefault(t *testing.T) {
 		t.Errorf("POST /logs with a read-only key = %d, want 403", code)
 	}
 
-	if status, _ := internalCall(t, stack.brokerURL, http.MethodPost, "/keys", owner,
-		map[string]any{"project_id": project.ID, "scopes": []string{"admin"}}); status != http.StatusBadRequest {
+	if status, _ := internalCall(t, stack.brokerURL, http.MethodPost, "/projects/"+project.ID+"/keys", owner,
+		map[string]any{"scopes": []string{"admin"}}); status != http.StatusBadRequest {
 		t.Errorf("POST /keys with an unknown scope = %d, want 400", status)
 	}
 
@@ -92,7 +92,7 @@ func TestScopedKeys_IngestOnlyByDefault(t *testing.T) {
 		t.Errorf("legacy key sees %v, want scoped-ingest-event among them", names)
 	}
 
-	body = mustInternalCall(t, stack.brokerURL, http.MethodGet, "/keys?project_id="+project.ID, owner, nil, http.StatusOK)
+	body = mustInternalCall(t, stack.brokerURL, http.MethodGet, "/projects/"+project.ID+"/keys", owner, nil, http.StatusOK)
 	var listed []struct {
 		Prefix string   `json:"prefix"`
 		Scopes []string `json:"scopes"`

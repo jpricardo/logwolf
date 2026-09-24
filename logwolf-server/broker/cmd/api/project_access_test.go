@@ -114,9 +114,9 @@ func TestInternalRoutes_RejectMissingOrWrongSecret(t *testing.T) {
 	handler, _ := newInternalTestServer(t)
 
 	routes := []struct{ method, target string }{
-		{http.MethodGet, "/keys?project_id=" + projAlpha},
-		{http.MethodGet, "/settings/retention?project_id=" + projAlpha},
-		{http.MethodGet, "/metrics?project_id=" + projAlpha},
+		{http.MethodGet, "/projects/" + projAlpha + "/keys"},
+		{http.MethodGet, "/projects/" + projAlpha + "/retention"},
+		{http.MethodGet, "/projects/" + projAlpha + "/metrics"},
 		{http.MethodGet, "/projects"},
 		{http.MethodGet, "/projects/" + projAlpha},
 		{http.MethodDelete, "/projects/" + projAlpha},
@@ -160,11 +160,11 @@ func TestInternalRoutes_RejectMissingUserLogin(t *testing.T) {
 	handler, _ := newInternalTestServer(t)
 
 	routes := []struct{ method, target string }{
-		{http.MethodGet, "/keys?project_id=" + projAlpha},
-		{http.MethodPost, "/keys"},
-		{http.MethodGet, "/settings/retention?project_id=" + projAlpha},
-		{http.MethodPatch, "/settings/retention"},
-		{http.MethodGet, "/metrics?project_id=" + projAlpha},
+		{http.MethodGet, "/projects/" + projAlpha + "/keys"},
+		{http.MethodPost, "/projects/" + projAlpha + "/keys"},
+		{http.MethodGet, "/projects/" + projAlpha + "/retention"},
+		{http.MethodPatch, "/projects/" + projAlpha + "/retention"},
+		{http.MethodGet, "/projects/" + projAlpha + "/metrics"},
 		{http.MethodGet, "/projects"},
 		{http.MethodPost, "/projects"},
 		{http.MethodGet, "/projects/" + projAlpha},
@@ -218,19 +218,19 @@ func TestProjectRoutes_MembershipEnforced(t *testing.T) {
 		// rather than return 403 — reaching 403 is the assertion.
 		{"outsider writes a log", http.MethodPost, "/projects/" + projAlpha + "/logs", "owner-b", map[string]string{"name": "x"}, http.StatusForbidden},
 
-		{"outsider reads retention", http.MethodGet, "/settings/retention?project_id=" + projAlpha, "owner-b", nil, http.StatusForbidden},
-		{"member reads retention", http.MethodGet, "/settings/retention?project_id=" + projAlpha, "member-a", nil, http.StatusOK},
-		{"outsider writes retention", http.MethodPatch, "/settings/retention", "owner-b",
-			map[string]any{"project_id": projAlpha, "days": 30}, http.StatusForbidden},
+		{"outsider reads retention", http.MethodGet, "/projects/" + projAlpha + "/retention", "owner-b", nil, http.StatusForbidden},
+		{"member reads retention", http.MethodGet, "/projects/" + projAlpha + "/retention", "member-a", nil, http.StatusOK},
+		{"outsider writes retention", http.MethodPatch, "/projects/" + projAlpha + "/retention", "owner-b",
+			map[string]any{"days": 30}, http.StatusForbidden},
 		// Raising it from the default 90; lowering is covered in TestUpdateRetention_OnlyOwnersLowerIt.
-		{"member writes retention", http.MethodPatch, "/settings/retention", "member-a",
-			map[string]any{"project_id": projAlpha, "days": 180}, http.StatusOK},
+		{"member writes retention", http.MethodPatch, "/projects/" + projAlpha + "/retention", "member-a",
+			map[string]any{"days": 180}, http.StatusOK},
 
-		{"outsider reads metrics", http.MethodGet, "/metrics?project_id=" + projAlpha, "owner-b", nil, http.StatusForbidden},
-		{"member reads metrics", http.MethodGet, "/metrics?project_id=" + projAlpha, "member-a", nil, http.StatusOK},
+		{"outsider reads metrics", http.MethodGet, "/projects/" + projAlpha + "/metrics", "owner-b", nil, http.StatusForbidden},
+		{"member reads metrics", http.MethodGet, "/projects/" + projAlpha + "/metrics", "member-a", nil, http.StatusOK},
 
-		{"outsider lists keys", http.MethodGet, "/keys?project_id=" + projAlpha, "owner-b", nil, http.StatusForbidden},
-		{"outsider creates key", http.MethodPost, "/keys", "owner-b", map[string]string{"project_id": projAlpha}, http.StatusForbidden},
+		{"outsider lists keys", http.MethodGet, "/projects/" + projAlpha + "/keys", "owner-b", nil, http.StatusForbidden},
+		{"outsider creates key", http.MethodPost, "/projects/" + projAlpha + "/keys", "owner-b", map[string]string{}, http.StatusForbidden},
 	}
 
 	for _, tc := range cases {
@@ -241,31 +241,6 @@ func TestProjectRoutes_MembershipEnforced(t *testing.T) {
 					tc.method, tc.target, tc.user, w.Code, tc.wantStatus, w.Body.String())
 			}
 		})
-	}
-}
-
-// Project-scoped routes that need a project id must say so, rather than falling
-// back to some ambient default.
-func TestProjectScopedRoutes_RequireProjectID(t *testing.T) {
-	handler, _ := newInternalTestServer(t)
-
-	cases := []struct {
-		method string
-		target string
-		body   any
-	}{
-		{http.MethodGet, "/keys", nil},
-		{http.MethodPost, "/keys", map[string]string{}},
-		{http.MethodGet, "/settings/retention", nil},
-		{http.MethodPatch, "/settings/retention", map[string]any{"days": 30}},
-		{http.MethodGet, "/metrics", nil},
-	}
-
-	for _, tc := range cases {
-		w := do(handler, internalRequest(tc.method, tc.target, "owner-a", tc.body))
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("%s %s without project_id: got %d, want 400", tc.method, tc.target, w.Code)
-		}
 	}
 }
 
@@ -648,8 +623,8 @@ func TestUpdateRetention_OnlyOwnersLowerIt(t *testing.T) {
 
 	handler, fake := newInternalTestServer(t)
 	for _, step := range steps {
-		w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", step.user,
-			map[string]any{"project_id": projAlpha, "days": step.days}))
+		w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/retention", step.user,
+			map[string]any{"days": step.days}))
 		if w.Code != step.wantStatus {
 			t.Fatalf("%s: got %d, want %d (body: %s)", step.name, w.Code, step.wantStatus, w.Body.String())
 		}
@@ -664,8 +639,8 @@ func TestUpdateRetention_OnlyOwnersLowerIt(t *testing.T) {
 func TestUpdateRetention_UnknownProjectIsNotFound(t *testing.T) {
 	handler, _ := newInternalTestServer(t)
 
-	w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "member-a",
-		map[string]any{"project_id": projMissing, "days": 30}))
+	w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projMissing+"/retention", "member-a",
+		map[string]any{"days": 30}))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404 (body: %s)", w.Code, w.Body.String())
 	}
@@ -676,11 +651,11 @@ func TestUpdateRetention_UnknownProjectIsNotFound(t *testing.T) {
 func TestRetentionAndMetrics_ForwardTheProjectID(t *testing.T) {
 	handler, fake := newInternalTestServer(t)
 
-	if w := do(handler, internalRequest(http.MethodPatch, "/settings/retention", "owner-a",
-		map[string]any{"project_id": projAlpha, "days": 30})); w.Code != http.StatusOK {
+	if w := do(handler, internalRequest(http.MethodPatch, "/projects/"+projAlpha+"/retention", "owner-a",
+		map[string]any{"days": 30})); w.Code != http.StatusOK {
 		t.Fatalf("update retention: got %d (body: %s)", w.Code, w.Body.String())
 	}
-	if w := do(handler, internalRequest(http.MethodGet, "/metrics?project_id="+projAlpha, "member-a", nil)); w.Code != http.StatusOK {
+	if w := do(handler, internalRequest(http.MethodGet, "/projects/"+projAlpha+"/metrics", "member-a", nil)); w.Code != http.StatusOK {
 		t.Fatalf("get metrics: got %d (body: %s)", w.Code, w.Body.String())
 	}
 
