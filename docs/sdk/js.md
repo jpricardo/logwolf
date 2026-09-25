@@ -8,6 +8,15 @@ The Logwolf JS SDK ships as `@logwolf/client-js` on npm. It handles event creati
 npm install @logwolf/client-js
 ```
 
+### Compatibility
+
+| SDK   | Logwolf server                                                                    |
+| ----- | --------------------------------------------------------------------------------- |
+| 2.x   | The multi-tenancy release or later: `getOne` uses its `GET /logs/:id` route       |
+| 1.x   | Any; `getOne` searches only the newest page of events                             |
+
+Upgrading from 1.x? See the [changelog](https://github.com/jpricardo/logwolf/blob/main/logwolf-client/js/CHANGELOG.md): `getOne` and `getAll`'s pagination changed.
+
 ## Initialisation
 
 ```ts
