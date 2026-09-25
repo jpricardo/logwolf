@@ -11,7 +11,7 @@ Server-side-rendered React dashboard for managing and viewing Logwolf data. Prov
 | Framework      | React Router v7 (SSR)                                       |
 | UI             | React 19, Tailwind CSS 4, Radix UI, Shadcn-style components |
 | Charts         | Recharts                                                    |
-| Auth           | GitHub OAuth 2.0 + iron-session (secure cookies)            |
+| Auth           | GitHub OAuth 2.0 + React Router cookie sessions             |
 | Build          | Vite + TypeScript                                           |
 | Error tracking | `@logwolf/client-js` (the SDK, eating its own dog food)     |
 
@@ -41,7 +41,8 @@ app/
 │   ├── logwolf.ts        # Logwolf SDK setup for client-side error tracking
 │   ├── auth.server.ts    # Server-side GitHub OAuth logic
 │   ├── allowlist.server.ts # Who may sign in (users/orgs allowlist, deny by default)
-│   ├── session.server.ts # iron-session cookie helpers
+│   ├── session.server.ts # cookie session helpers
+│   ├── token.server.ts   # seals the GitHub token kept in the session
 │   ├── csrf.server.ts    # CSRF token generation + validation
 │   ├── format.ts         # Formatting utilities (dates, numbers)
 │   ├── parse.ts          # Parsing utilities
@@ -115,13 +116,18 @@ to demote them. Deleting a project clears `currentProjectID` when it was the
 one in session and returns to `/projects`, where the layout takes over.
 
 Adding a member checks the login first (`checkInvitee` in
-`app/lib/allowlist.server.ts`), through GitHub's public API, without a token.
-A login GitHub does not know, or an organization, is refused. Otherwise the
-member is added under GitHub's casing, with a warning when the allowlist does
-not clear them: they are on neither the users allowlist nor, publicly, an allowed
-org, so they cannot sign in (or, with orgs allowlisted, only through a private
-membership GitHub will not show). The same warning, worded for it, covers
-GitHub being unreachable or rate-limited: that never blocks an owner.
+`app/lib/allowlist.server.ts`). A login GitHub does not know, or an
+organization, is refused. Otherwise the member is added under GitHub's casing,
+with a warning when the allowlist does not clear them.
+
+Org membership is asked with the inviting owner's own GitHub token, kept from
+sign-in. GitHub shows private members only to someone in the org, so an owner in
+an allowed org gets a definite answer for its private members too. Where GitHub
+will not answer the owner (they are not in that org, or the session predates
+tokens being kept, or the token was revoked), the check falls back to public
+membership, and a user it cannot clear gets a warning that allows for private
+membership. The same warning, worded for it, covers GitHub being unreachable or
+rate-limited: that never blocks an owner.
 
 ## Authentication
 
@@ -132,7 +138,12 @@ GitHub being unreachable or rate-limited: that never blocks an owner.
    sign in, and the server logs an error at startup. Both lists are parsed like the logger's
    `ParseGithubLogins` (trimmed, lowercased, blanks and duplicates dropped), and a failed org lookup
    denies the sign-in.
-3. A signed iron-session cookie is issued for subsequent requests.
+3. A session cookie is issued for subsequent requests (React Router's cookie session: signed with
+   `SESSION_SECRET`, not encrypted, so readable by whoever holds it). It keeps the user's GitHub
+   OAuth token too, for the invite check, **sealed** with AES-256-GCM under a key derived from
+   `SESSION_SECRET` (`lib/token.server.ts`). The token carries the scopes sign-in asks for,
+   `read:user read:org`, and goes nowhere but `api.github.com`. Changing `SESSION_SECRET` signs
+   everyone out and makes old tokens unreadable.
 4. All protected routes validate the session server-side before rendering.
 
 CSRF tokens are required on all mutating form submissions.
@@ -159,7 +170,7 @@ Event payloads come back exactly as the broker stores them, so `getLogs`/`getLog
 | `GITHUB_CLIENT_SECRET`         | GitHub OAuth app client secret                                |
 | `LOGWOLF_ALLOWED_GITHUB_USERS` | Comma-separated list of allowed GitHub usernames              |
 | `LOGWOLF_ALLOWED_GITHUB_ORGS`  | Comma-separated list of GitHub orgs whose members are allowed |
-| `SESSION_SECRET`               | Secret for iron-session cookie signing                        |
+| `SESSION_SECRET`               | Signs session cookies; the key sealing GitHub tokens derives from it |
 
 Copy `.env.example` to `.env` before running locally.
 

@@ -7,6 +7,7 @@ import { vi } from 'vitest';
 
 import type { IApi, Project, ProjectRole, UserProject } from '~/lib/api';
 import { commitSession, getSession } from '~/lib/session.server';
+import { sealToken } from '~/lib/token.server';
 
 export const user = { login: 'Octocat', name: 'The Octocat', avatarUrl: 'https://example.com/octocat.png' };
 export const CSRF = 'test-csrf-token';
@@ -14,14 +15,22 @@ export const CSRF = 'test-csrf-token';
 /** The route context: the event the dashboard reports itself with is absent. */
 export const context = { get: () => null } as never;
 
-type SessionFields = { signedIn?: boolean; currentProjectID?: string };
+type SessionFields = { signedIn?: boolean; currentProjectID?: string; githubToken?: string };
 
-/** A Cookie header for a session: signed in as `user`, with a CSRF token. */
-export async function sessionCookie({ signedIn = true, currentProjectID }: SessionFields = {}): Promise<string> {
+/**
+ * A Cookie header for a session: signed in as `user`, with a CSRF token, and
+ * the user's GitHub token, sealed, when given one.
+ */
+export async function sessionCookie({
+	signedIn = true,
+	currentProjectID,
+	githubToken,
+}: SessionFields = {}): Promise<string> {
 	const session = await getSession();
 	if (signedIn) session.set('githubUser', user);
 	session.set('csrfToken', CSRF);
 	if (currentProjectID) session.set('currentProjectID', currentProjectID);
+	if (githubToken) session.set('githubToken', sealToken(githubToken));
 	return (await commitSession(session)).split(';')[0]!;
 }
 

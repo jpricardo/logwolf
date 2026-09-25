@@ -7,7 +7,7 @@ import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
 import { lowersRetention } from '~/lib/retention';
-import { commitSession, getSession } from '~/lib/session.server';
+import { commitSession, getGithubToken, getSession } from '~/lib/session.server';
 
 import type { Route } from './+types';
 import { DangerZone } from './components/danger-zone';
@@ -99,7 +99,8 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			// ask GitHub first. Only a login that cannot be a person is refused;
 			// one the allowlist does not clear is added with a warning, since an
 			// admin may allowlist them later.
-			const check = await checkInvitee(login, allowlistFromEnv());
+			// Asked as the owner, so an allowed org's private members are seen.
+			const check = await checkInvitee(login, allowlistFromEnv(), fetch, await getGithubToken(request));
 			event?.set('inviteCheck', check.kind);
 			if (check.kind === 'unknown') return { error: `There is no GitHub user named ${login}.` };
 			if (check.kind === 'organization') {
