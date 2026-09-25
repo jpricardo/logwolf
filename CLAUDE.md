@@ -169,7 +169,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and all
 3. JS SDK tests
 4. Frontend tests
 
-A separate workflow (`release-js-client.yml`) publishes the JS SDK to npm.
+A separate workflow (`release-js-client.yml`) publishes the JS SDK to npm when a GitHub release is created. It refuses a release whose tag is not `v` + `package.json`'s version, and typechecks and tests before publishing. Bump `logwolf-client/js/package.json` and `CHANGELOG.md` first.
 
 ## Environment
 
