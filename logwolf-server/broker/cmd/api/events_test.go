@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -120,5 +121,44 @@ func TestHealth_ReportsTheEventQueue(t *testing.T) {
 				t.Errorf("checkRabbitMQ = %+v, want %s", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestPublish_NormalizesSeverity: an event is stored under its severity
+// lower-cased, which is what the metrics count; "ERROR" used to be stored as
+// sent, and never counted as an error.
+func TestPublish_NormalizesSeverity(t *testing.T) {
+	pub := &fakePublisher{}
+	h := (&Config{Events: pub}).routes()
+	key := seedKey(t, projAlpha, data.ScopeIngest)
+
+	if w := do(h, keyRequest(http.MethodPost, "/logs", key, `{"name":"x","severity":" ERROR "}`)); w.Code != http.StatusAccepted {
+		t.Fatalf("POST /logs = %d, want 202 (body: %s)", w.Code, w.Body.String())
+	}
+	m := pub.calls[0][0]
+	if got := decodeEvent(t, m).Severity; got != "error" || m.RoutingKey != "log.error" {
+		t.Errorf("published severity %q under %q, want error under log.error", got, m.RoutingKey)
+	}
+}
+
+// TestPublish_RefusesUnknownSeverity: a severity that is not one of the four is
+// a 400, on every write route, and nothing of the request is queued.
+func TestPublish_RefusesUnknownSeverity(t *testing.T) {
+	pub := &fakePublisher{}
+	h := (&Config{Events: pub}).routes()
+	key := seedKey(t, projAlpha, data.ScopeIngest)
+
+	for _, tc := range []struct{ path, body, want string }{
+		{"/logs", `{"name":"x","severity":"debug"}`, `invalid severity \"debug\"`},
+		{"/logs", `{"name":"x"}`, `invalid severity \"\"`},
+		{"/logs/batch", `[{"name":"a","severity":"info"},{"name":"b","severity":"fatal"}]`, `event 1: invalid severity \"fatal\"`},
+	} {
+		w := do(h, keyRequest(http.MethodPost, tc.path, key, tc.body))
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), tc.want) {
+			t.Errorf("POST %s %s = %d %s, want 400 naming %s", tc.path, tc.body, w.Code, w.Body.String(), tc.want)
+		}
+	}
+	if len(pub.calls) != 0 {
+		t.Errorf("published %v, want nothing", pub.calls)
 	}
 }

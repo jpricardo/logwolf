@@ -18,7 +18,9 @@ import (
 // logs_topic exchange through a queue of its own, bound to every log key. The
 // Broker used to publish everything as log.INFO, so a consumer bound to
 // log.error never heard of an error. The Listener binds log.*, so every event
-// is still stored, critical ones included, which no binding of its used to cover.
+// is still stored, critical ones included, which no binding of its used to cover,
+// under its severity lower-cased; and one with none of the four severities is
+// refused.
 func TestSeverityRouting(t *testing.T) {
 	stack := sharedStack(t)
 	// A key of its own: testAPIKey's fixed plaintext is another test's.
@@ -56,7 +58,6 @@ func TestSeverityRouting(t *testing.T) {
 		"severity-error":    "log.error",
 		"severity-critical": "log.critical",
 		"severity-shouting": "log.error",
-		"severity-bogus":    "log.unknown",
 	}
 	severities := map[string]string{
 		"severity-info":     "info",
@@ -64,7 +65,6 @@ func TestSeverityRouting(t *testing.T) {
 		"severity-error":    "error",
 		"severity-critical": "critical",
 		"severity-shouting": "ERROR",
-		"severity-bogus":    "log.info.forged",
 	}
 
 	for name, severity := range severities {
@@ -108,6 +108,29 @@ func TestSeverityRouting(t *testing.T) {
 	}
 	if critical["severity"] != "critical" {
 		t.Errorf("critical event stored with severity %v", critical["severity"])
+	}
+
+	// Stored the way it is counted: lower-cased.
+	var shouting bson.M
+	if err := stored.FindOne(context.Background(), bson.M{"name": "severity-shouting"}).Decode(&shouting); err != nil {
+		t.Fatalf("find shouting event: %v", err)
+	}
+	if shouting["severity"] != "error" {
+		t.Errorf("event sent as ERROR stored with severity %v, want error", shouting["severity"])
+	}
+
+	// A severity that is none of the four is refused, not queued under some key.
+	body, _ := json.Marshal(map[string]any{"name": "severity-bogus", "data": "{}", "severity": "log.info.forged", "tags": []string{}})
+	req, _ := http.NewRequest(http.MethodPost, stack.brokerURL+"/logs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post bogus severity: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("post with severity log.info.forged = %d, want 400", resp.StatusCode)
 	}
 }
 
