@@ -199,6 +199,8 @@ await logwolf.delete({ id: '66f1a2b3c4d5e6f7a8b9c0d1' });
 
 ## Event severity guide
 
+The server stores these four only, lower-cased. A client that calls the HTTP API directly may send them in any case (`ERROR` is stored as `error`); any other value is refused with a `400`.
+
 | Severity   | When to use                                                                                         |
 | ---------- | --------------------------------------------------------------------------------------------------- |
 | `info`     | Normal operations — user actions, background jobs, feature usage                                    |

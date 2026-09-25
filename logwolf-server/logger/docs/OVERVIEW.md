@@ -63,7 +63,7 @@ Each log entry stored in MongoDB contains:
 | `project_id` | ObjectID  | Owning project (`projects._id`) |
 | `name`       | string    | Event name                      |
 | `data`       | any       | Arbitrary payload               |
-| `severity`   | string    | `INFO`, `WARNING`, or `ERROR`   |
+| `severity`   | string    | `info`, `warning`, `error` or `critical`; the broker lower-cases it. Events stored before that keep their casing |
 | `tags`       | []string  | Searchable tags                 |
 | `duration`   | int64     | Duration in milliseconds        |
 | `created_at` | time.Time | Timestamp (drives retention)    |

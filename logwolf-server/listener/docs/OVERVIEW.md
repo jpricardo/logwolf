@@ -17,13 +17,13 @@ The Listener is intentionally minimal — all shared logic lives in `logwolf-too
 
 ```
 RabbitMQ (logs_topic exchange)
-  └── routing keys: log.info, log.warning, log.error, log.critical, log.unknown
+  └── routing keys: log.info, log.warning, log.error, log.critical
       └── Listener consumes
           └── RPC call → Logger:5001 (RPCServer.LogInfo)
               └── MongoDB write
 ```
 
-1. The Listener binds to the `logs_topic` exchange with `log.*` (`event.LogBindingKey`), so it receives every severity. The Broker publishes each event under `log.<severity>` (`data.SeverityRoutingKey`), and anything but info, warning, error and critical as `log.unknown`. A queue declared by an older build keeps its `log.INFO`, `log.WARNING` and `log.ERROR` bindings too; that is harmless, as a message reaches a queue once however many of its bindings match.
+1. The Listener binds to the `logs_topic` exchange with `log.*` (`event.LogBindingKey`), so it receives every severity. The Broker publishes each event under `log.<severity>` (`data.SeverityRoutingKey`), after normalizing the severity; it refuses any other than info, warning, error and critical. A queue declared by an older build keeps its `log.INFO`, `log.WARNING` and `log.ERROR` bindings too; that is harmless, as a message reaches a queue once however many of its bindings match.
 2. Each message is a JSON-encoded `data.RPCLogPayload`.
 3. The Listener makes a synchronous RPC call to the Logger service, which writes to MongoDB.
 4. The message is acknowledged once the Logger has stored the event, or once it has been dropped for good (see below).

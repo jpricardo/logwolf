@@ -149,7 +149,9 @@ A 202 means RabbitMQ holds the event on disk (`event.Emitter`, `events.go`):
 - **The broker declares the queue** and its `log.*` binding at start, as the listener does. The exchange drops what no queue is bound for, so before, events sent before the listener had first run went nowhere.
 - **Reconnects:** the emitter dials RabbitMQ again once its connection has closed, as it does when RabbitMQ restarts. The request that finds it closed tries once; `/health` reconnects too.
 
-Events are published to the `logs_topic` exchange with routing key `log.<severity>` (`data.SeverityRoutingKey`): `log.info`, `log.warning`, `log.error` or `log.critical`, case-insensitively, and `log.unknown` for any other severity, which is stored as sent. A batch publishes each event under its own. The broker has no MongoDB client at all: API keys, like everything else it stores or reads, go through the logger's RPC methods.
+Every event's severity is normalized before anything is published (`data.NormalizeSeverity`): trimmed and lower-cased, so `ERROR` is stored as `error`, which is what the metrics count. A severity that is not `info`, `warning`, `error` or `critical`, a missing one included, is a **400** naming it (`event N: …` within a batch), and nothing of the request is queued. Events stored before this keep the casing they were sent with; they are not migrated.
+
+Events are published to the `logs_topic` exchange with routing key `log.<severity>` (`data.SeverityRoutingKey`): `log.info`, `log.warning`, `log.error` or `log.critical`. A batch publishes each event under its own. The broker has no MongoDB client at all: API keys, like everything else it stores or reads, go through the logger's RPC methods.
 
 ## Read path
 

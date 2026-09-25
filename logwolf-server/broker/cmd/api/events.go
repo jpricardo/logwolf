@@ -36,12 +36,24 @@ func eventMessage(p data.JSONLogPayload) (event.Message, error) {
 // confirmed every one of them, 503 otherwise. A 202 used to mean only that the
 // broker had tried.
 //
-// All of them are encoded before any is sent, so a bad one sends none. A batch
-// that fails part-way may have queued some; a client that retries it can store
-// those twice.
+// Every severity is normalized first (see data.NormalizeSeverity): "ERROR" is
+// stored as "error", and an event with any other severity is a 400. All of
+// them are checked and encoded before any is sent, so a bad one sends none. A
+// batch that fails part-way may have queued some; a client that retries it can
+// store those twice.
 func (app *Config) publishEvents(w http.ResponseWriter, r *http.Request, payloads ...data.JSONLogPayload) {
 	msgs := make([]event.Message, len(payloads))
 	for i, p := range payloads {
+		severity, err := data.NormalizeSeverity(p.Severity)
+		if err != nil {
+			if len(payloads) > 1 {
+				err = fmt.Errorf("event %d: %w", i, err)
+			}
+			app.errorJSON(w, err, http.StatusBadRequest)
+			return
+		}
+		p.Severity = severity
+
 		m, err := eventMessage(p)
 		if err != nil {
 			app.errorJSON(w, err, http.StatusBadRequest)
