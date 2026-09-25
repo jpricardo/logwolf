@@ -36,7 +36,7 @@ Logger ────────────────────────�
 
 ## Services
 
-**Caddy** is the only service that faces the internet. It terminates TLS and routes traffic: `/api/*` goes to the Broker, everything else goes to the Frontend. Nothing else is exposed on the host.
+**Caddy** is the only service that faces the internet. It terminates TLS and routes traffic: the Broker's public routes (`/api/logs`, `/api/logs/*`, `/api/health`, `/api/ping`) go to the Broker, any other path under `/api/` is a 404, and everything else goes to the Frontend. The Broker's dashboard routes are never forwarded: the Frontend reaches them over the internal network. Nothing else is exposed on the host.
 
 **Broker** is the HTTP API gateway, written in Go using the `chi` router. All SDK traffic enters here. It validates API keys, pushes log events to RabbitMQ asynchronously, and proxies read requests to the Logger via RPC. The Broker responds `202 Accepted` to write requests immediately — before the event hits the database. It exposes two write endpoints: `POST /logs` for single events and `POST /logs/batch` for batched delivery (max 1000 events per request).
 
@@ -71,8 +71,8 @@ The HTTP response comes back before the database write completes, but after Rabb
 
 When the dashboard loads the events list:
 
-1. The Frontend SSR loader calls `GET /api/logs` via the Broker with `X-Internal-Secret`.
-2. The Broker dials the Logger on `logger:5001` and calls `RPCServer.GetLogs`.
+1. The Frontend SSR loader calls the Broker's `GET /projects/{id}/logs` directly, on the internal network, with `X-Internal-Secret` and the user's login in `X-User-Login`.
+2. The Broker checks the user belongs to the project, dials the Logger on `logger:5001` and calls `RPCServer.GetLogs`.
 3. The Logger queries MongoDB with pagination and returns the results.
 4. The Broker serialises the result to JSON and returns it to the Frontend.
 

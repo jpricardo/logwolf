@@ -28,8 +28,14 @@ The default `Caddyfile` is configured for `localhost`. Replace it with your doma
 
 logs.your-domain.com {
     handle /api/* {
-        uri strip_prefix /api
-        reverse_proxy broker:80
+        @public path /api/logs /api/logs/* /api/health /api/ping
+        handle @public {
+            uri strip_prefix /api
+            reverse_proxy broker:80
+        }
+        handle {
+            respond "Not found" 404
+        }
     }
     handle {
         reverse_proxy frontend:3000
@@ -38,6 +44,8 @@ logs.your-domain.com {
 ```
 
 Caddy will handle TLS automatically. The `email` field is used for Let's Encrypt expiry notifications.
+
+Keep the `@public` matcher as it is. It forwards only the Broker's public routes: the SDK's `/logs` routes, which need an API key, and the health checks. The Broker's other routes serve the dashboard. They take `INTERNAL_API_SECRET` and then act as whichever user `X-User-Login` names, so they must never be reachable from the internet; the Frontend calls them over the internal network. Forwarding all of `/api/*` would let anyone who learned the secret act as any user. If you put another proxy in front of the Broker, forward the same paths and nothing else.
 
 ## Environment variables
 
@@ -172,7 +180,7 @@ Logwolf enforces an internal Docker network. The following services are **not** 
 - Logger RPC (`5001`)
 - Listener
 
-Only Caddy is exposed on ports 80 and 443. The Broker and Frontend communicate over the internal Docker network.
+Only Caddy is exposed on ports 80 and 443, and it forwards only the Broker's public routes (see the `Caddyfile` above). The dashboard's Broker routes are reached by the Frontend over the internal Docker network only.
 
 ## Updating
 
@@ -183,6 +191,17 @@ docker compose up --build -d
 ```
 
 Caddy, MongoDB, and RabbitMQ use pinned image versions in `docker-compose.yml`. Update these deliberately, not automatically.
+
+### Caddyfile: public routes only
+
+Earlier releases forwarded every path under `/api/` to the Broker, including the dashboard's routes, which are protected only by `INTERNAL_API_SECRET`. The shipped `Caddyfile` now forwards the public ones alone. If you replaced the `Caddyfile` with your own domain's, as this guide says to, `git pull` does not change it for you: replace its `handle /api/*` block with the one [above](#update-the-caddyfile), then reload Caddy.
+
+```bash
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+curl -s -o /dev/null -w '%{http_code}
+' https://logs.your-domain.com/api/projects   # 404
+curl -s https://logs.your-domain.com/api/health                                       # still answers
+```
 
 ### Upgrading from MongoDB 4.2 and RabbitMQ 3.9
 
