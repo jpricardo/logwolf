@@ -14,7 +14,7 @@ Caddy  ────────────────────────�
   ▼
 Broker                                                      │
   │  publishes to RabbitMQ exchange: logs_topic             │
-  │  routing keys: log.INFO | log.WARNING | log.ERROR       │
+  │  routing key: log.<severity>, e.g. log.error            │
   │                                                         │
   │  GET /api/logs → RPC → Logger ◄────────────────────────┘
   ▼
@@ -36,13 +36,13 @@ Logger ────────────────────────�
 
 ## Services
 
-**Caddy** is the only service that faces the internet. It terminates TLS and routes traffic: `/api/*` goes to the Broker, everything else goes to the Frontend. Nothing else is exposed on the host.
+**Caddy** is the only service that faces the internet. It terminates TLS and routes traffic: the Broker's public routes (`/api/logs`, `/api/logs/*`, `/api/health`, `/api/ping`) go to the Broker, any other path under `/api/` is a 404, and everything else goes to the Frontend. The Broker's dashboard routes are never forwarded: the Frontend reaches them over the internal network. Nothing else is exposed on the host.
 
 **Broker** is the HTTP API gateway, written in Go using the `chi` router. All SDK traffic enters here. It validates API keys, pushes log events to RabbitMQ asynchronously, and proxies read requests to the Logger via RPC. The Broker responds `202 Accepted` to write requests immediately — before the event hits the database. It exposes two write endpoints: `POST /logs` for single events and `POST /logs/batch` for batched delivery (max 1000 events per request).
 
-**RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`). If the Listener restarts, in-flight messages are not lost.
+**RabbitMQ** decouples ingestion from persistence. The Broker publishes events to a topic exchange (`logs_topic`). The Listener consumes from a durable named queue (`logwolf_logs`), which the Broker declares too, so events are queued even before the Listener first runs. Messages are persistent, and the Broker answers `202` only once RabbitMQ has confirmed them, so an accepted event survives a Listener, Logger or RabbitMQ restart.
 
-**Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping.
+**Listener** is a background worker that consumes from RabbitMQ and forwards events to the Logger via Go's `net/rpc` over TCP. It handles one message at a time, synchronously, so a clean shutdown always finishes the current message before stopping. A message is acknowledged only once the Logger has stored it; while the Logger is unreachable the Listener retries with back-off and the queue holds the rest, so an outage delays events rather than losing them.
 
 **Logger** is the only service with direct access to MongoDB. It runs a Go RPC server on port `5001` and handles all reads and writes. The Logger also manages the retention TTL index and runs metric aggregations via a MongoDB `$facet` pipeline.
 
@@ -65,14 +65,14 @@ When your application calls `logwolf.capture(event)`:
 
 When `logwolf.create(event)` is used instead, step 1–2 are skipped — the event is sent immediately via `POST /api/logs` and the call awaits the server response.
 
-The HTTP response comes back before the database write completes. This keeps ingestion latency low and protects your application from any slowness in the persistence layer.
+The HTTP response comes back before the database write completes, but after RabbitMQ has the event on disk. This keeps ingestion latency low and protects your application from any slowness in the persistence layer.
 
 ## Read path
 
 When the dashboard loads the events list:
 
-1. The Frontend SSR loader calls `GET /api/logs` via the Broker with `X-Internal-Secret`.
-2. The Broker dials the Logger on `logger:5001` and calls `RPCServer.GetLogs`.
+1. The Frontend SSR loader calls the Broker's `GET /projects/{id}/logs` directly, on the internal network, with `X-Internal-Secret` and the user's login in `X-User-Login`.
+2. The Broker checks the user belongs to the project, dials the Logger on `logger:5001` and calls `RPCServer.GetLogs`.
 3. The Logger queries MongoDB with pagination and returns the results.
 4. The Broker serialises the result to JSON and returns it to the Frontend.
 
@@ -82,7 +82,7 @@ Every read hits MongoDB directly. There is no read cache.
 
 Logwolf uses two separate authentication mechanisms for two different surfaces.
 
-**API keys** protect the SDK ingestion endpoints (`POST /api/logs`, `GET /api/logs`, `DELETE /api/logs`). Keys use a `lw_` prefix, are stored bcrypt-hashed in MongoDB, and are validated in `requireAPIKey` middleware on the Broker. A 60-second in-memory cache avoids a database hit on every request. Failed attempts are rate-limited per IP: 10 failures within 60 seconds triggers a `429`.
+**API keys** protect the SDK ingestion endpoints (`POST /api/logs`, `GET /api/logs`, `DELETE /api/logs`). Keys use a `lw_` prefix, are stored bcrypt-hashed in MongoDB, and are validated in `requireAPIKey` middleware on the Broker. Validation looks keys up by their stored 10-character prefix, so it runs one bcrypt compare, not one per key. A 60-second in-memory cache avoids a database hit on every request. Revoking a key, or deleting its project, evicts it from the cache at once, so it stops working immediately. With more than one Broker replica, only the one that handled the revoke evicts it; the others keep it until the entry expires. Failed attempts are rate-limited per client IP: 10 failures within 60 seconds triggers a `429`. Behind Caddy, the client IP is read from `X-Forwarded-For`, believed only from the peers listed in `TRUSTED_PROXIES`. 
 
 **GitHub OAuth** protects the dashboard. The Frontend handles the OAuth callback, validates the user against a configured allow-list (`LOGWOLF_ALLOWED_GITHUB_USERS` or `LOGWOLF_ALLOWED_GITHUB_ORGS`), and sets a signed HTTP-only session cookie. Dashboard routes are protected at the layout level via `requireAuth`.
 

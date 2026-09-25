@@ -11,7 +11,7 @@ services:
       replicas: 1
     environment:
       API_URL: http://broker:80/
-      SESSION_SECRET: changeme-use-a-real-secret-in-production
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
       LOGWOLF_ALLOWED_GITHUB_USERS: ${LOGWOLF_ALLOWED_GITHUB_USERS:-}
@@ -32,6 +32,13 @@ services:
       replicas: 1
     environment:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      # URL-safe credentials only: they are pasted into the URL as they are.
+      RABBITMQ_URL: amqp://${RABBITMQ_USERNAME}:${RABBITMQ_PASSWORD}@rabbitmq
+      # Peers whose X-Forwarded-For names the real client, so the failed-auth
+      # rate limiter counts per client and not per Caddy. The broker publishes
+      # no port, so only containers reach it; Caddy's address is assigned by
+      # Docker, hence the private ranges.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
     networks:
       - public
       - internal
@@ -41,9 +48,21 @@ services:
       context: .
       dockerfile: ./logger/logger.dockerfile
     restart: always
+    depends_on:
+      mongo:
+        condition: service_healthy
     deploy:
       mode: replicated
       replicas: 1
+    environment:
+      # Owners of the Default project created by the startup migration when an
+      # existing deployment is upgraded from a pre-multi-tenancy build.
+      LOGWOLF_ALLOWED_GITHUB_USERS: ${LOGWOLF_ALLOWED_GITHUB_USERS:-}
+      # Extra owners for that project; how org-only deployments get one.
+      LOGWOLF_DEFAULT_PROJECT_OWNERS: ${LOGWOLF_DEFAULT_PROJECT_OWNERS:-}
+      CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-1h}
+      MONGO_USERNAME: ${MONGO_USERNAME}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
     networks:
       - internal
 
@@ -51,31 +70,80 @@ services:
     build:
       context: .
       dockerfile: ./listener/listener.dockerfile
+    restart: always
     deploy:
       mode: replicated
       replicas: 1
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USERNAME}:${RABBITMQ_PASSWORD}@rabbitmq
     networks:
       - internal
 
   mongo:
-    image: 'mongo:4.2.16-bionic'
+    # 8.0 cannot open data files an older major version wrote until they have
+    # been brought forward one major at a time: an existing deployment runs
+    # scripts/upgrade-mongo.sh first. See docs/self-hosting.md.
+    image: 'mongo:8.0.32'
+    restart: always
     deploy:
       mode: replicated
       replicas: 1
     environment:
       MONGO_INITDB_DATABASE: logs
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password
+      # Only read when the data directory is first created: on an existing
+      # volume, these must be the credentials it was created with.
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?set MONGO_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in .env}
+    # MongoDB runs as a single-member replica set because the data layer uses
+    # transactions, which a standalone mongod refuses. A replica set with auth
+    # needs a keyfile; the only member it authenticates to is itself, so a fresh
+    # one on every start is fine.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        head -c 756 /dev/urandom | base64 > /tmp/mongo-keyfile
+        chown mongodb:mongodb /tmp/mongo-keyfile
+        chmod 400 /tmp/mongo-keyfile
+        exec docker-entrypoint.sh "$$@"
+      - --
+    command: ['mongod', '--replSet', 'rs0', '--keyFile', '/tmp/mongo-keyfile', '--bind_ip_all']
+    # The healthcheck also initiates the replica set the first time it finds one
+    # that isn't, which covers new volumes and existing standalone ones alike.
+    # Healthy means this node is primary and takes writes.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --authenticationDatabase admin
+          -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD"
+          --eval "try { rs.status() } catch (e) {
+          if (e.codeName !== 'NotYetInitialized') throw e;
+          rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) }
+          quit(db.hello().isWritablePrimary ? 0 : 1)"
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
     volumes:
       - ./db-data/mongo/:/data/db
     networks:
       - internal
 
   rabbitmq:
-    image: 'rabbitmq:3.9-alpine'
+    image: 'rabbitmq:4.3.6-alpine'
+    restart: always
+    # The node is named after the host, and keeps its data under that name. Left
+    # to Docker, the hostname changed with every new container, so each one
+    # started as a fresh node and the volume kept nothing.
+    hostname: rabbitmq
     deploy:
       mode: replicated
       replicas: 1
+    environment:
+      # Only read when the node first starts; see docs/self-hosting.md.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?set RABBITMQ_USERNAME in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}
     volumes:
       - ./db-data/rabbitmq/:/var/lib/rabbitmq/
     networks:

@@ -1,6 +1,8 @@
 import { KeyRound, LayoutDashboard, ScrollText, Settings } from 'lucide-react';
 import { Link } from 'react-router';
 
+import type { Project } from '~/lib/api';
+
 import type { Route } from '../../+types/root';
 import {
 	Sidebar,
@@ -14,6 +16,7 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from '../ui/sidebar';
+import { ProjectSwitcher } from './project-switcher';
 
 const items = [
 	{
@@ -33,20 +36,31 @@ const items = [
 		url: '/keys',
 		icon: KeyRound,
 	},
-
-	{
-		title: 'Settings',
-		url: '/settings',
-		icon: Settings,
-	},
 ] as const;
 
-type Props = Pick<Route.ComponentProps, 'matches'>;
-export function AppSidebar({ matches }: Props) {
+type Props = Pick<Route.ComponentProps, 'matches'> & {
+	projects: Project[];
+	currentProject: Project | undefined;
+	csrfToken: string;
+};
+export function AppSidebar({ matches, projects, currentProject, csrfToken }: Props) {
+	// Settings live under the project they configure. /settings still forwards
+	// there, but linking straight at the project keeps the item highlighted once
+	// the page is open.
+	const navItems = [
+		...items,
+		{
+			title: 'Settings',
+			url: currentProject ? `/projects/${currentProject.id}/settings` : '/settings',
+			icon: Settings,
+		},
+	];
+
 	return (
 		<Sidebar>
-			{/* TODO - Logo */}
-			<SidebarHeader />
+			<SidebarHeader>
+				<ProjectSwitcher projects={projects} currentProject={currentProject} csrfToken={csrfToken} />
+			</SidebarHeader>
 
 			<SidebarContent>
 				<SidebarGroup>
@@ -54,7 +68,7 @@ export function AppSidebar({ matches }: Props) {
 
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{items.map((item) => (
+							{navItems.map((item) => (
 								<SidebarMenuItem key={item.title}>
 									<SidebarMenuButton asChild isActive={matches.some((m) => m?.pathname.includes(item.url))}>
 										<Link to={item.url}>

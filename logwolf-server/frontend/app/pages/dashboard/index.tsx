@@ -5,7 +5,9 @@ import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
 import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
-import { api } from '~/lib/api';
+import { createApi } from '~/lib/api';
+import { requireAuth } from '~/lib/auth.server';
+import { getCurrentProjectID } from '~/lib/session.server';
 
 import type { Route } from './+types';
 import { AverageDuration, AverageDurationSkeleton } from './components/average-duration';
@@ -19,11 +21,17 @@ export function meta() {
 	return [{ title: 'Dashboard - Logwolf' }, { name: 'description', content: 'Logwolf dashboard!' }];
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
 	const event = context.get(eventContext);
 	event?.addTag('loader');
 
-	const metrics = api.getMetrics();
+	const user = await requireAuth(request);
+
+	const projectId = await getCurrentProjectID(request);
+	if (!projectId) return { metrics: null };
+
+	const api = createApi(user.login);
+	const metrics = api.getMetrics(projectId);
 	event?.set('loaderData', 'async data');
 
 	return { metrics };
@@ -31,6 +39,14 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
 	const { metrics } = loaderData;
+
+	if (!metrics) {
+		return (
+			<Page title='Dashboard'>
+				<p className='text-sm text-muted-foreground'>Select a project to view its dashboard.</p>
+			</Page>
+		);
+	}
 
 	return (
 		<Page title='Dashboard'>

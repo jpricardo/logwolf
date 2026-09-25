@@ -27,7 +27,10 @@ func main() {
 
 	log.Println("Listener started.")
 
-	if err := consumer.Listen(ctx, []string{"log.INFO", "log.WARNING", "log.ERROR"}); err != nil {
+	// Bound to every severity. Queues declared by older builds keep their
+	// log.INFO, log.WARNING and log.ERROR bindings as well, which is harmless: a
+	// message is delivered to a queue once, however many of its bindings match.
+	if err := consumer.Listen(ctx, []string{event.LogBindingKey}); err != nil {
 		log.Printf("Listener stopped: %v", err)
 	}
 

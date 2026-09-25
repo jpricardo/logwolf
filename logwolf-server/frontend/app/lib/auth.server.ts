@@ -1,11 +1,18 @@
 import { redirect } from 'react-router';
 
+import { allowlistFromEnv, isAllowed, isEmptyAllowlist, listGithubOrgs } from './allowlist.server';
 import { commitSession, destroySession, getSession } from './session.server';
+import { sealToken } from './token.server';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!;
-const ALLOWED_GITHUB_USERS = process.env.LOGWOLF_ALLOWED_GITHUB_USERS?.split(',').map((s) => s.trim()) ?? [];
-const ALLOWED_GITHUB_ORGS = process.env.LOGWOLF_ALLOWED_GITHUB_ORGS?.split(',').map((s) => s.trim()) ?? [];
+const ALLOWLIST = allowlistFromEnv();
+
+if (isEmptyAllowlist(ALLOWLIST)) {
+	console.error(
+		'Neither LOGWOLF_ALLOWED_GITHUB_USERS nor LOGWOLF_ALLOWED_GITHUB_ORGS is set: nobody can sign in to the dashboard.',
+	);
+}
 
 export function getGitHubAuthURL() {
 	const params = new URLSearchParams({
@@ -30,28 +37,27 @@ export async function handleGitHubCallback(code: string, request: Request) {
 	});
 	const user = await userRes.json();
 
-	// Allow-list check by username
-	if (ALLOWED_GITHUB_USERS.length > 0 && !ALLOWED_GITHUB_USERS.includes(user.login)) {
-		// Check org membership as fallback
-		if (ALLOWED_GITHUB_ORGS.length > 0) {
-			const orgsRes = await fetch('https://api.github.com/user/orgs', {
-				headers: { Authorization: `Bearer ${access_token}` },
-			});
-			const orgs: { login: string }[] = await orgsRes.json();
-			const memberOfAllowedOrg = orgs.some((o) => ALLOWED_GITHUB_ORGS.includes(o.login));
-			if (!memberOfAllowedOrg) throw redirect('/auth?error=unauthorized');
-		} else {
-			throw redirect('/auth?error=unauthorized');
-		}
+	// Deny by default: the login must be allowlisted or belong to an allowed org.
+	let allowed = false;
+	try {
+		allowed = await isAllowed(user.login, ALLOWLIST, () => listGithubOrgs(access_token));
+	} catch (err) {
+		console.error('Could not check the sign-in allowlist', err);
 	}
+	if (!allowed) throw redirect('/auth?error=unauthorized');
 
-	// Set session
+	// Set session. The login keeps GitHub's casing for display; the broker
+	// normalizes it before matching memberships.
 	const session = await getSession(request.headers.get('Cookie'));
 	session.set('githubUser', {
 		login: user.login,
 		name: user.name,
 		avatarUrl: user.avatar_url,
 	});
+	// Kept, sealed, for checking invitees' org membership: GitHub shows private
+	// members only to a token of someone inside the org. It carries the scopes
+	// sign-in asked for, read:user and read:org, and nothing more.
+	if (typeof access_token === 'string' && access_token) session.set('githubToken', sealToken(access_token));
 
 	return redirect('/dashboard', {
 		headers: { 'Set-Cookie': await commitSession(session) },

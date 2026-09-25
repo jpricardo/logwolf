@@ -78,11 +78,16 @@ export const LogwolfEventDTOSchema = LogwolfEventSchema.pick({
 });
 export type LogwolfEventDTO = z.infer<typeof LogwolfEventDTOSchema>;
 
+/** The largest page the server serves; it answers 400 to more. */
+export const MAX_PAGE_SIZE = 100;
+/** The deepest page the server serves. */
+export const MAX_PAGE = 1_000_000;
+
 export const PaginationSchema = z.codec(
 	z.instanceof(URLSearchParams),
 	z.object({
-		page: z.number().positive(),
-		pageSize: z.number().positive(),
+		page: z.number().int().positive().max(MAX_PAGE),
+		pageSize: z.number().int().positive().max(MAX_PAGE_SIZE),
 	}),
 	{
 		encode: (v) => {

@@ -18,6 +18,12 @@ type alwaysInvalidKey struct{}
 
 func (a alwaysInvalidKey) ValidateAPIKey(string) (bool, *data.APIKey, error) { return false, nil, nil }
 
+type validKeyWithProject struct{ projectID string }
+
+func (v validKeyWithProject) ValidateAPIKey(string) (bool, *data.APIKey, error) {
+	return true, &data.APIKey{ProjectID: mustObjectID(v.projectID)}, nil
+}
+
 func okHandler(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
 
 func newApp() *Config { return &Config{} }
@@ -90,9 +96,125 @@ func TestRequireAPIKey_ExpiredCache(t *testing.T) {
 	}
 }
 
+func TestRequireAPIKey_PropagatesProjectID(t *testing.T) {
+	const wantProjectID = "aaaaaaaaaaaaaaaaaaaa0123"
+	app := newApp()
+
+	var gotProjectID string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProjectID = projectIDFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := app.requireAPIKeyWith(validKeyWithProject{wantProjectID}, capture)
+
+	// First request: DB path
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, makeRequest("lw_projkey1234567"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotProjectID != wantProjectID {
+		t.Errorf("DB path: projectID in context = %q, want %q", gotProjectID, wantProjectID)
+	}
+
+	// Second request: cache path — projectID must still be propagated
+	gotProjectID = ""
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, makeRequest("lw_projkey1234567"))
+	if gotProjectID != wantProjectID {
+		t.Errorf("cache path: projectID in context = %q, want %q", gotProjectID, wantProjectID)
+	}
+}
+
+// --- requireUserLogin tests ---
+
+func TestRequireUserLogin_MissingHeader(t *testing.T) {
+	app := newApp()
+	handler := app.requireUserLogin(http.HandlerFunc(okHandler))
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on missing X-User-Login, got %d", w.Code)
+	}
+}
+
+func TestRequireUserLogin_PresentHeader(t *testing.T) {
+	app := newApp()
+
+	var gotLogin string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLogin = userLoginFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := app.requireUserLogin(capture)
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("X-User-Login", "jpricardo")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 with X-User-Login present, got %d", w.Code)
+	}
+	if gotLogin != "jpricardo" {
+		t.Errorf("userLoginFromContext = %q, want %q", gotLogin, "jpricardo")
+	}
+}
+
+// TestRequireUserLogin_NormalizesCase: the dashboard forwards the login in
+// GitHub's casing, and memberships are stored lowercase, so the handlers' role
+// checks only match if the middleware folds case first.
+func TestRequireUserLogin_NormalizesCase(t *testing.T) {
+	app := newApp()
+
+	var gotLogin string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLogin = userLoginFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := app.requireUserLogin(capture)
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("X-User-Login", "JPRicardo")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if gotLogin != "jpricardo" {
+		t.Errorf("userLoginFromContext = %q, want %q", gotLogin, "jpricardo")
+	}
+}
+
+func TestRequireUserLogin_EmptyHeaderValue(t *testing.T) {
+	app := newApp()
+	handler := app.requireUserLogin(http.HandlerFunc(okHandler))
+
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	r.Header.Set("X-User-Login", "") // present but empty
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 on empty X-User-Login, got %d", w.Code)
+	}
+}
+
+// --- requireAPIKey tests ---
+
 func TestRequireAPIKey_RateLimit(t *testing.T) {
 	app := newApp()
 	handler := app.requireAPIKeyWith(alwaysInvalidKey{}, http.HandlerFunc(okHandler))
+
+	// Every httptest request comes from the same address; lift the limit
+	// afterwards so the tests that run next are not answered with 429.
+	t.Cleanup(func() {
+		ipLimiterMu.Lock()
+		clear(ipLimiter)
+		ipLimiterMu.Unlock()
+	})
 
 	// Exhaust the rate limit
 	for i := 0; i < maxFailures; i++ {

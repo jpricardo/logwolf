@@ -9,20 +9,26 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-)
-
-const (
-	grpcPort = "50001"
 )
 
 var client *mongo.Client
 
 type Config struct {
 	Models data.Models
+
+	// purges carries the ids of just-deleted projects from the DeleteProject RPC
+	// to the cleanup loop, which deletes their logs. See requestPurge.
+	purges chan primitive.ObjectID
+
+	// startup is how far the startup tasks have got; see runStartup.
+	startup *startupState
 }
 
 func main() {
@@ -33,57 +39,68 @@ func main() {
 
 	client = mongoClient
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
 	defer func() {
-		if err = client.Disconnect(ctx); err != nil {
+		disconnectCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err = client.Disconnect(disconnectCtx); err != nil {
 			panic(err)
 		}
 	}()
 
 	app := Config{
-		Models: data.New(client),
+		Models:  data.New(client),
+		purges:  make(chan primitive.ObjectID, purgeQueueSize),
+		startup: &startupState{},
 	}
 
-	retentionDays, err := app.Models.Settings.GetRetentionDays()
-	if err != nil {
-		log.Printf("Warning: could not read retention setting, using default: %v", err)
-		retentionDays = 90
-	}
-	if err := app.Models.Settings.EnsureTTLIndex(retentionDays); err != nil {
-		log.Printf("Warning: could not ensure TTL index: %v", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 
-	app.serve()
+	// Indexes and the startup migration, before the RPC server comes up. A
+	// failed pass is retried in the background; see runStartup.
+	//
+	// Retention is looked up by an ObjectID project_id. A setting still stored
+	// under the old string one would be missed, and the project's logs expired on
+	// the 90-day default however long it had chosen to keep them; so the cleanup
+	// starts only once every project_id is converted.
+	runStartup(ctx, app.startup, app.runStartupTasks, func() { go app.runCleanup(ctx) })
+
+	app.serve(ctx)
 }
 
-func (app *Config) serve() {
-	err := rpc.Register(&RPCServer{models: app.Models})
+func (app *Config) serve(ctx context.Context) {
+	err := rpc.Register(&RPCServer{
+		models:   app.Models,
+		projects: newProjectCache(projectCacheTTL),
+		purges:   app.purges,
+		startup:  app.startup,
+	})
 	if err != nil {
 		log.Panic(err)
 	}
 	go app.rpcListen()
 
-	err = app.httpListen()
-	if err != nil {
-		log.Panic(err)
-	}
-}
-
-func (app *Config) httpListen() error {
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", httpPort()),
 		Handler: app.routes(),
 	}
 
-	log.Println("Starting HTTP server on port", httpPort())
-	err := srv.ListenAndServe()
-	if err != nil {
-		return (err)
-	}
+	go func() {
+		log.Println("Starting HTTP server on port", httpPort())
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
 
-	return nil
+	<-ctx.Done()
+	log.Println("Shutting down HTTP server...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
 }
 
 func (app *Config) rpcListen() error {
@@ -107,7 +124,14 @@ func (app *Config) rpcListen() error {
 
 func connectToMongo() (*mongo.Client, error) {
 	clientOptions := options.Client().ApplyURI(mongoConnectionString())
-	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
+
+	cred, err := mongoCredential()
+	if err != nil {
+		return nil, err
+	}
+	if cred != nil {
+		clientOptions.SetAuth(*cred)
+	}
 
 	c, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
@@ -116,6 +140,21 @@ func connectToMongo() (*mongo.Client, error) {
 	}
 
 	return c, nil
+}
+
+// mongoCredential reads MONGO_USERNAME and MONGO_PASSWORD, kept apart from
+// MONGO_URL so a password needs no URL escaping. With neither set it returns
+// nil, and whatever credentials MONGO_URL carries apply. Setting only one is a
+// mistake, and refused, rather than an attempt to log in without a password.
+func mongoCredential() (*options.Credential, error) {
+	user, pass := os.Getenv("MONGO_USERNAME"), os.Getenv("MONGO_PASSWORD")
+	switch {
+	case user == "" && pass == "":
+		return nil, nil
+	case user == "" || pass == "":
+		return nil, fmt.Errorf("set both MONGO_USERNAME and MONGO_PASSWORD, or neither")
+	}
+	return &options.Credential{Username: user, Password: pass}, nil
 }
 
 func mongoConnectionString() string {

@@ -4,17 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"logwolf-toolbox/data"
-	"logwolf-toolbox/rabbitmq"
+	"logwolf-toolbox/event"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	amqp "github.com/rabbitmq/amqp091-go"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
@@ -22,26 +18,30 @@ const (
 )
 
 type Config struct {
-	Rabbit *amqp.Connection
-	Models data.Models
+	// Events publishes to RabbitMQ; see event.Emitter.
+	Events publisher
+
+	// TrustedProxies are the peers whose X-Forwarded-For is believed when
+	// working out a client's address (see clientIP). Empty trusts no one.
+	TrustedProxies []netip.Prefix
 }
 
 func main() {
-	mongoClient, err := connectToMongo()
+	trusted, err := trustedProxiesFromEnv()
 	if err != nil {
 		log.Panic(err)
 	}
 
 	// RabbitMQ
-	conn, err := rabbitmq.ConnectToRabbitMQ(rabbitConnectionString())
+	emitter, err := event.NewEmitter(rabbitConnectionString())
 	if err != nil {
 		log.Panic(err)
 	}
-	defer conn.Close()
+	defer emitter.Close()
 
 	app := Config{
-		Rabbit: conn,
-		Models: data.New(mongoClient),
+		Events:         emitter,
+		TrustedProxies: trusted,
 	}
 
 	srv := &http.Server{
@@ -53,6 +53,8 @@ func main() {
 	// drain in-flight HTTP requests before closing the RabbitMQ connection.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+
+	go sweepAuthCachesEvery(ctx, authCacheSweepInterval)
 
 	go func() {
 		log.Printf("Starting server on port %s\n", httpPort())
@@ -75,19 +77,6 @@ func main() {
 	log.Println("Shutdown complete.")
 }
 
-func connectToMongo() (*mongo.Client, error) {
-	clientOptions := options.Client().ApplyURI(mongoConnectionString())
-	clientOptions.SetAuth(options.Credential{Username: "admin", Password: "password"})
-	return mongo.Connect(context.TODO(), clientOptions)
-}
-
-func mongoConnectionString() string {
-	if u := os.Getenv("MONGO_URL"); u != "" {
-		return u
-	}
-	return "mongodb://mongo:27017"
-}
-
 func rabbitConnectionString() string {
 	if u := os.Getenv("RABBITMQ_URL"); u != "" {
 		return u
@@ -100,4 +89,11 @@ func httpPort() string {
 		return u
 	}
 	return "80"
+}
+
+func loggerRPCAddr() string {
+	if a := os.Getenv("LOGGER_RPC_ADDR"); a != "" {
+		return a
+	}
+	return "logger:5001"
 }

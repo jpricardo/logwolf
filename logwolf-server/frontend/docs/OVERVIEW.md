@@ -11,7 +11,7 @@ Server-side-rendered React dashboard for managing and viewing Logwolf data. Prov
 | Framework      | React Router v7 (SSR)                                       |
 | UI             | React 19, Tailwind CSS 4, Radix UI, Shadcn-style components |
 | Charts         | Recharts                                                    |
-| Auth           | GitHub OAuth 2.0 + iron-session (secure cookies)            |
+| Auth           | GitHub OAuth 2.0 + React Router cookie sessions             |
 | Build          | Vite + TypeScript                                           |
 | Error tracking | `@logwolf/client-js` (the SDK, eating its own dog food)     |
 
@@ -34,18 +34,23 @@ app/
 │   ├── dashboard/        # Metrics overview + charts
 │   ├── events/           # Event list, detail view, create form
 │   ├── keys/             # API key management
-│   └── settings/         # System settings (retention TTL)
+│   ├── projects/         # Project list, create, switch, per-project settings
+│   └── settings/         # Redirect to the current project's settings
 ├── lib/
 │   ├── api.ts            # Dashboard API client (calls Broker internal routes)
 │   ├── logwolf.ts        # Logwolf SDK setup for client-side error tracking
 │   ├── auth.server.ts    # Server-side GitHub OAuth logic
-│   ├── session.server.ts # iron-session cookie helpers
+│   ├── allowlist.server.ts # Who may sign in (users/orgs allowlist, deny by default)
+│   ├── session.server.ts # cookie session helpers
+│   ├── token.server.ts   # seals the GitHub token kept in the session
 │   ├── csrf.server.ts    # CSRF token generation + validation
 │   ├── format.ts         # Formatting utilities (dates, numbers)
 │   ├── parse.ts          # Parsing utilities
+│   ├── slug.ts           # Project name -> URL-safe slug
 │   └── utils.ts          # General utilities
 ├── hooks/
 │   ├── use-csrf-token.ts # Fetch CSRF token for form submissions
+│   ├── use-projects.ts   # Read the user's projects from the layout loader
 │   └── use-mobile.ts     # Detect mobile viewport
 └── store/
     └── theme-provider.tsx # Dark/light mode provider (next-themes)
@@ -53,22 +58,92 @@ app/
 
 ## Routes
 
-| Path             | Auth      | Description                   |
-| ---------------- | --------- | ----------------------------- |
-| `/`              | Public    | Landing page                  |
-| `/auth`          | Public    | GitHub OAuth login            |
-| `/dashboard`     | Protected | Metrics overview with charts  |
-| `/events`        | Protected | Paginated event list          |
-| `/events/create` | Protected | Create a new event            |
-| `/events/:id`    | Protected | Event detail view             |
-| `/keys`          | Protected | API key management            |
-| `/settings`      | Protected | Retention and system settings |
+| Path                     | Auth      | Description                                 |
+| ------------------------ | --------- | ------------------------------------------- |
+| `/`                      | Public    | Landing page                                |
+| `/auth`                  | Public    | GitHub OAuth login                          |
+| `/dashboard`             | Protected | Metrics overview with charts                |
+| `/events`                | Protected | Paginated event list                        |
+| `/events/new`            | Protected | Create a new event                          |
+| `/events/:id`            | Protected | Event detail view                           |
+| `/keys`                  | Protected | API keys and their scopes                   |
+| `/settings`              | Protected | Redirects to the current project's settings |
+| `/projects`              | Protected | Projects the user belongs to                |
+| `/projects/new`          | Protected | Create a project                            |
+| `/projects/switch`       | Protected | POST-only project switch                    |
+| `/projects/:id/settings` | Protected | Rename, retention, members, delete          |
+
+## Project selection
+
+Every protected page except `/projects/new` is scoped to one project, held in the
+session as `currentProjectID`. The layout loader owns that value: it re-points the
+session when the stored project is gone or the user lost access to it, and it sends
+a user with no projects at all to `/projects/new` — the one page that renders
+without a current project.
+
+Switching projects is a POST to `/projects/switch`, which re-checks membership
+server-side before writing the session. The sidebar switcher and the `/projects`
+list both go through it.
+
+Pages take the project from the session and nowhere else — never from the URL or
+a hidden form field. Every loader and action calls `getCurrentProjectID()` and
+passes the result to the API client, so the redirect back from
+`/projects/switch` revalidates them straight into the new project.
+
+That includes `/events`, which reads and writes through the broker's
+`/projects/:id/logs` routes rather than the SDK. The SDK authenticates with the
+dashboard's own `API_KEY`, which belongs to one fixed project — it could never
+follow the switcher, and it would have shown every user that project's events.
+`lib/logwolf.ts` keeps using it for what it is: the dashboard's own telemetry.
+
+## Project settings
+
+`/projects/:id/settings` holds everything scoped to one project: its name, the
+retention window, the member list, and deletion. Both the loader and the action
+resolve the `:id` against the caller's own project list, so a project the user
+does not belong to sends them back to `/projects` instead of surfacing a 403.
+
+Every section except retention is owner-only — the broker enforces that as well,
+so the role checks in the route are there to keep a stale tab from producing a
+bare "forbidden". Retention is open to any member, but only upwards: shortening
+it makes the next cleanup pass delete everything outside the new window, so a
+member sees the shorter options disabled, and the action checks the stored value
+with `lowersRetention` (`app/lib/retention.ts`) before calling the broker. API
+keys are not project settings; any member may create and revoke them on `/keys`.
+Owners change a member's role from a select in the members
+table; the last owner shows a plain badge instead, since the broker would refuse
+to demote them. Deleting a project clears `currentProjectID` when it was the
+one in session and returns to `/projects`, where the layout takes over.
+
+Adding a member checks the login first (`checkInvitee` in
+`app/lib/allowlist.server.ts`). A login GitHub does not know, or an
+organization, is refused. Otherwise the member is added under GitHub's casing,
+with a warning when the allowlist does not clear them.
+
+Org membership is asked with the inviting owner's own GitHub token, kept from
+sign-in. GitHub shows private members only to someone in the org, so an owner in
+an allowed org gets a definite answer for its private members too. Where GitHub
+will not answer the owner (they are not in that org, or the session predates
+tokens being kept, or the token was revoked), the check falls back to public
+membership, and a user it cannot clear gets a warning that allows for private
+membership. The same warning, worded for it, covers GitHub being unreachable or
+rate-limited: that never blocks an owner.
 
 ## Authentication
 
 1. User initiates login via GitHub OAuth 2.0.
-2. On callback, the server checks the GitHub user against `GITHUB_ALLOWED_USERS` or `GITHUB_ALLOWED_ORGS`.
-3. A signed iron-session cookie is issued for subsequent requests.
+2. On callback, the server checks the GitHub user against `LOGWOLF_ALLOWED_GITHUB_USERS` and
+   `LOGWOLF_ALLOWED_GITHUB_ORGS` (`lib/allowlist.server.ts`). Access is denied by default: the login
+   must be in the users list or belong to an org in the orgs list. With both lists empty nobody can
+   sign in, and the server logs an error at startup. Both lists are parsed like the logger's
+   `ParseGithubLogins` (trimmed, lowercased, blanks and duplicates dropped), and a failed org lookup
+   denies the sign-in.
+3. A session cookie is issued for subsequent requests (React Router's cookie session: signed with
+   `SESSION_SECRET`, not encrypted, so readable by whoever holds it). It keeps the user's GitHub
+   OAuth token too, for the invite check, **sealed** with AES-256-GCM under a key derived from
+   `SESSION_SECRET` (`lib/token.server.ts`). The token carries the scopes sign-in asks for,
+   `read:user read:org`, and goes nowhere but `api.github.com`. Changing `SESSION_SECRET` signs
+   everyone out and makes old tokens unreadable.
 4. All protected routes validate the session server-side before rendering.
 
 CSRF tokens are required on all mutating form submissions.
@@ -77,21 +152,25 @@ CSRF tokens are required on all mutating form submissions.
 
 `lib/api.ts` exports an `Api` class that calls Broker's **internal routes** using the `X-Internal-Secret` header (sourced from `INTERNAL_API_SECRET`). The frontend never calls the public Broker routes — those are for SDK clients only.
 
+The client is request-scoped: `createApi(login)` takes the GitHub login of the signed-in user and sends it as `X-User-Login` on every call, which is what the broker checks project membership against. Project-scoped methods (`getKeys`, `createKey`, `deleteKey`, `getMetrics`, `getRetention`, `updateRetention`, `getLogs`, `getLog`, `createLog`, `deleteLog`, and everything under `projects`) take the project id as an argument, so a route has to state which project it means; they all call the broker's `/projects/{id}/...` routes.
+
+Event payloads come back exactly as the broker stores them, so `getLogs`/`getLog` decode them with the SDK's own `LogwolfEventSchema` — `data` back into an object, timestamps back into `Date`s. Pages therefore keep working with `LogwolfEventData`, unchanged by the move off the SDK transport.
+
 ## Error tracking
 
 `lib/logwolf.ts` initialises the Logwolf JS SDK. `root.tsx` wires it into the React Router middleware so every navigation and unhandled error is captured automatically.
 
 ## Environment variables
 
-| Variable               | Description                                      |
-| ---------------------- | ------------------------------------------------ |
-| `API_URL`              | Broker base URL (e.g. `http://broker/`)          |
-| `INTERNAL_API_SECRET`  | Shared secret for internal Broker routes         |
-| `GITHUB_CLIENT_ID`     | GitHub OAuth app client ID                       |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth app client secret                   |
-| `GITHUB_ALLOWED_USERS` | Comma-separated list of allowed GitHub usernames |
-| `GITHUB_ALLOWED_ORGS`  | Comma-separated list of allowed GitHub orgs      |
-| `SESSION_SECRET`       | Secret for iron-session cookie signing           |
+| Variable                       | Description                                                   |
+| ------------------------------ | ------------------------------------------------------------- |
+| `API_URL`                      | Broker base URL (e.g. `http://broker/`)                       |
+| `INTERNAL_API_SECRET`          | Shared secret for internal Broker routes                      |
+| `GITHUB_CLIENT_ID`             | GitHub OAuth app client ID                                    |
+| `GITHUB_CLIENT_SECRET`         | GitHub OAuth app client secret                                |
+| `LOGWOLF_ALLOWED_GITHUB_USERS` | Comma-separated list of allowed GitHub usernames              |
+| `LOGWOLF_ALLOWED_GITHUB_ORGS`  | Comma-separated list of GitHub orgs whose members are allowed |
+| `SESSION_SECRET`               | Signs session cookies; the key sealing GitHub tokens derives from it |
 
 Copy `.env.example` to `.env` before running locally.
 
@@ -102,7 +181,17 @@ npm run dev       # Vite dev server (hot reload)
 npm run build     # react-router build → build/
 npm run typecheck # react-router typegen + tsc --noEmit
 npm run lint      # oxlint
+npm test          # vitest, single run
 ```
+
+## Tests
+
+Vitest runs in node (`vitest.config.ts`) and covers the server side, where access and project scoping are decided:
+
+- **Libraries:** the allowlist and invite check, retention, and `lib/api.ts`, whose tests check every project-scoped call names the project in the path, sends the internal secret and the user's login, and encodes what it puts in a path.
+- **Route loaders and actions** (`*.test.ts` next to each route), called the way React Router calls them. Requests carry a real signed session cookie, built by the helpers in `app/test/routes.ts`, so sessions and CSRF are the real code. Only the broker client (`createApi`) is replaced, by `fakeApi`, whose every method rejects unless the test stubs it, and GitHub's API is stubbed on `fetch` where a test needs it.
+
+Covered: the layout's session repair and first-project redirect, the project switcher (membership, CSRF, open redirects), project settings (owner-only intents, retention, invites, delete), keys and event pages (always the project in session, whatever the form says). Components are not rendered in tests.
 
 ## Relationship to other services
 

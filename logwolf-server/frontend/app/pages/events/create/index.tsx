@@ -24,9 +24,11 @@ import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
+import { createApi } from '~/lib/api';
+import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
 import { formatSeverity, severityMap } from '~/lib/format';
-import { logwolf } from '~/lib/logwolf';
+import { getCurrentProjectID } from '~/lib/session.server';
 
 import type { Route } from './+types';
 import { Preview } from './components/preview';
@@ -51,12 +53,20 @@ export async function action({ request, context }: Route.ActionArgs) {
 	event?.addTag('action');
 
 	try {
+		const user = await requireAuth(request);
 		const fd = await request.formData();
 
 		await validateCsrfToken(request, fd);
 
+		// The event lands in the project the session is pointed at — the form has
+		// no say in it, and neither does the dashboard's own API key.
+		const projectId = await getCurrentProjectID(request);
+		if (!projectId) return redirect('/projects/new');
+
 		const d = FormDataSchema.decode(Object.fromEntries(fd.entries()) as CreateEventFormData);
-		const res = await logwolf.create(new LogwolfEvent(d)).then(() => redirect('/events'));
+		const res = await createApi(user.login)
+			.createLog(projectId, new LogwolfEvent(d).toObject())
+			.then(() => redirect('/events'));
 		event?.set('actionData', res);
 
 		return res;

@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -13,29 +14,33 @@ import (
 )
 
 type Models struct {
-	client   *mongo.Client
-	LogEntry LogEntry
-	APIKey   APIKey
-	Settings Settings
+	client        *mongo.Client
+	LogEntry      LogEntry
+	APIKey        APIKey
+	Settings      Settings
+	Project       Project
+	ProjectMember ProjectMember
 }
 
 type LogEntry struct {
-	ID        string    `bson:"_id,omitempty" json:"id,omitempty"`
-	Name      string    `bson:"name" json:"name"`
-	Data      string    `bson:"data" json:"data"`
-	Severity  string    `bson:"severity" json:"severity"`
-	Tags      []string  `bson:"tags" json:"tags"`
-	Duration  int       `bson:"duration,omitempty" json:"duration,omitempty"`
-	CreatedAt time.Time `bson:"created_at" json:"created_at"`
-	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
+	ID        string             `bson:"_id,omitempty" json:"id,omitempty"`
+	ProjectID primitive.ObjectID `bson:"project_id" json:"project_id"`
+	Name      string             `bson:"name" json:"name"`
+	Data      string             `bson:"data" json:"data"`
+	Severity  string             `bson:"severity" json:"severity"`
+	Tags      []string           `bson:"tags" json:"tags"`
+	Duration  int                `bson:"duration,omitempty" json:"duration,omitempty"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
 type LogEntryFilter struct {
-	ID       string   `bson:"_id,omitempty" json:"id,omitempty"`
-	Name     string   `bson:"name,omitempty" json:"name,omitempty"`
-	Data     string   `bson:"data,omitempty" json:"data,omitempty"`
-	Severity string   `bson:"severity,omitempty" json:"severity,omitempty"`
-	Tags     []string `bson:"tags,omitempty" json:"tags,omitempty"`
+	ID        string   `bson:"_id,omitempty" json:"id,omitempty"`
+	ProjectID string   `bson:"project_id,omitempty" json:"project_id,omitempty"`
+	Name      string   `bson:"name,omitempty" json:"name,omitempty"`
+	Data      string   `bson:"data,omitempty" json:"data,omitempty"`
+	Severity  string   `bson:"severity,omitempty" json:"severity,omitempty"`
+	Tags      []string `bson:"tags,omitempty" json:"tags,omitempty"`
 }
 
 type PaginationParams struct {
@@ -43,8 +48,56 @@ type PaginationParams struct {
 	PageSize int64
 }
 
+const (
+	// DefaultPageSize is the page size of a read that does not ask for one.
+	DefaultPageSize = 20
+
+	// MaxPageSize caps a page. A read decodes the whole page in the logger and
+	// sends it over RPC in one reply, so without a cap one request could pull a
+	// project's every log into memory.
+	MaxPageSize = 100
+
+	// MaxPage caps how deep a read can page. Past the last log a page is empty
+	// anyway; the cap keeps the skip, (page-1)*pageSize, far from overflowing.
+	MaxPage = 1_000_000
+)
+
+// ErrInvalidPagination is what a page or page size outside its bounds is.
+var ErrInvalidPagination = errors.New("invalid pagination")
+
+// Validate reports whether p asks for a page that can be served: a page from 1
+// to MaxPage of 1 to MaxPageSize logs.
+func (p PaginationParams) Validate() error {
+	if p.Page < 1 || p.Page > MaxPage {
+		return fmt.Errorf("%w: page must be between 1 and %d", ErrInvalidPagination, MaxPage)
+	}
+	if p.PageSize < 1 || p.PageSize > MaxPageSize {
+		return fmt.Errorf("%w: pageSize must be between 1 and %d", ErrInvalidPagination, MaxPageSize)
+	}
+	return nil
+}
+
+// QueryParams is the RPC argument for GetLogs. Like every RPC argument it
+// carries the project as a hex string; the logger parses it into the ObjectID
+// the data layer takes.
 type QueryParams struct {
+	ProjectID  string
 	Pagination PaginationParams
+}
+
+// LoggerStatus is the reply of the logger's Status RPC and the body of its
+// /health endpoint: whether its startup tasks (indexes and the startup
+// migration) have all succeeded. Until they have, the logger serves in a
+// degraded state and retries them in the background.
+type LoggerStatus struct {
+	Ready bool `json:"ready"`
+	// RetentionCleanup is whether the retention cleanup is running. It waits for
+	// every project_id to be converted to an ObjectID.
+	RetentionCleanup bool `json:"retention_cleanup"`
+	// StartupAttempts counts the startup passes run so far.
+	StartupAttempts int `json:"startup_attempts"`
+	// StartupError is the last failed pass's error, until one succeeds.
+	StartupError string `json:"startup_error,omitempty"`
 }
 
 func New(mongo *mongo.Client) Models {
@@ -59,6 +112,7 @@ func New(mongo *mongo.Client) Models {
 func (m *Models) Insert(entry LogEntry) error {
 	collection := m.client.Database("logs").Collection("logs")
 	_, err := collection.InsertOne(context.TODO(), LogEntry{
+		ProjectID: entry.ProjectID,
 		Name:      entry.Name,
 		Data:      entry.Data,
 		Severity:  entry.Severity,
@@ -75,15 +129,21 @@ func (m *Models) Insert(entry LogEntry) error {
 	return nil
 }
 
-func (m *Models) AllLogs(p QueryParams) ([]*LogEntry, error) {
+// AllLogs returns one page of a project's logs, newest first. A page outside
+// the bounds Validate sets is refused before any query.
+func (m *Models) AllLogs(projectID primitive.ObjectID, p PaginationParams) ([]*LogEntry, error) {
+	if err := p.Validate(); err != nil {
+		return nil, fmt.Errorf("AllLogs: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	collection := m.client.Database("logs").Collection("logs")
 	opts := options.Find()
-	opts.SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(p.Pagination.PageSize).SetSkip(p.Pagination.PageSize * (p.Pagination.Page - 1))
+	opts.SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(p.PageSize).SetSkip(p.PageSize * (p.Page - 1))
 
-	cursor, err := collection.Find(context.TODO(), bson.D{}, opts)
+	cursor, err := collection.Find(ctx, bson.M{"project_id": projectID}, opts)
 	if err != nil {
 		log.Println("Error finding docs")
 		return nil, err
@@ -107,7 +167,7 @@ func (m *Models) AllLogs(p QueryParams) ([]*LogEntry, error) {
 	return logs, nil
 }
 
-func (m *Models) GetLog(id string) (*LogEntry, error) {
+func (m *Models) GetLog(id string, projectID primitive.ObjectID) (*LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -119,12 +179,221 @@ func (m *Models) GetLog(id string) (*LogEntry, error) {
 	}
 
 	var entry LogEntry
-	err = collection.FindOne(ctx, bson.M{"_id": docID}).Decode(&entry)
+	err = collection.FindOne(ctx, bson.M{"_id": docID, "project_id": projectID}).Decode(&entry)
 	if err != nil {
 		return nil, err
 	}
 
 	return &entry, nil
+}
+
+// EnsureLogsIndexes creates indexes on the logs collection required for
+// project-scoped queries and efficient pagination.
+func (m *Models) EnsureLogsIndexes() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	coll := m.client.Database("logs").Collection("logs")
+	_, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "project_id", Value: 1}, {Key: "created_at", Value: -1}},
+		Options: options.Index().SetName("project_id_created_at"),
+	})
+	if err != nil {
+		return fmt.Errorf("EnsureLogsIndexes: %w", err)
+	}
+	return nil
+}
+
+// DeleteExpiredLogs deletes a project's logs created before the given time, and
+// returns how many it deleted, including when it stops on an error.
+//
+// It deletes in batches (see deleteLogsInBatches), so a project that has just
+// shortened its retention, or never had it enforced, can be cut off by ctx
+// part-way without losing the progress: the batches already deleted stay
+// deleted, and the next call carries on from there.
+func (m *Models) DeleteExpiredLogs(ctx context.Context, projectID primitive.ObjectID, before time.Time) (int64, error) {
+	n, err := m.deleteLogsInBatches(ctx, bson.M{
+		"project_id": projectID,
+		"created_at": bson.M{"$lt": before},
+	})
+	if err != nil {
+		return n, fmt.Errorf("DeleteExpiredLogs: %w", err)
+	}
+	return n, nil
+}
+
+// orphanGrace keeps DeleteOrphanedLogs away from logs written in the last
+// minute, so clock skew between Logger instances cannot make a log look older
+// than the project list it is checked against.
+const orphanGrace = time.Minute
+
+// DeleteOrphanedLogs deletes logs filed under a project id that matches no
+// project, and returns how many it deleted per project id. They come from events
+// that were already on their way when their project was deleted; no user can
+// see them and the per-project retention cleanup never visits them.
+//
+// Only logs older than the moment the project list is read are considered. A
+// log is written after its project exists, so an old enough log whose project
+// is missing from that list belongs to a deleted project — never to one created
+// while the sweep runs.
+//
+// Logs with no project_id, or an empty one, are left alone: they predate
+// projects, and the startup migration adopts them.
+//
+// The deletes run in batches (see deleteLogsInBatches), so a deleted project
+// with millions of logs is purged over as long as it takes; ctx bounds the whole
+// sweep, and each step has its own timeout.
+func (m *Models) DeleteOrphanedLogs(ctx context.Context) (map[string]int64, error) {
+	cutoff := time.Now().Add(-orphanGrace)
+	db := m.client.Database("logs")
+
+	stepCtx, cancel := context.WithTimeout(ctx, logBatchTimeout)
+	defer cancel()
+
+	logged, err := db.Collection("logs").Distinct(stepCtx, "project_id", bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("DeleteOrphanedLogs distinct: %w", err)
+	}
+
+	cursor, err := db.Collection("projects").Find(stepCtx, bson.M{}, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, fmt.Errorf("DeleteOrphanedLogs projects: %w", err)
+	}
+	var projects []struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	if err := cursor.All(stepCtx, &projects); err != nil {
+		return nil, fmt.Errorf("DeleteOrphanedLogs projects decode: %w", err)
+	}
+
+	live := make(map[string]bool, len(projects))
+	for _, p := range projects {
+		live[p.ID.Hex()] = true
+	}
+
+	deleted := map[string]int64{}
+	for _, v := range logged {
+		// project_id is an ObjectID. A string is one ConvertProjectIDs has not
+		// reached, or could not convert because it is not hex; it is compared by
+		// its text, so a live project's logs are never taken for orphans even
+		// before they are converted.
+		var name string
+		switch id := v.(type) {
+		case primitive.ObjectID:
+			name = id.Hex()
+		case string:
+			name = id
+		default:
+			continue
+		}
+		if name == "" || live[name] {
+			continue
+		}
+
+		n, err := m.deleteLogsInBatches(ctx, bson.M{
+			"project_id": v,
+			"created_at": bson.M{"$lt": cutoff},
+		})
+		if n > 0 {
+			deleted[name] += n
+		}
+		if err != nil {
+			return deleted, fmt.Errorf("DeleteOrphanedLogs project %s: %w", name, err)
+		}
+	}
+	return deleted, nil
+}
+
+// PurgeProjectLogs deletes every log of a project that has been deleted, and
+// returns how many it deleted. DeleteProject leaves the logs behind so that its
+// transaction stays small; this is what removes them afterwards.
+//
+// Unlike DeleteOrphanedLogs it needs no grace period: the caller names one
+// project, it is checked to be gone first, and a project id is never reused. It
+// refuses with ErrProjectExists if the project is still there.
+//
+// Like DeleteOrphanedLogs it deletes in batches, so it can run for minutes on a
+// big project; ctx bounds the whole purge. If it stops part-way, the orphan
+// sweep finishes the job.
+func (m *Models) PurgeProjectLogs(ctx context.Context, projectID primitive.ObjectID) (int64, error) {
+	existsCtx, cancel := context.WithTimeout(ctx, logBatchTimeout)
+	exists, err := m.ProjectExists(existsCtx, projectID)
+	cancel()
+	if err != nil {
+		return 0, fmt.Errorf("PurgeProjectLogs: %w", err)
+	}
+	if exists {
+		return 0, fmt.Errorf("PurgeProjectLogs %s: %w", projectID.Hex(), ErrProjectExists)
+	}
+
+	n, err := m.deleteLogsInBatches(ctx, bson.M{"project_id": projectID})
+	if err != nil {
+		return n, fmt.Errorf("PurgeProjectLogs %s: %w", projectID.Hex(), err)
+	}
+	return n, nil
+}
+
+const (
+	// logDeleteBatch is how many logs deleteLogsInBatches removes per round trip.
+	// Small enough that one batch finishes in well under logBatchTimeout.
+	logDeleteBatch = 10000
+
+	// logBatchTimeout bounds one step of a long-running log delete — a single
+	// batch, or a lookup before the batches start — rather than the whole run.
+	logBatchTimeout = 30 * time.Second
+)
+
+// deleteLogsInBatches deletes the logs matching filter, logDeleteBatch at a
+// time, and returns how many it deleted, including when it stops on an error.
+// One DeleteMany over a huge set could outlast any sensible deadline, and
+// cancelling it throws away the progress report; batches keep each call short
+// and let ctx stop the run between two of them.
+func (m *Models) deleteLogsInBatches(ctx context.Context, filter bson.M) (int64, error) {
+	coll := m.client.Database("logs").Collection("logs")
+	var total int64
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+
+		n, more, err := deleteLogBatch(ctx, coll, filter)
+		total += n
+		if err != nil || !more {
+			return total, err
+		}
+	}
+}
+
+// deleteLogBatch deletes up to logDeleteBatch logs matching filter, and reports
+// whether there may be more.
+func deleteLogBatch(ctx context.Context, coll *mongo.Collection, filter bson.M) (int64, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, logBatchTimeout)
+	defer cancel()
+
+	cursor, err := coll.Find(ctx, filter, options.Find().
+		SetProjection(bson.M{"_id": 1}).
+		SetLimit(logDeleteBatch))
+	if err != nil {
+		return 0, false, fmt.Errorf("find batch: %w", err)
+	}
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		return 0, false, fmt.Errorf("decode batch: %w", err)
+	}
+	if len(docs) == 0 {
+		return 0, false, nil
+	}
+
+	ids := make(bson.A, len(docs))
+	for i, d := range docs {
+		ids[i] = d["_id"]
+	}
+	result, err := coll.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}})
+	if err != nil {
+		return 0, false, fmt.Errorf("delete batch: %w", err)
+	}
+	return result.DeletedCount, len(docs) == logDeleteBatch, nil
 }
 
 func (m *Models) DropLogsCollection() error {
@@ -169,7 +438,7 @@ func (m *Models) UpdateLog() (*mongo.UpdateResult, error) {
 	return result, nil
 }
 
-func (m *Models) DeleteLog(id string) (*mongo.DeleteResult, error) {
+func (m *Models) DeleteLog(id string, projectID primitive.ObjectID) (*mongo.DeleteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -180,7 +449,7 @@ func (m *Models) DeleteLog(id string) (*mongo.DeleteResult, error) {
 		return nil, err
 	}
 
-	result, err := collection.DeleteOne(ctx, bson.M{"_id": docID})
+	result, err := collection.DeleteOne(ctx, bson.M{"_id": docID, "project_id": projectID})
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +472,7 @@ type Metrics struct {
 	TopTags       []TagCount `bson:"top_tags" json:"top_tags"`
 }
 
-func (m *Models) GetMetrics() (*Metrics, error) {
+func (m *Models) GetMetrics(projectID primitive.ObjectID) (*Metrics, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -211,6 +480,7 @@ func (m *Models) GetMetrics() (*Metrics, error) {
 	since24h := time.Now().Add(-24 * time.Hour)
 
 	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"project_id": projectID}}},
 		{{Key: "$facet", Value: bson.D{
 			{Key: "total_events", Value: bson.A{
 				bson.D{{Key: "$count", Value: "count"}},

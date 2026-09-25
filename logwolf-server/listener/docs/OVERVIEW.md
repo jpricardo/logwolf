@@ -17,28 +17,43 @@ The Listener is intentionally minimal — all shared logic lives in `logwolf-too
 
 ```
 RabbitMQ (logs_topic exchange)
-  └── routing keys: log.INFO, log.WARNING, log.ERROR
+  └── routing keys: log.info, log.warning, log.error, log.critical
       └── Listener consumes
           └── RPC call → Logger:5001 (RPCServer.LogInfo)
               └── MongoDB write
 ```
 
-1. The Listener binds to the `logs_topic` exchange and subscribes to `log.INFO`, `log.WARNING`, and `log.ERROR` routing keys.
+1. The Listener binds to the `logs_topic` exchange with `log.*` (`event.LogBindingKey`), so it receives every severity. The Broker publishes each event under `log.<severity>` (`data.SeverityRoutingKey`), after normalizing the severity; it refuses any other than info, warning, error and critical. A queue declared by an older build keeps its `log.INFO`, `log.WARNING` and `log.ERROR` bindings too; that is harmless, as a message reaches a queue once however many of its bindings match.
 2. Each message is a JSON-encoded `data.RPCLogPayload`.
 3. The Listener makes a synchronous RPC call to the Logger service, which writes to MongoDB.
-4. Messages are acknowledged after a successful RPC call.
+4. The message is acknowledged once the Logger has stored the event, or once it has been dropped for good (see below).
+
+## Delivery guarantees
+
+The Broker publishes persistent messages and waits for RabbitMQ's confirms before answering `202`, so what reaches this queue survives a RabbitMQ restart. The Listener exits when its connection drops, as it does when RabbitMQ restarts; Compose restarts it, and unacknowledged messages are delivered again.
+
+Deliveries are acknowledged by hand, and only once settled:
+
+- **Stored** — the logger took the event: ack.
+- **Logger unreachable** (dial failure, broken connection, call timeout) — retried with back-off from 1s, doubling to 30s, for as long as it takes. The event holds the queue meanwhile, and the rest wait in RabbitMQ, so events published during a logger outage are stored once it is back.
+- **Refused** (`rpc.ServerError`) — an event for a project that does not exist (`data.ErrUnknownProject`) is dropped at once. Any other refusal is retried 5 times, then dropped, so one bad event cannot hold up the queue forever.
+- **Malformed message** — dropped. Unknown actions are acked and skipped.
+- **Shutdown while retrying** — requeued.
+
+Dropped means rejected without requeue; there is no dead-letter exchange. A message the listener received but had not acknowledged when it stopped goes back to the queue, so delivery is at least once: an event whose store succeeded just before a crash can be stored twice.
+
+The listener keeps one RPC connection to the logger (`loggerClient` in `toolbox/event/logger_client.go`) and dials again only after it breaks. It used to dial for every event and never close the client, which leaked a socket and its goroutines on both ends per event.
 
 ## Graceful shutdown
 
-The process listens for `SIGTERM` / `SIGINT`. On shutdown, in-flight message processing is allowed to complete before the connection is closed.
+The process listens for `SIGTERM` / `SIGINT`. On shutdown, in-flight message processing is allowed to complete before the connection is closed; an event still waiting on an unreachable logger is requeued instead.
 
 ## Environment variables
 
-| Variable       | Default                       | Description                |
-| -------------- | ----------------------------- | -------------------------- |
-| `RABBITMQ_URL` | `amqp://guest:guest@rabbitmq` | RabbitMQ connection string |
-
-The Logger RPC address is hard-coded to `logger:5001` (the internal Docker network hostname).
+| Variable          | Default                       | Description                |
+| ----------------- | ----------------------------- | -------------------------- |
+| `RABBITMQ_URL`    | `amqp://guest:guest@rabbitmq` | RabbitMQ connection string |
+| `LOGGER_RPC_ADDR` | `logger:5001`                 | Logger RPC address         |
 
 ## Dependencies
 

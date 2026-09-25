@@ -8,6 +8,15 @@ The Logwolf JS SDK ships as `@logwolf/client-js` on npm. It handles event creati
 npm install @logwolf/client-js
 ```
 
+### Compatibility
+
+| SDK   | Logwolf server                                                                    |
+| ----- | --------------------------------------------------------------------------------- |
+| 2.x   | The multi-tenancy release or later: `getOne` uses its `GET /logs/:id` route       |
+| 1.x   | Any; `getOne` searches only the newest page of events                             |
+
+Upgrading from 1.x? See the [changelog](https://github.com/jpricardo/logwolf/blob/main/logwolf-client/js/CHANGELOG.md): `getOne` and `getAll`'s pagination changed.
+
 ## Initialisation
 
 ```ts
@@ -177,11 +186,11 @@ Fetches a paginated list of events from your Logwolf instance.
 const events = await logwolf.getAll({ page: 1, pageSize: 20 });
 ```
 
-Returns an array of `LogwolfEventData` objects.
+Returns an array of `LogwolfEventData` objects. Without `pagination` you get the first 20. `pageSize` is a whole number up to `MAX_PAGE_SIZE` (100) and `page` one up to `MAX_PAGE` (1,000,000), both exported; `getAll` throws a `ZodError` for anything else before sending a request.
 
 ### `getOne(id)`
 
-Fetches a single event by ID. Note: this currently calls `getAll()` and scans in memory. For high-volume deployments, prefer using the dashboard or filtering by ID server-side.
+Fetches a single event by ID, from the server's `GET /logs/:id`, whatever its age. Resolves to `undefined` when the key's project has no event with that ID, including one that belongs to another project. Needs a key with the `read` scope, and a Logwolf server with that route.
 
 ```ts
 const event = await logwolf.getOne('66f1a2b3c4d5e6f7a8b9c0d1');
@@ -198,6 +207,8 @@ await logwolf.delete({ id: '66f1a2b3c4d5e6f7a8b9c0d1' });
 ```
 
 ## Event severity guide
+
+The server stores these four only, lower-cased. A client that calls the HTTP API directly may send them in any case (`ERROR` is stored as `error`); any other value is refused with a `400`.
 
 | Severity   | When to use                                                                                         |
 | ---------- | --------------------------------------------------------------------------------------------------- |

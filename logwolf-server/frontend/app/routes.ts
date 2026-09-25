@@ -4,6 +4,8 @@ export default [
 	index('pages/home/index.tsx'),
 	route('auth', 'pages/auth/index.tsx'),
 
+	route('projects/switch', 'pages/projects/switch/index.tsx'),
+
 	layout('pages/layout.tsx', [
 		route('dashboard', 'pages/dashboard/index.tsx'),
 		route('events', 'pages/events/index.tsx'),
@@ -11,5 +13,8 @@ export default [
 		route('events/new', 'pages/events/create/index.tsx'),
 		route('keys', 'pages/keys/index.tsx'),
 		route('settings', 'pages/settings/index.tsx'),
+		route('projects', 'pages/projects/index.tsx'),
+		route('projects/new', 'pages/projects/new/index.tsx'),
+		route('projects/:id/settings', 'pages/projects/settings/index.tsx'),
 	]),
 ] satisfies RouteConfig;

@@ -97,18 +97,34 @@ export class Logwolf {
 		return res;
 	}
 
+	/**
+	 * Fetches one page of events, newest first: the first 20 without
+	 * `pagination`. `pageSize` can be at most {@link MAX_PAGE_SIZE}; a page
+	 * outside the bounds throws before any request is made.
+	 */
 	public async getAll(p?: Pagination): Promise<LogwolfEventData[]> {
 		const params = p ? PaginationSchema.encode(p) : '';
 		const url = new URL('logs?' + params, this.baseUrl);
 		const res = await this.fetchWithTimeout(url, { method: 'GET', headers: this.getHeaders() })
-			.then<LogwolfApiResponse<Event[]>>((r) => r.json())
+			.then<LogwolfApiResponse<unknown[]>>((r) => r.json())
 			.then((r) => this.handleResponse(r));
 
 		return z.array(LogwolfEventSchema).parse(res);
 	}
 
+	/**
+	 * Fetches one event by id, or `undefined` if the key's project has no event
+	 * with that id. It asks the server for that event alone (`GET /logs/:id`),
+	 * so it finds any event, not only the latest page; that route needs a
+	 * Logwolf server that has it.
+	 */
 	public async getOne(id: string): Promise<LogwolfEventData | undefined> {
-		return this.getAll().then((r) => r.find((i) => i.id === id));
+		const url = new URL(`logs/${encodeURIComponent(id)}`, this.baseUrl);
+		const response = await this.fetchWithTimeout(url, { method: 'GET', headers: this.getHeaders() });
+		if (response.status === 404) return undefined;
+
+		const body = (await response.json()) as LogwolfApiResponse<unknown>;
+		return LogwolfEventSchema.parse(this.handleResponse(body));
 	}
 
 	public async delete(dto: DeleteLogwolfEventDTO): Promise<void> {
