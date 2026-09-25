@@ -74,29 +74,57 @@ export type InviteeCheck =
 	| { kind: 'unknown' }
 	/** An organization, which can never sign in: refused. */
 	| { kind: 'organization'; login: string }
-	/** On the users allowlist, or a public member of an allowed org. */
+	/** On the users allowlist, or a member of an allowed org. */
 	| { kind: 'allowed'; login: string }
 	/**
-	 * Neither. With orgs allowlisted they may still get in through an org whose
-	 * membership they keep private, which GitHub does not show without a token.
+	 * Neither. `privateChecked` says whether that is certain: GitHub shows
+	 * private org membership only to a token of someone in the org, so without
+	 * one, a private member of an allowed org looks like a stranger.
 	 */
-	| { kind: 'not-allowlisted'; login: string; orgsAllowlisted: boolean }
+	| { kind: 'not-allowlisted'; login: string; orgsAllowlisted: boolean; privateChecked: boolean }
 	/** GitHub could not be asked, or did not answer usefully. */
 	| { kind: 'unverified'; login: string };
 
 const GITHUB_TIMEOUT_MS = 5000;
 
-function githubGet(path: string, fetchImpl: typeof fetch) {
+function githubGet(path: string, fetchImpl: typeof fetch, token?: string) {
 	return fetchImpl(`https://api.github.com${path}`, {
-		headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'logwolf' },
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'User-Agent': 'logwolf',
+			...(token ? { Authorization: `Bearer ${token}` } : {}),
+		},
+		// The member check answers 302 to a token from outside the org; that is
+		// an answer here, not something to follow.
+		redirect: 'manual',
 		signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
 	});
 }
 
 /**
- * Checks `login` before it is added to a project, through GitHub's public API.
- * It needs no token: the user lookup and public org membership are open, and
- * rate-limited per server address, which invites come nowhere near.
+ * Asks GitHub, with the inviting owner's token, whether `login` is a member of
+ * `org`, private membership included: true or false when GitHub says, and
+ * null when it will not (the owner is not in that org, 302; or the token
+ * was refused), so the caller falls back to public membership.
+ */
+async function privateMember(org: string, login: string, token: string, fetchImpl: typeof fetch) {
+	const res = await githubGet(
+		`/orgs/${encodeURIComponent(org)}/members/${encodeURIComponent(login)}`,
+		fetchImpl,
+		token,
+	);
+	if (res.status === 204) return true;
+	if (res.status === 404) return false;
+	return null;
+}
+
+/**
+ * Checks `login` before it is added to a project, through GitHub's API.
+ *
+ * `token` is the inviting owner's own GitHub token. With it, org membership is
+ * asked as the owner, which GitHub answers for private members too, provided
+ * the owner is in that org. Without it, or where GitHub will not answer the
+ * owner, only public membership can be seen. The user lookup needs no token.
  *
  * It never throws. When GitHub cannot say, the answer is `unverified`, and the
  * caller adds the member anyway: GitHub being down should not block an owner.
@@ -105,6 +133,7 @@ export async function checkInvitee(
 	login: string,
 	allowlist: Allowlist,
 	fetchImpl: typeof fetch = fetch,
+	token?: string,
 ): Promise<InviteeCheck> {
 	let canonical: string;
 	try {
@@ -124,8 +153,17 @@ export async function checkInvitee(
 
 	if (allowlist.users.includes(normalizeLogin(canonical))) return { kind: 'allowed', login: canonical };
 
+	// Whether every allowed org was asked about private membership, and said no.
+	let privateChecked = true;
 	for (const org of allowlist.orgs) {
 		try {
+			if (token) {
+				const member = await privateMember(org, canonical, token, fetchImpl);
+				if (member === true) return { kind: 'allowed', login: canonical };
+				if (member === false) continue;
+			}
+			privateChecked = false;
+
 			// 204 for a public member; 404 for anyone else, private members included.
 			const res = await githubGet(
 				`/orgs/${encodeURIComponent(org)}/public_members/${encodeURIComponent(canonical)}`,
@@ -138,7 +176,7 @@ export async function checkInvitee(
 		}
 	}
 
-	return { kind: 'not-allowlisted', login: canonical, orgsAllowlisted: allowlist.orgs.length > 0 };
+	return { kind: 'not-allowlisted', login: canonical, orgsAllowlisted: allowlist.orgs.length > 0, privateChecked };
 }
 
 /**
@@ -148,9 +186,12 @@ export async function checkInvitee(
 export function inviteWarning(check: InviteeCheck): string | undefined {
 	switch (check.kind) {
 		case 'not-allowlisted':
-			return check.orgsAllowlisted
-				? `${check.login} is not on the users allowlist or a public member of an allowed org. They can sign in only if they belong to one of those orgs privately.`
-				: `${check.login} is not on the allowlist, so they cannot sign in until an admin adds them to LOGWOLF_ALLOWED_GITHUB_USERS.`;
+			if (!check.orgsAllowlisted) {
+				return `${check.login} is not on the allowlist, so they cannot sign in until an admin adds them to LOGWOLF_ALLOWED_GITHUB_USERS.`;
+			}
+			return check.privateChecked
+				? `${check.login} is not on the users allowlist or a member of an allowed org, so they cannot sign in until an admin allowlists them or they join one of those orgs.`
+				: `${check.login} is not on the users allowlist or a public member of an allowed org. They can sign in only if they belong to one of those orgs privately.`;
 		case 'unverified':
 			return `Could not reach GitHub to check ${check.login}. Make sure it is the right login, and that they are allowlisted.`;
 		default:

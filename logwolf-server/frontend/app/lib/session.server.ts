@@ -1,5 +1,7 @@
 import { createCookieSessionStorage } from 'react-router';
 
+import { unsealToken } from './token.server';
+
 type SessionData = {
 	githubUser: {
 		login: string;
@@ -8,6 +10,8 @@ type SessionData = {
 	};
 	csrfToken: string;
 	currentProjectID: string;
+	/** The user's GitHub OAuth token, sealed (see token.server). */
+	githubToken: string;
 };
 
 export const sessionStorage = createCookieSessionStorage<SessionData>({
@@ -31,4 +35,13 @@ export const { getSession, commitSession, destroySession } = sessionStorage;
 export async function getCurrentProjectID(request: Request): Promise<string | undefined> {
 	const session = await getSession(request.headers.get('Cookie'));
 	return session.get('currentProjectID');
+}
+
+/**
+ * Reads the signed-in user's GitHub token, or undefined if the session has
+ * none: it was created before tokens were kept, or the token cannot be unsealed.
+ */
+export async function getGithubToken(request: Request): Promise<string | undefined> {
+	const session = await getSession(request.headers.get('Cookie'));
+	return unsealToken(session.get('githubToken'));
 }

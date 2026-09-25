@@ -132,13 +132,28 @@ describe('listGithubOrgs', () => {
 });
 
 describe('checkInvitee', () => {
-	// A fake GitHub: users by lowercase login, and the public members of each org.
+	// A fake GitHub: users by lowercase login, the public members of each org,
+	// and every member, public or private, which the members endpoint shows
+	// only to a token of someone in that org, as GitHub's does. It answers the
+	// way the real API did when asked: 204 or 404 to a member's token, 302 to a
+	// token from outside the org, 401 to a bad one.
 	function github(
 		users: Record<string, { login: string; type?: string }>,
 		publicMembers: Record<string, string[]> = {},
+		allMembers: Record<string, string[]> = {},
+		tokens: Record<string, string> = {}, // token -> login it belongs to
 	) {
-		return vi.fn(async (input: RequestInfo | URL) => {
+		return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 			const path = new URL(String(input)).pathname;
+
+			const members = path.match(/^\/orgs\/([^/]+)\/members\/([^/]+)$/);
+			if (members) {
+				const auth = new Headers(init?.headers).get('Authorization')?.replace('Bearer ', '');
+				const owner = auth ? tokens[auth] : undefined;
+				if (auth && !owner) return new Response(null, { status: 401 });
+				if (!owner || !allMembers[members[1]]?.includes(owner)) return new Response(null, { status: 302 });
+				return new Response(null, { status: allMembers[members[1]]?.includes(members[2]) ? 204 : 404 });
+			}
 
 			const user = path.match(/^\/users\/([^/]+)$/);
 			if (user) {
@@ -202,7 +217,12 @@ describe('checkInvitee', () => {
 			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_USERS: 'alice' }),
 			github(octocat),
 		);
-		expect(usersOnly).toEqual({ kind: 'not-allowlisted', login: 'Octocat', orgsAllowlisted: false });
+		expect(usersOnly).toEqual({
+			kind: 'not-allowlisted',
+			login: 'Octocat',
+			orgsAllowlisted: false,
+			privateChecked: true,
+		});
 		expect(inviteWarning(usersOnly)).toMatch(/cannot sign in until an admin adds them/);
 
 		const withOrgs = await checkInvitee(
@@ -210,8 +230,70 @@ describe('checkInvitee', () => {
 			allowlistFromEnv({ LOGWOLF_ALLOWED_GITHUB_ORGS: 'acme' }),
 			github(octocat),
 		);
-		expect(withOrgs).toEqual({ kind: 'not-allowlisted', login: 'Octocat', orgsAllowlisted: true });
+		expect(withOrgs).toEqual({
+			kind: 'not-allowlisted',
+			login: 'Octocat',
+			orgsAllowlisted: true,
+			privateChecked: false,
+		});
 		expect(inviteWarning(withOrgs)).toMatch(/privately/);
+	});
+
+	describe('with the inviting owner’s token', () => {
+		// alice owns the project and is in acme; octocat is in acme privately.
+		const acme = { LOGWOLF_ALLOWED_GITHUB_ORGS: 'acme' };
+		const members = { acme: ['alice', 'Octocat'] };
+		const tokens = { 'alice-token': 'alice', 'bob-token': 'bob' };
+
+		it('sees an allowed org’s private members, which the public check cannot', async () => {
+			const fetchImpl = github(octocat, {}, members, tokens);
+
+			expect(await checkInvitee('octocat', allowlistFromEnv(acme), fetchImpl)).toMatchObject({
+				kind: 'not-allowlisted',
+			});
+			expect(await checkInvitee('octocat', allowlistFromEnv(acme), fetchImpl, 'alice-token')).toEqual({
+				kind: 'allowed',
+				login: 'Octocat',
+			});
+		});
+
+		it('is certain about someone in none of the orgs, and says so', async () => {
+			const check = await checkInvitee(
+				'octodog',
+				allowlistFromEnv(acme),
+				github({ octodog: { login: 'OctoDog' } }, {}, members, tokens),
+				'alice-token',
+			);
+
+			expect(check).toEqual({ kind: 'not-allowlisted', login: 'OctoDog', orgsAllowlisted: true, privateChecked: true });
+			expect(inviteWarning(check)).toMatch(/cannot sign in until/);
+			expect(inviteWarning(check)).not.toMatch(/privately/);
+		});
+
+		// bob is not in acme, so GitHub will not tell him about its members; and
+		// a revoked token is refused. Either way the public check still runs.
+		it.each(['bob-token', 'revoked-token'])('falls back to public membership for %s', async (token) => {
+			const publicOnly = github(octocat, { acme: ['Octocat'] }, members, tokens);
+			expect(await checkInvitee('octocat', allowlistFromEnv(acme), publicOnly, token)).toEqual({
+				kind: 'allowed',
+				login: 'Octocat',
+			});
+
+			const privateOnly = github(octocat, {}, members, tokens);
+			const check = await checkInvitee('octocat', allowlistFromEnv(acme), privateOnly, token);
+			expect(check).toMatchObject({ kind: 'not-allowlisted', privateChecked: false });
+		});
+
+		it('sends the token to GitHub’s API alone', async () => {
+			const fetchImpl = github(octocat, {}, members, tokens);
+			await checkInvitee('octocat', allowlistFromEnv(acme), fetchImpl, 'alice-token');
+
+			for (const [input, init] of vi.mocked(fetchImpl).mock.calls) {
+				const authorized = new Headers(init?.headers).has('Authorization');
+				expect(new URL(String(input)).host).toBe('api.github.com');
+				expect(authorized).toBe(new URL(String(input)).pathname.includes('/members/'));
+			}
+		});
 	});
 
 	it('does not block when GitHub cannot be asked', async () => {

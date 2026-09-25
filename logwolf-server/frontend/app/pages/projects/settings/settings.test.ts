@@ -129,6 +129,30 @@ describe('/projects/:id/settings', () => {
 			});
 		});
 
+		// Asked as the owner, GitHub shows an allowed org's private members,
+		// whom the public check took for strangers.
+		it('clears a private member of an allowed org, asking GitHub as the owner', async () => {
+			vi.stubEnv('LOGWOLF_ALLOWED_GITHUB_USERS', '');
+			vi.stubEnv('LOGWOLF_ALLOWED_GITHUB_ORGS', 'acme');
+			const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = new URL(String(input)).pathname;
+				if (path === '/users/octodog') return Response.json({ login: 'OctoDog', type: 'User' });
+				const asOwner = new Headers(init?.headers).get('Authorization') === 'Bearer gho_owner';
+				if (path === '/orgs/acme/members/OctoDog') return new Response(null, { status: asOwner ? 204 : 302 });
+				return new Response(null, { status: 404 });
+			});
+			vi.stubGlobal('fetch', fetchMock);
+
+			const withToken = await sessionCookie({ currentProjectID: owned, githubToken: 'gho_owner' });
+			const res = await send(owned, { intent: 'add-member', login: 'octodog', role: 'member' }, withToken);
+
+			expect(res).toEqual({ success: 'Added OctoDog as member.', warning: undefined });
+
+			// A session from before tokens were kept still works, and warns as before.
+			const res2 = await send(owned, { intent: 'add-member', login: 'octodog', role: 'member' }, cookie);
+			expect(res2).toMatchObject({ warning: expect.stringMatching(/privately/) });
+		});
+
 		it('adds an allowlisted user without a warning', async () => {
 			stubGitHub();
 			vi.stubEnv('LOGWOLF_ALLOWED_GITHUB_USERS', 'octodog');

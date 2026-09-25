@@ -2,6 +2,7 @@ import { redirect } from 'react-router';
 
 import { allowlistFromEnv, isAllowed, isEmptyAllowlist, listGithubOrgs } from './allowlist.server';
 import { commitSession, destroySession, getSession } from './session.server';
+import { sealToken } from './token.server';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!;
@@ -53,6 +54,10 @@ export async function handleGitHubCallback(code: string, request: Request) {
 		name: user.name,
 		avatarUrl: user.avatar_url,
 	});
+	// Kept, sealed, for checking invitees' org membership: GitHub shows private
+	// members only to a token of someone inside the org. It carries the scopes
+	// sign-in asked for, read:user and read:org, and nothing more.
+	if (typeof access_token === 'string' && access_token) session.set('githubToken', sealToken(access_token));
 
 	return redirect('/dashboard', {
 		headers: { 'Set-Cookie': await commitSession(session) },

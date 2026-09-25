@@ -88,7 +88,7 @@ docker compose up
 
 - SDK/API clients: Bearer tokens with `lw_` prefix, validated and cached with TTL + rate limiting per client IP (in broker middleware; the IP comes from `X-Forwarded-For` only when the peer is in `TRUSTED_PROXIES`)
 - API keys carry scopes: `ingest` (`POST /logs`, `/logs/batch`), `read` (`GET /logs`, `GET /logs/{id}`), `delete` (`DELETE /logs`). `requireScope` answers 403 without the route's scope. New keys get `ingest` alone unless the creator picks more, because keys ship in browser bundles. Keys stored before scopes existed have none and are read back with all three (`Legacy`), so they keep working
-- Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), iron-session cookies + CSRF tokens on mutations. Sign-in is deny-by-default: a login must be in `LOGWOLF_ALLOWED_GITHUB_USERS` or belong to an org in `LOGWOLF_ALLOWED_GITHUB_ORGS`; with both empty nobody gets in (`app/lib/allowlist.server.ts`)
+- Dashboard: GitHub OAuth 2.0 (user/org allowlist via env vars), signed cookie sessions (React Router's; readable, not encrypted) + CSRF tokens on mutations. The session also keeps the user's GitHub token, sealed with AES-256-GCM (`lib/token.server.ts`), which the invite check uses to see allowed orgs' private members. Sign-in is deny-by-default: a login must be in `LOGWOLF_ALLOWED_GITHUB_USERS` or belong to an org in `LOGWOLF_ALLOWED_GITHUB_ORGS`; with both empty nobody gets in (`app/lib/allowlist.server.ts`)
 - GitHub logins are case-insensitive: memberships store them lowercase and every lookup normalizes with `data.NormalizeGithubLogin` (the broker does it once, in `requireUserLogin`). The session keeps GitHub's casing for display
 
 **Reading vs. writing:** Broker handles writes asynchronously (via RabbitMQ) and reads synchronously (via RPC to logger). Do not add direct DB calls to broker or listener. This holds for both entry points: SDK clients scoped by API key, and the dashboard scoped by project id + membership.
@@ -154,7 +154,7 @@ The layout loader keeps `currentProjectID` in the session honest and redirects a
 
 Pages take the current project from the session (`getCurrentProjectID`), never from the URL or a form field, so the redirect back from `/projects/switch` revalidates them into the new project. `/events` included: it goes through the broker's `/projects/:id/logs` routes, not the SDK. The SDK's key belongs to one fixed project, so `lib/logwolf.ts` is now only the dashboard's own error tracking.
 
-Project name, retention, members and deletion all live on `/projects/:id/settings`. Any member may raise retention, but only owners may lower it (`data.LowersRetention`, mirrored by `lib/retention.ts`), since a shorter window deletes logs on the next cleanup pass; renaming, member changes and deletion are owner-only. All of it is enforced in the broker and mirrored in the route so the UI can explain itself. Any member may create and revoke API keys. Adding a member first asks GitHub about the login (`checkInvitee`): an unknown login or an organization is refused, and someone the allowlist does not clear is added with a warning that they cannot sign in yet.
+Project name, retention, members and deletion all live on `/projects/:id/settings`. Any member may raise retention, but only owners may lower it (`data.LowersRetention`, mirrored by `lib/retention.ts`), since a shorter window deletes logs on the next cleanup pass; renaming, member changes and deletion are owner-only. All of it is enforced in the broker and mirrored in the route so the UI can explain itself. Any member may create and revoke API keys. Adding a member first asks GitHub about the login (`checkInvitee`), org membership as the inviting owner so private members count: an unknown login or an organization is refused, and someone the allowlist does not clear is added with a warning that they cannot sign in yet.
 
 `lib/api.ts` → calls Broker internal routes via `X-Internal-Secret`, plus `X-User-Login` from the session for the broker's membership checks; project-scoped methods take the project id as an argument. Never calls public SDK routes.
 
@@ -195,7 +195,7 @@ Per-service env vars:
 | `LOGWOLF_DEFAULT_PROJECT_OWNERS` | logger           | —                             | More `Default` owners; how org-only deployments get one                |
 | `API_URL`                        | frontend         | —                             | Broker base URL                                                        |
 | `INTERNAL_API_SECRET`            | frontend         | —                             | Shared secret for internal Broker routes                               |
-| `SESSION_SECRET`                 | frontend         | —                             | iron-session signing key                                               |
+| `SESSION_SECRET`                 | frontend         | —                             | Session cookie signing key, and the key sealing GitHub tokens         | 
 
 ## Detailed docs
 
