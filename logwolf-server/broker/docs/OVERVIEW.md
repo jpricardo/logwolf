@@ -40,6 +40,8 @@ Both log reads, `GET /logs` and the dashboard's `GET /projects/{id}/logs`, take 
 
 ### Internal routes (`X-Internal-Secret` header required)
 
+Not reachable from the internet: Caddy forwards only the public routes above and the health checks, and `caddy_test.go` fails if the `Caddyfile` would forward any of these, or stop forwarding a public one.
+
 Everything that acts on one project is under `/projects/{id}`.
 
 | Method   | Path                             | Access | Description                                          |

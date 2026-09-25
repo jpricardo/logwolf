@@ -82,7 +82,7 @@ docker compose up
 
 **Event flow:** Client SDK → Broker (HTTP) → RabbitMQ → Listener → Logger (RPC) → MongoDB. The broker's `202` means RabbitMQ has confirmed the event: `event.Emitter` publishes persistent messages with publisher confirms (503 otherwise), declares the `logwolf_logs` queue itself so events queue before the listener runs, and redials after a RabbitMQ restart. Delivery is at least once end to end
 
-**Networks:** Only Caddy, Broker, and Frontend are on the public network. Logger, Listener, RabbitMQ, and MongoDB are isolated on an internal network.
+**Networks:** Only Caddy, Broker, and Frontend are on the public network. Logger, Listener, RabbitMQ, and MongoDB are isolated on an internal network. Caddy forwards only the broker's public routes (`@public` in the `Caddyfile`: `/api/logs`, `/api/logs/*`, `/api/health`, `/api/ping`); the dashboard routes are internal-only, since they trust `X-User-Login` once the secret checks out. `broker/cmd/api/caddy_test.go` holds the `Caddyfile` against the broker's routes, so a new public route outside those paths, or a wider Caddy rule, fails the tests
 
 **API authentication:**
 
