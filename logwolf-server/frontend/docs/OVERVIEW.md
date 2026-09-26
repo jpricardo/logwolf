@@ -162,14 +162,14 @@ Event payloads come back exactly as the broker stores them, so `getLogs`/`getLog
 
 ## Environment variables
 
-| Variable                       | Description                                                   |
-| ------------------------------ | ------------------------------------------------------------- |
-| `API_URL`                      | Broker base URL (e.g. `http://broker/`)                       |
-| `INTERNAL_API_SECRET`          | Shared secret for internal Broker routes                      |
-| `GITHUB_CLIENT_ID`             | GitHub OAuth app client ID                                    |
-| `GITHUB_CLIENT_SECRET`         | GitHub OAuth app client secret                                |
-| `LOGWOLF_ALLOWED_GITHUB_USERS` | Comma-separated list of allowed GitHub usernames              |
-| `LOGWOLF_ALLOWED_GITHUB_ORGS`  | Comma-separated list of GitHub orgs whose members are allowed |
+| Variable                       | Description                                                          |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `API_URL`                      | Broker base URL (e.g. `http://broker/`)                              |
+| `INTERNAL_API_SECRET`          | Shared secret for internal Broker routes                             |
+| `GITHUB_CLIENT_ID`             | GitHub OAuth app client ID                                           |
+| `GITHUB_CLIENT_SECRET`         | GitHub OAuth app client secret                                       |
+| `LOGWOLF_ALLOWED_GITHUB_USERS` | Comma-separated list of allowed GitHub usernames                     |
+| `LOGWOLF_ALLOWED_GITHUB_ORGS`  | Comma-separated list of GitHub orgs whose members are allowed        |
 | `SESSION_SECRET`               | Signs session cookies; the key sealing GitHub tokens derives from it |
 
 Copy `.env.example` to `.env` before running locally.
