@@ -1,0 +1,3 @@
+# Versions must be a day old before pnpm installs them, which gives the
+# registry time to pull a compromised release.
+minimumReleaseAge: 1440

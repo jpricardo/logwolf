@@ -75,12 +75,12 @@ All dev dependencies (Rollup, Vitest, TypeScript, oxlint/oxfmt) are build-time o
 ## Development commands
 
 ```bash
-npm test          # vitest (watch mode)
-npm run coverage  # single run with coverage report
-npm run build     # tsc + rollup → dist/
-npm run lint      # oxlint
-npm run format    # oxfmt
-npm run typecheck # tsc --noEmit
+pnpm test          # vitest (watch mode)
+pnpm run coverage  # single run with coverage report
+pnpm run build     # tsc + rollup → dist/
+pnpm run lint      # oxlint
+pnpm run format    # oxfmt
+pnpm run typecheck # tsc --noEmit
 ```
 
 ## Relationship to the rest of Logwolf

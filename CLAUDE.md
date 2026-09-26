@@ -50,25 +50,27 @@ cd logwolf-server/integration && go test -tags integration ./... -v -timeout 5m
 LOGWOLF_TEST_VERBOSE=1 go test -tags integration ./... -v -timeout 5m
 ```
 
+Both JS projects use pnpm, pinned by `packageManager` in their `package.json`. Each has its own `pnpm-workspace.yaml` (they are separate projects, not a workspace) with `minimumReleaseAge: 1440`: pnpm will not install a version published less than 24 hours ago. The frontend exempts `@logwolf/client-js`, our own SDK, so a new release can be adopted at once, and allows `esbuild`'s build script.
+
 ### JS SDK (`logwolf-client/js`)
 
 ```bash
-npm test          # vitest watch
-npm run coverage  # single run with coverage report
-npm run build     # tsc + rollup → dist/
-npm run lint      # oxlint
-npm run format    # oxfmt
-npx tsc --noEmit  # typecheck (no npm script for it here)
+pnpm test              # vitest watch
+pnpm run coverage      # single run with coverage report
+pnpm run build         # tsc + rollup → dist/
+pnpm run lint          # oxlint
+pnpm run format        # oxfmt
+pnpm exec tsc --noEmit # typecheck (no script for it here)
 ```
 
 ### Frontend (`logwolf-server/frontend`)
 
 ```bash
-npm run dev       # Vite dev server
-npm run build     # react-router build
-npm test          # vitest (single run): libraries, and route loaders/actions with real sessions (app/test/routes.ts)
-npm run typecheck # react-router typegen + tsc
-npm run lint      # oxlint
+pnpm run dev       # Vite dev server
+pnpm run build     # react-router build
+pnpm test          # vitest (single run): libraries, and route loaders/actions with real sessions (app/test/routes.ts)
+pnpm run typecheck # react-router typegen + tsc
+pnpm run lint      # oxlint
 ```
 
 ### Full stack

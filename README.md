@@ -114,11 +114,11 @@ docker compose up -d mongo rabbitmq
 
 # Frontend
 cd logwolf-server/frontend
-npm install && npm run dev
+pnpm install && pnpm run dev
 
 # JS SDK
 cd logwolf-client/js
-npm install && npm test
+pnpm install && pnpm test
 ```
 
 See [logwolf-server/README.md](./logwolf-server/README.md) for the full local development guide.
