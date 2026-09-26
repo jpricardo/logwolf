@@ -117,11 +117,11 @@ const logwolf = new Logwolf({
 - Path: `frontend`
 - Dev server:
   - `cd logwolf-server/frontend`
-  - `npm install`
-  - `npm run dev` (defaults to `http://localhost:5173`)
+  - `pnpm install`
+  - `pnpm run dev` (defaults to `http://localhost:5173`)
   - Set `API_URL` in `.env` (defaults to `http://localhost:8080/`)
 - Build for production:
-  - `npm run build`
+  - `pnpm run build`
   - Output is under `build/` (`client/` and `server/` artifacts)
 
 ---
@@ -137,7 +137,7 @@ const logwolf = new Logwolf({
 
 ## ✅ Recommended local workflow
 
-- **Frontend only:** `docker compose up -d broker mongo rabbitmq caddy`, then `npm run dev` in `frontend/`.
+- **Frontend only:** `docker compose up -d broker mongo rabbitmq caddy`, then `pnpm run dev` in `frontend/`.
 - **Backend only:** `docker compose up -d mongo rabbitmq`, then run Go services locally. Give them the credentials from `.env`: `MONGO_USERNAME` and `MONGO_PASSWORD` for the logger, and `RABBITMQ_URL=amqp://<user>:<password>@<host>` for the broker and listener.
 - **Full stack:** `docker compose up --build -d`
 

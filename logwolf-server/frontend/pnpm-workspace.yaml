@@ -1,0 +1,9 @@
+# Versions must be a day old before pnpm installs them, which gives the
+# registry time to pull a compromised release. Our own SDK is exempt: we
+# publish it, and a fresh release should reach the dashboard at once.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - '@logwolf/client-js'
+
+allowBuilds:
+  esbuild: true

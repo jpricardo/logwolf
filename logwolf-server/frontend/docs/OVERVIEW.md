@@ -177,11 +177,11 @@ Copy `.env.example` to `.env` before running locally.
 ## Development commands
 
 ```bash
-npm run dev       # Vite dev server (hot reload)
-npm run build     # react-router build → build/
-npm run typecheck # react-router typegen + tsc --noEmit
-npm run lint      # oxlint
-npm test          # vitest, single run
+pnpm run dev       # Vite dev server (hot reload)
+pnpm run build     # react-router build → build/
+pnpm run typecheck # react-router typegen + tsc --noEmit
+pnpm run lint      # oxlint
+pnpm test          # vitest, single run
 ```
 
 ## Tests

@@ -11,14 +11,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: logwolf-client/js/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org/
-      - name: ci
+          cache: pnpm
+          cache-dependency-path: logwolf-client/js/pnpm-lock.yaml
+      - name: install
         working-directory: logwolf-client/js
-        run: npm ci
-      # npm publish takes the version from package.json, whatever the release
+        run: pnpm install --frozen-lockfile
+      # pnpm publish takes the version from package.json, whatever the release
       # is called; a release tagged v2.0.1 on a package still at 2.0.0 would
       # publish 2.0.0. The two must agree.
       - name: check the tag matches package.json
@@ -34,12 +39,14 @@ jobs:
       # A published version cannot be taken back: test before, not after.
       - name: typecheck
         working-directory: logwolf-client/js
-        run: npx tsc --noEmit
+        run: pnpm exec tsc --noEmit
       - name: test
         working-directory: logwolf-client/js
-        run: npx vitest run
+        run: pnpm exec vitest run
+      # A release checks out its tag, a detached HEAD, which pnpm's
+      # publish-branch check would refuse.
       - name: publish
         working-directory: logwolf-client/js
-        run: npm publish --access public
+        run: pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

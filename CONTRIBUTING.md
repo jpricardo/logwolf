@@ -5,7 +5,8 @@ Thanks for your interest in contributing. This document covers how to run the st
 ## Prerequisites
 
 - Go 1.25+
-- Node.js 20+
+- Node.js 22+
+- pnpm, the version pinned in each JS project's `packageManager` (`corepack enable` installs it)
 - Docker and Docker Compose v2
 - A GitHub account (for dashboard login during local development)
 
@@ -48,8 +49,8 @@ cd logwolf-server
 docker compose up -d mongo rabbitmq broker caddy
 
 cd frontend
-npm install
-npm run dev  # http://localhost:5173
+pnpm install
+pnpm run dev  # http://localhost:5173
 ```
 
 Set `API_URL=http://localhost:8080/` in `frontend/.env` if you're running the Broker outside Docker.
@@ -74,8 +75,8 @@ The Broker listens on port `80` by default. Override with the `BROKER_PORT` env 
 
 ```bash
 cd logwolf-client/js
-npm install
-npm test
+pnpm install
+pnpm test
 ```
 
 ## Running the tests
@@ -107,8 +108,8 @@ These tests take 30–60 seconds on first run while container images are pulled.
 
 ```bash
 cd logwolf-client/js
-npm test            # watch mode
-npm run coverage    # single run with coverage report
+pnpm test         # watch mode
+pnpm run coverage # single run with coverage report
 ```
 
 ### CI
@@ -123,10 +124,10 @@ All three test suites run on every push and pull request via GitHub Actions (`.g
 
 ```bash
 cd logwolf-server/frontend
-npx prettier --write .
+pnpm dlx prettier --write .
 
 cd logwolf-client/js
-npx prettier --write .
+pnpm dlx prettier --write .
 ```
 
 ## Making changes
@@ -145,7 +146,7 @@ The SDK is built with `tsc` and bundled with Rollup. After making changes:
 
 ```bash
 cd logwolf-client/js
-npm run build
+pnpm run build
 ```
 
 The public API surface is exported from `lib/index.ts`. Schema changes go in `lib/schema.ts` — all config and event shapes are validated with Zod.
