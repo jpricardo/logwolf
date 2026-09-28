@@ -4,7 +4,6 @@ import { Link } from 'react-router';
 import { Page } from '~/components/nav/page';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
-import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { createApi } from '~/lib/api';
@@ -87,28 +86,28 @@ export default function Events({ loaderData }: Route.ComponentProps) {
 	}
 
 	return (
-		<Page title='Events'>
-			<div className='flex flex-col gap-8'>
-				<Section
-					title='Last events'
-					addon={
-						<Link to='/events/new'>
-							<Button>
-								<Plus />
-								New event
-							</Button>
-						</Link>
-					}
-				>
-					{error && (
-						<Alert variant='destructive' className='mb-4'>
-							<AlertTitle>Could not load events</AlertTitle>
-							<AlertDescription>{error}</AlertDescription>
-						</Alert>
-					)}
+		<Page
+			title='Events'
+			description='The most recent events this project has received.'
+			actions={
+				<Button asChild>
+					<Link to='/events/new'>
+						<Plus />
+						New event
+					</Link>
+				</Button>
+			}
+		>
+			<div className='flex flex-col gap-4'>
+				{error && (
+					<Alert variant='destructive'>
+						<AlertTitle>Could not load events</AlertTitle>
+						<AlertDescription>{error}</AlertDescription>
+					</Alert>
+				)}
 
-					<EventsTable events={events} csrfToken={csrfToken} />
-				</Section>
+				{/* Without events, a failed read says all there is to say. */}
+				{!(error && events.length === 0) && <EventsTable events={events} csrfToken={csrfToken} />}
 			</div>
 		</Page>
 	);

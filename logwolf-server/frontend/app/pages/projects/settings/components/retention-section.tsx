@@ -3,9 +3,8 @@ import { useFetcher } from 'react-router';
 
 import { Alert, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent } from '~/components/ui/card';
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '~/components/ui/field';
-import { Section } from '~/components/ui/section';
+import { Card } from '~/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '~/components/ui/field';
 import {
 	Select,
 	SelectContent,
@@ -20,6 +19,7 @@ import type { RetentionDays } from '~/lib/api';
 import { lowersRetention } from '~/lib/retention';
 
 import { type SettingsActionResult, useSuccessToast } from '../action-result';
+import { SettingsFooter, SettingsRow } from './settings-row';
 
 type RetentionDaysMap<T extends number> = {
 	[P in T as `${P}`]: string;
@@ -48,60 +48,56 @@ export function RetentionSection({ days, canLower }: Props) {
 	useSuccessToast(fetcher.data);
 
 	return (
-		<Section title='Data retention'>
-			<Card className='shadow-none max-w-md'>
-				<CardContent>
-					<fetcher.Form method='post'>
-						<FieldGroup>
-							{fetcher.data?.error && (
-								<Alert variant='destructive'>
-									<AlertTitle>{fetcher.data.error}</AlertTitle>
-								</Alert>
-							)}
+		<SettingsRow
+			title='Data retention'
+			description='Events older than this are dropped from this project on the next cleanup pass.'
+		>
+			<Card className='gap-0 overflow-hidden py-0'>
+				<fetcher.Form method='post'>
+					<FieldGroup className='p-5'>
+						{fetcher.data?.error && (
+							<Alert variant='destructive'>
+								<AlertTitle>{fetcher.data.error}</AlertTitle>
+							</Alert>
+						)}
 
-							<input type='hidden' name='_csrf' value={csrfToken} />
-							<input type='hidden' name='intent' value='retention' />
+						<input type='hidden' name='_csrf' value={csrfToken} />
+						<input type='hidden' name='intent' value='retention' />
 
-							<Field>
-								<FieldLabel>Retention time</FieldLabel>
+						<Field>
+							<FieldLabel htmlFor='retention-days'>Retention time</FieldLabel>
 
-								<Select name='days' defaultValue={days.toString()}>
-									<SelectTrigger className='w-full'>
-										<SelectValue placeholder='Retention days' />
-									</SelectTrigger>
+							<Select name='days' defaultValue={days.toString()}>
+								<SelectTrigger id='retention-days' className='w-full max-w-sm'>
+									<SelectValue placeholder='Retention days' />
+								</SelectTrigger>
 
-									<SelectContent>
-										<SelectGroup>
-											<SelectLabel>Retention time</SelectLabel>
-											{retentionOptions.map(([value, label]) => (
-												<SelectItem
-													key={value}
-													value={value}
-													disabled={!canLower && lowersRetention(days, Number(value))}
-												>
-													{label}
-												</SelectItem>
-											))}
-										</SelectGroup>
-									</SelectContent>
-								</Select>
+								<SelectContent>
+									<SelectGroup>
+										<SelectLabel>Retention time</SelectLabel>
+										{retentionOptions.map(([value, label]) => (
+											<SelectItem
+												key={value}
+												value={value}
+												disabled={!canLower && lowersRetention(days, Number(value))}
+											>
+												{label}
+											</SelectItem>
+										))}
+									</SelectGroup>
+								</SelectContent>
+							</Select>
+						</Field>
+					</FieldGroup>
 
-								<FieldDescription>
-									Events older than this are dropped from this project.
-									{!canLower && ' Only an owner can shorten it.'}
-								</FieldDescription>
-							</Field>
-
-							<Field className='flex flex-row justify-end items-end'>
-								<Button type='submit' disabled={fetcher.state !== 'idle'} className='w-fit'>
-									<Check />
-									Save
-								</Button>
-							</Field>
-						</FieldGroup>
-					</fetcher.Form>
-				</CardContent>
+					<SettingsFooter hint={canLower ? undefined : 'Only an owner can shorten it.'}>
+						<Button type='submit' size='sm' disabled={fetcher.state !== 'idle'}>
+							<Check />
+							Save
+						</Button>
+					</SettingsFooter>
+				</fetcher.Form>
 			</Card>
-		</Section>
+		</SettingsRow>
 	);
 }

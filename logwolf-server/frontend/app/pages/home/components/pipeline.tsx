@@ -28,8 +28,11 @@ function Stages({ stages }: { stages: Stage[] }) {
 	return stages.map((s, i) => (
 		<Fragment key={s.name}>
 			{i > 0 && <Arrow />}
-			<div className='rounded-md border bg-card px-3 py-2.5 xl:min-h-17 xl:w-36'>
-				<div className='font-medium'>{s.name}</div>
+			<div className='rounded-md border bg-card px-3 py-2.5 shadow-xs shadow-black/[0.03] xl:min-h-17 xl:w-36'>
+				<div className='flex items-center gap-1.5 font-medium'>
+					<span className='size-1.5 rounded-[1px] bg-primary' aria-hidden />
+					{s.name}
+				</div>
 				<div className='text-xs text-muted-foreground'>{s.role}</div>
 			</div>
 		</Fragment>
@@ -42,7 +45,7 @@ export function Pipeline() {
 			<Stages stages={publicStages} />
 			<Arrow />
 
-			<div className='relative flex flex-col gap-2 rounded-lg border border-dashed p-3 pt-7 xl:flex-row xl:items-center'>
+			<div className='relative flex flex-col gap-2 rounded-lg border border-dashed bg-muted/30 p-3 pt-7 xl:flex-row xl:items-center'>
 				<span className='absolute top-2 left-3 font-mono text-[11px] text-muted-foreground'>internal network</span>
 				<Stages stages={internalStages} />
 			</div>

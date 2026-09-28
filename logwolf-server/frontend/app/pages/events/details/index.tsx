@@ -1,16 +1,17 @@
 import { redirect } from 'react-router';
 
 import { Page } from '~/components/nav/page';
-import { Badge } from '~/components/ui/badge';
-import { Card, CardContent } from '~/components/ui/card';
+import { Card } from '~/components/ui/card';
 import { JSONBlock } from '~/components/ui/json-block';
 import { Section } from '~/components/ui/section';
 import { SeverityBadge } from '~/components/ui/severity-badge';
 import { eventContext } from '~/context';
 import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
+import { locale } from '~/lib/locale';
 import { getCurrentProjectID } from '~/lib/session.server';
 
+import { TagList } from '../components/tag-list';
 import type { Route } from './+types';
 import { InfoItem } from './components/info-item';
 
@@ -44,56 +45,47 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	return log;
 }
 
-export default function Details({ params, loaderData }: Route.ComponentProps) {
+export default function Details({ loaderData }: Route.ComponentProps) {
+	const event = loaderData;
+
 	return (
-		<Page title={`Events - ${params.id}`}>
-			<div className='flex flex-col gap-8'>
-				<Section title='Event details'>
-					<div className='flex flex-row gap-4'>
-						<Card className='flex-1 shadow-none'>
-							<CardContent className='flex flex-col gap-0'>
-								<InfoItem label='ID' value={loaderData.id} className='border-b pb-2' />
-								<InfoItem label='Name' value={loaderData.name} className='pt-2' />
-							</CardContent>
-						</Card>
+		<Page
+			title={event.name}
+			parents={[{ label: 'Events', to: '/events' }]}
+			heading={
+				<div className='flex min-w-0 flex-wrap items-center gap-3'>
+					<h1 className='truncate font-mono text-2xl font-semibold tracking-tight'>{event.name}</h1>
+					<SeverityBadge variant={event.severity} />
+				</div>
+			}
+			description={
+				<time suppressHydrationWarning dateTime={event.created_at.toISOString()}>
+					{event.created_at.toLocaleString(locale, { dateStyle: 'full', timeStyle: 'medium' })}
+				</time>
+			}
+		>
+			<div className='grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]'>
+				<Card className='h-fit gap-0 py-0'>
+					<dl className='divide-y'>
+						<InfoItem label='ID' value={<span className='font-mono text-xs break-all'>{event.id}</span>} />
+						<InfoItem
+							label='Duration'
+							value={
+								<span className='font-mono text-xs tabular-nums'>
+									{event.duration !== undefined ? `${event.duration} ms` : '—'}
+								</span>
+							}
+						/>
+						<InfoItem
+							label='Created'
+							value={<span className='font-mono text-xs'>{event.created_at.toISOString()}</span>}
+						/>
+						<InfoItem label='Tags' value={<TagList tags={event.tags} />} />
+					</dl>
+				</Card>
 
-						<Card className='flex-1 shadow-none'>
-							<CardContent className='flex flex-col gap-0'>
-								<InfoItem label='Created at' value={loaderData.created_at.toLocaleString()} className='border-b pb-2' />
-								<InfoItem
-									label='Duration'
-									value={loaderData.duration !== undefined ? `${loaderData.duration}ms` : '-'}
-									className='pt-2'
-								/>
-							</CardContent>
-						</Card>
-
-						<Card className='flex-1 shadow-none'>
-							<CardContent className='flex flex-col gap-0'>
-								<InfoItem
-									label='Severity'
-									value={<SeverityBadge variant={loaderData.severity} />}
-									className='border-b pb-2'
-								/>
-								<InfoItem
-									label='Tags'
-									value={
-										<div className='flex flex-row gap-2 items-center'>
-											{loaderData.tags.map((t) => (
-												<Badge key={t} variant={t === 'error' ? 'destructive' : 'secondary'}>
-													{t}
-												</Badge>
-											))}
-										</div>
-									}
-									className='pt-2'
-								/>
-							</CardContent>
-						</Card>
-					</div>
-				</Section>
-				<Section title='Event data'>
-					<JSONBlock data={loaderData.data} className='max-h-150' />
+				<Section title='Data' description='The payload attached to this event.'>
+					<JSONBlock data={event.data} className='max-h-150' />
 				</Section>
 			</div>
 		</Page>

@@ -19,14 +19,23 @@ const events: SampleEvent[] = [
 export function EventFeed({ className, ...props }: React.ComponentProps<'div'>) {
 	return (
 		<div className={cn('overflow-hidden rounded-lg border bg-card text-sm', className)} {...props}>
-			<div className='flex items-center justify-between border-b px-4 py-2'>
-				<span className='font-medium'>Events</span>
+			<div className='flex items-center justify-between border-b bg-muted/40 px-4 py-2.5'>
+				<span className='flex items-center gap-2 font-medium'>
+					<span className='relative flex size-2' aria-hidden>
+						<span className='absolute inline-flex size-full animate-ping rounded-[1px] bg-chart-5 opacity-60' />
+						<span className='relative inline-flex size-2 rounded-[1px] bg-chart-5' />
+					</span>
+					Events
+				</span>
 				<span className='font-mono text-xs text-muted-foreground'>project: storefront</span>
 			</div>
 
 			<ul className='divide-y'>
 				{events.map((e) => (
-					<li key={e.time} className='grid grid-cols-[auto_5.5rem_1fr_auto] items-center gap-3 px-4 py-2.5'>
+					<li
+						key={e.time}
+						className='grid grid-cols-[auto_5.5rem_1fr_auto] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40'
+					>
 						<span className='font-mono text-xs text-muted-foreground'>{e.time}</span>
 						<span>
 							<SeverityBadge variant={e.severity} />
@@ -34,7 +43,10 @@ export function EventFeed({ className, ...props }: React.ComponentProps<'div'>) 
 						<span className='flex min-w-0 items-center gap-2'>
 							<span className='truncate font-mono text-[13px]'>{e.name}</span>
 							{e.tags.map((t) => (
-								<span key={t} className='hidden rounded-xs bg-muted px-1.5 text-xs text-muted-foreground sm:inline'>
+								<span
+									key={t}
+									className='hidden rounded-sm border bg-secondary px-1.5 font-mono text-[11px] text-muted-foreground sm:inline'
+								>
 									{t}
 								</span>
 							))}

@@ -1,13 +1,13 @@
-import { Check, Plus } from 'lucide-react';
+import { ArrowRight, Check, Plus } from 'lucide-react';
 import { Link, useSubmit } from 'react-router';
 
 import { Page } from '~/components/nav/page';
+import { ProjectAvatar } from '~/components/nav/project-switcher';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent } from '~/components/ui/card';
-import { Section } from '~/components/ui/section';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { useProjects } from '~/hooks/use-projects';
+import { cn } from '~/lib/utils';
 
 export function meta() {
 	return [{ title: 'Projects - Logwolf' }];
@@ -25,50 +25,61 @@ export default function Projects() {
 	}
 
 	return (
-		<Page title='Projects'>
-			<Section
-				title='Projects'
-				addon={
-					<Button asChild>
-						<Link to='/projects/new'>
-							<Plus />
-							New project
-						</Link>
-					</Button>
-				}
-			>
-				<div className='flex flex-col gap-2'>
-					{projects.map((project) => (
-						<Card key={project.id} className='shadow-none py-0'>
-							<CardContent className='px-0'>
-								<button
-									type='button'
-									onClick={() => open(project.id)}
-									className='flex w-full flex-row items-center justify-between gap-4 rounded-xl px-6 py-3 text-left hover:bg-accent'
-								>
-									<div className='flex flex-row items-center gap-3 min-w-0'>
+		<Page
+			title='Projects'
+			description='Each project keeps its own events, API keys, members and retention.'
+			actions={
+				<Button asChild>
+					<Link to='/projects/new'>
+						<Plus />
+						New project
+					</Link>
+				</Button>
+			}
+		>
+			<div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+				{projects.map((project) => {
+					const isCurrent = project.id === currentProject?.id;
+
+					return (
+						<button
+							key={project.id}
+							type='button'
+							onClick={() => open(project.id)}
+							className={cn(
+								'group flex flex-col gap-5 rounded-lg border bg-card p-5 text-left shadow-xs shadow-black/[0.03] transition-colors hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+								isCurrent && 'border-primary/40',
+							)}
+						>
+							<div className='flex w-full items-start justify-between gap-3'>
+								<div className='flex min-w-0 items-center gap-3'>
+									<ProjectAvatar name={project.name} className='size-10 text-base' />
+									<div className='grid min-w-0 leading-tight'>
 										<span className='truncate font-medium'>{project.name}</span>
-										<code className='truncate text-sm text-muted-foreground'>{project.slug}</code>
-
-										<Badge variant={project.role === 'owner' ? 'default' : 'secondary'}>{project.role}</Badge>
-
-										{project.id === currentProject?.id && (
-											<Badge variant='outline'>
-												<Check />
-												Current
-											</Badge>
-										)}
+										<code className='truncate font-mono text-xs text-muted-foreground'>{project.slug}</code>
 									</div>
+								</div>
 
-									<span className='text-xs text-muted-foreground whitespace-nowrap'>
-										Created {new Date(project.created_at).toLocaleDateString()}
-									</span>
-								</button>
-							</CardContent>
-						</Card>
-					))}
-				</div>
-			</Section>
+								<ArrowRight className='size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary' />
+							</div>
+
+							<div className='flex w-full items-center justify-between gap-2 text-xs text-muted-foreground'>
+								<div className='flex items-center gap-1.5'>
+									<Badge variant={project.role === 'owner' ? 'default' : 'secondary'}>{project.role}</Badge>
+									{isCurrent && (
+										<Badge variant='outline'>
+											<Check />
+											Current
+										</Badge>
+									)}
+								</div>
+
+								<span className='whitespace-nowrap'>Created {new Date(project.created_at).toLocaleDateString()}</span>
+							</div>
+						</button>
+					);
+				})}
+			</div>
 		</Page>
 	);
 }

@@ -4,7 +4,7 @@ import { useFetcher } from 'react-router';
 
 import { Alert, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent } from '~/components/ui/card';
+import { Card } from '~/components/ui/card';
 import {
 	Dialog,
 	DialogContent,
@@ -15,11 +15,11 @@ import {
 } from '~/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
-import { Section } from '~/components/ui/section';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
 import type { UserProject } from '~/lib/api';
 
 import type { SettingsActionResult } from '../action-result';
+import { SettingsRow } from './settings-row';
 
 type Props = { project: UserProject };
 
@@ -40,9 +40,9 @@ export function DangerZone({ project }: Props) {
 	}
 
 	return (
-		<Section title='Danger zone'>
-			<Card className='shadow-none max-w-md border-destructive/50'>
-				<CardContent className='flex flex-col gap-3'>
+		<SettingsRow title='Danger zone' description='Actions here cannot be undone.' tone='destructive'>
+			<Card className='gap-0 overflow-hidden border-destructive/40 py-0'>
+				<div className='flex flex-col gap-3 p-5'>
 					<div className='flex flex-col gap-1'>
 						<span className='text-sm font-medium'>Delete this project</span>
 						<span className='text-sm text-muted-foreground'>
@@ -55,12 +55,14 @@ export function DangerZone({ project }: Props) {
 							<AlertTitle>{fetcher.data.error}</AlertTitle>
 						</Alert>
 					)}
+				</div>
 
-					<Button variant='destructive' className='w-fit' onClick={() => onOpenChange(true)}>
+				<div className='flex justify-end border-t border-destructive/20 bg-destructive/5 px-5 py-3'>
+					<Button variant='destructive' size='sm' onClick={() => onOpenChange(true)}>
 						<Trash2 />
 						Delete project
 					</Button>
-				</CardContent>
+				</div>
 			</Card>
 
 			<Dialog open={open} onOpenChange={onOpenChange}>
@@ -79,7 +81,7 @@ export function DangerZone({ project }: Props) {
 
 							<Field>
 								<FieldLabel htmlFor='confirmation'>
-									Type <code>{project.name}</code> to confirm
+									Type <code className='font-mono text-destructive'>{project.name}</code> to confirm
 								</FieldLabel>
 
 								<Input
@@ -106,6 +108,6 @@ export function DangerZone({ project }: Props) {
 					</fetcher.Form>
 				</DialogContent>
 			</Dialog>
-		</Section>
+		</SettingsRow>
 	);
 }

@@ -1,34 +1,26 @@
+import { Layers } from 'lucide-react';
 import { use } from 'react';
 
-import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { Skeleton } from '~/components/ui/skeleton';
 import type { Metrics } from '~/lib/api';
-import { cn } from '~/lib/utils';
+import { locale } from '~/lib/locale';
 
-type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
-export function TotalEvents({ className = '', p, ...props }: Props) {
+import { StatCard } from './stat-card';
+
+type Props = { className?: string; p: Promise<Metrics> };
+export function TotalEvents({ className, p }: Props) {
 	const metrics = use(p);
 
 	return (
-		<Card className={cn('shadow-none', className)} {...props}>
-			<CardHeader>
-				<CardDescription>Total events</CardDescription>
-				<CardTitle className='text-3xl'>{metrics.total_events}</CardTitle>
-			</CardHeader>
-		</Card>
+		<StatCard
+			className={className}
+			label='Total events'
+			icon={Layers}
+			value={metrics.total_events.toLocaleString(locale)}
+			footer='Across the retention window'
+		/>
 	);
 }
 
-type SkeletonProps = React.ComponentProps<typeof Card>;
-export function TotalEventsSkeleton({ className, ...props }: SkeletonProps) {
-	return (
-		<Card className={cn('shadow-none', className)} {...props}>
-			<CardHeader>
-				<CardDescription>Total events</CardDescription>
-				<CardTitle>
-					<Skeleton className='h-10 w-full' />
-				</CardTitle>
-			</CardHeader>
-		</Card>
-	);
+export function TotalEventsSkeleton({ className }: { className?: string }) {
+	return <StatCard className={className} label='Total events' icon={Layers} footer />;
 }
