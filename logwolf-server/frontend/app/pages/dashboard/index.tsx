@@ -1,9 +1,9 @@
+import { ArrowRight } from 'lucide-react';
 import { Suspense } from 'react';
 import { Link } from 'react-router';
 
 import { Page } from '~/components/nav/page';
 import { Button } from '~/components/ui/button';
-import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { createApi } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
@@ -49,52 +49,47 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 	}
 
 	return (
-		<Page title='Dashboard'>
-			<div className='flex flex-col gap-8'>
-				<Section
-					title='Metrics'
-					id='metrics'
-					addon={
-						<Button asChild>
-							<Link to='/events'>Show events</Link>
-						</Button>
-					}
-				>
-					<div className='flex flex-row flex-wrap gap-4'>
-						<div className='flex flex-col flex-wrap gap-4 flex-3 justify-stretch'>
-							<div className='flex flex-row flex-wrap gap-4 flex-1'>
-								<Suspense fallback={<TotalEventsSkeleton className='flex-1 min-w-xs' />}>
-									<TotalEvents className='flex-1 min-w-xs' p={metrics} />
-								</Suspense>
+		<Page
+			title='Dashboard'
+			description='How much this project logs, and how much of it is going wrong.'
+			actions={
+				<Button asChild variant='outline'>
+					<Link to='/events'>
+						View events
+						<ArrowRight />
+					</Link>
+				</Button>
+			}
+		>
+			{/* On wide screens the rate tiles stack in the first column and the
+			    chart fills the two beside them. */}
+			<div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'>
+				<Suspense fallback={<TotalEventsSkeleton />}>
+					<TotalEvents p={metrics} />
+				</Suspense>
 
-								<Suspense fallback={<TotalErrorsSkeleton className='flex-1 min-w-xs' />}>
-									<TotalErrors className='flex-1 min-w-xs' p={metrics} />
-								</Suspense>
+				<Suspense fallback={<TotalErrorsSkeleton />}>
+					<TotalErrors p={metrics} />
+				</Suspense>
 
-								<Suspense fallback={<AverageDurationSkeleton className='flex-1 min-w-xs' />}>
-									<AverageDuration className='flex-1 min-w-xs' p={metrics} />
-								</Suspense>
-							</div>
+				<Suspense fallback={<AverageDurationSkeleton />}>
+					<AverageDuration p={metrics} />
+				</Suspense>
 
-							<div className='flex flex-row flex-wrap gap-4 flex-1'>
-								<Suspense fallback={<EventRateSkeleton className='flex-1 min-w-xs' />}>
-									<EventRate className='flex-1 min-w-xs' p={metrics} />
-								</Suspense>
+				<Suspense fallback={<EventRateSkeleton />}>
+					<EventRate p={metrics} />
+				</Suspense>
 
-								<Suspense fallback={<ErrorRateSkeleton className='flex-1 min-w-xs' />}>
-									<ErrorRate className='flex-1 min-w-xs' p={metrics} />
-								</Suspense>
-							</div>
-						</div>
+				<Suspense fallback={<ErrorRateSkeleton />}>
+					<ErrorRate p={metrics} />
+				</Suspense>
 
-						<div className='flex flex-col flex-wrap flex-2'>
-							<Suspense fallback={<TagsBarChartSkeleton className='flex-1 min-w-xs min-h-100' />}>
-								<TagsBarChart className='flex-1 min-w-xs min-h-100' p={metrics} />
-							</Suspense>
-						</div>
-					</div>
-				</Section>
+				<Suspense fallback={<TagsBarChartSkeleton className={chartPlacement} />}>
+					<TagsBarChart className={chartPlacement} p={metrics} />
+				</Suspense>
 			</div>
 		</Page>
 	);
 }
+
+const chartPlacement = 'md:col-span-2 xl:col-span-2 xl:col-start-2 xl:row-span-2 xl:row-start-2';

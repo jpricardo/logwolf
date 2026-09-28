@@ -1,5 +1,5 @@
 import { CreateLogwolfEventDTOSchema, LogwolfEvent, type Severity } from '@logwolf/client-js';
-import { Check } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { redirect, useFetcher } from 'react-router';
 import z, { ZodError } from 'zod';
@@ -7,10 +7,9 @@ import z, { ZodError } from 'zod';
 import { Page } from '~/components/nav/page';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
-import { Field, FieldError, FieldGroup, FieldLabel } from '~/components/ui/field';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
-import { Section } from '~/components/ui/section';
 import {
 	Select,
 	SelectContent,
@@ -99,97 +98,100 @@ export default function Create() {
 	}, []);
 
 	return (
-		<Page title='New Event'>
-			<div className='flex flex-row gap-8'>
-				<Card className='shadow-none flex-1'>
+		<Page
+			title='New event'
+			parents={[{ label: 'Events', to: '/events' }]}
+			description='Send an event by hand, straight into this project. Handy for checking alerts and dashboards.'
+		>
+			<div className='grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]'>
+				<Card>
 					<CardHeader>
-						<CardTitle className='text-muted-foreground'>Form</CardTitle>
+						<CardTitle>Event</CardTitle>
+						<CardDescription>Name, severity and tags are required; data is any JSON object.</CardDescription>
 					</CardHeader>
 
 					<CardContent>
-						<Section>
-							<fetcher.Form
-								method='post'
-								ref={ref}
-								onChange={() => setData(new FormData(ref.current!))}
-								className='flex flex-col gap-8'
-							>
-								<input type='hidden' name='_csrf' value={csrfToken} />
+						<fetcher.Form
+							method='post'
+							ref={ref}
+							onChange={() => setData(new FormData(ref.current!))}
+							className='flex flex-col gap-6'
+						>
+							<input type='hidden' name='_csrf' value={csrfToken} />
 
-								{!!fetcherError?.formErrors.length && (
-									<Alert variant='destructive'>
-										<AlertTitle>Validation error!</AlertTitle>
-										<AlertDescription>{fetcherError.formErrors}</AlertDescription>
-									</Alert>
-								)}
+							{!!fetcherError?.formErrors.length && (
+								<Alert variant='destructive'>
+									<AlertTitle>Validation error</AlertTitle>
+									<AlertDescription>{fetcherError.formErrors}</AlertDescription>
+								</Alert>
+							)}
 
-								<FieldGroup className='flex flex-row gap-8'>
-									<Field>
-										<FieldLabel htmlFor='name'>Name</FieldLabel>
-										<Input id='name' name='name' type='text' required />
-										<FieldError>{fetcherError?.fieldErrors.name}</FieldError>
-									</Field>
+							<FieldGroup className='grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]'>
+								<Field>
+									<FieldLabel htmlFor='name'>Name</FieldLabel>
+									<Input
+										id='name'
+										name='name'
+										type='text'
+										placeholder='checkout.completed'
+										required
+										className='font-mono'
+									/>
+									<FieldError>{fetcherError?.fieldErrors.name}</FieldError>
+								</Field>
 
-									<Field>
-										<FieldLabel htmlFor='severity'>Severity</FieldLabel>
-										<Select name='severity' required>
-											<SelectTrigger id='severity'>
-												<SelectValue placeholder='Severity' />
-											</SelectTrigger>
+								<Field>
+									<FieldLabel htmlFor='severity'>Severity</FieldLabel>
+									<Select name='severity' required>
+										<SelectTrigger id='severity' className='w-full'>
+											<SelectValue placeholder='Severity' />
+										</SelectTrigger>
 
-											<SelectContent>
-												<SelectGroup>
-													<SelectLabel>Severity</SelectLabel>
-													{Object.keys(severityMap).map((s) => (
-														<SelectItem key={s} value={s}>
-															{formatSeverity(s as Severity)}
-														</SelectItem>
-													))}
-												</SelectGroup>
-											</SelectContent>
-										</Select>
-										<FieldError>{fetcherError?.fieldErrors.severity}</FieldError>
-									</Field>
+										<SelectContent>
+											<SelectGroup>
+												<SelectLabel>Severity</SelectLabel>
+												{Object.keys(severityMap).map((s) => (
+													<SelectItem key={s} value={s}>
+														{formatSeverity(s as Severity)}
+													</SelectItem>
+												))}
+											</SelectGroup>
+										</SelectContent>
+									</Select>
+									<FieldError>{fetcherError?.fieldErrors.severity}</FieldError>
+								</Field>
+							</FieldGroup>
 
-									<Field>
-										<FieldLabel htmlFor='tags'>Tags</FieldLabel>
-										<Input id='tags' name='tags' type='text' required />
-										<FieldError>{fetcherError?.fieldErrors.tags}</FieldError>
-									</Field>
-								</FieldGroup>
+							<Field>
+								<FieldLabel htmlFor='tags'>Tags</FieldLabel>
+								<Input id='tags' name='tags' type='text' placeholder='payments, checkout' required />
+								<FieldDescription>Separate tags with commas.</FieldDescription>
+								<FieldError>{fetcherError?.fieldErrors.tags}</FieldError>
+							</Field>
 
-								<FieldGroup>
-									<Field>
-										<FieldLabel htmlFor='data'>Data</FieldLabel>
-										<Textarea id='data' name='data' defaultValue='{}' required className='font-mono' />
-										<FieldError>{fetcherError?.fieldErrors.data}</FieldError>
-									</Field>
-								</FieldGroup>
+							<Field>
+								<FieldLabel htmlFor='data'>Data</FieldLabel>
+								<Textarea id='data' name='data' defaultValue='{}' required className='min-h-40 font-mono text-[13px]' />
+								<FieldError>{fetcherError?.fieldErrors.data}</FieldError>
+							</Field>
 
-								<FieldGroup>
-									<Field orientation='horizontal' className='justify-end'>
-										<Button type='submit' disabled={loading}>
-											{loading ? <Spinner /> : <Check />}
-											Submit
-										</Button>
-									</Field>
-								</FieldGroup>
-							</fetcher.Form>
-						</Section>
+							<div className='flex justify-end border-t pt-5'>
+								<Button type='submit' disabled={loading}>
+									{loading ? <Spinner /> : <Send />}
+									Send event
+								</Button>
+							</div>
+						</fetcher.Form>
 					</CardContent>
 				</Card>
 
-				<Card className='shadow-none flex-1 max-w-lg'>
-					<CardHeader>
-						<CardTitle className='text-muted-foreground'>Preview</CardTitle>
-					</CardHeader>
-
-					<CardContent>
-						<Section>
-							<Preview formData={data} />
-						</Section>
-					</CardContent>
-				</Card>
+				<div className='flex h-fit flex-col gap-3 lg:sticky lg:top-20'>
+					<div className='flex items-center justify-between'>
+						<h2 className='text-sm font-semibold tracking-tight'>Preview</h2>
+						<span className='font-mono text-xs text-muted-foreground'>form data</span>
+					</div>
+					<Preview formData={data} />
+				</div>
 			</div>
 		</Page>
 	);

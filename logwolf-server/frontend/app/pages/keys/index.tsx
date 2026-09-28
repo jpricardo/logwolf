@@ -1,26 +1,21 @@
+import { Check, Copy, KeyRound, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useFetcher } from 'react-router';
 
 import { Page } from '~/components/nav/page';
-import { Alert, AlertTitle } from '~/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent } from '~/components/ui/card';
-import {
-	Field,
-	FieldContent,
-	FieldDescription,
-	FieldGroup,
-	FieldLabel,
-	FieldLegend,
-	FieldSet,
-} from '~/components/ui/field';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Section } from '~/components/ui/section';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { API_KEY_SCOPES, createApi, type ApiKeyScope } from '~/lib/api';
 import { requireAuth } from '~/lib/auth.server';
 import { validateCsrfToken } from '~/lib/csrf.server';
 import { getCurrentProjectID } from '~/lib/session.server';
+import { cn } from '~/lib/utils';
 
 import type { Route } from './+types';
 
@@ -100,6 +95,28 @@ export function meta() {
 
 type FetcherData = Awaited<ReturnType<typeof action>>;
 
+function CopyButton({ value }: { value: string }) {
+	const [copied, setCopied] = useState(false);
+
+	useEffect(() => {
+		if (!copied) return;
+		const t = setTimeout(() => setCopied(false), 2000);
+		return () => clearTimeout(t);
+	}, [copied]);
+
+	return (
+		<Button
+			type='button'
+			variant='outline'
+			size='sm'
+			onClick={() => navigator.clipboard.writeText(value).then(() => setCopied(true))}
+		>
+			{copied ? <Check /> : <Copy />}
+			{copied ? 'Copied' : 'Copy'}
+		</Button>
+	);
+}
+
 export default function Keys({ loaderData }: Route.ComponentProps) {
 	const fetcher = useFetcher<FetcherData>();
 	const actionData = fetcher.data;
@@ -107,15 +124,20 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 
 	if (loaderData.noProject) {
 		return (
-			<Page title='API Keys'>
+			<Page title='API keys'>
 				<p className='text-sm text-muted-foreground'>Select a project to manage its API keys.</p>
 			</Page>
 		);
 	}
 
+	const activeCount = loaderData.keys.filter((k) => k.active).length;
+
 	return (
-		<Page title='API Keys'>
-			<div className='flex flex-col gap-8'>
+		<Page
+			title='API keys'
+			description='Keys let your applications send events to this project, and read or delete them.'
+		>
+			<div className='flex flex-col gap-6'>
 				{actionData?.error && (
 					<Alert variant='destructive'>
 						<AlertTitle>{actionData.error.message}</AlertTitle>
@@ -123,108 +145,152 @@ export default function Keys({ loaderData }: Route.ComponentProps) {
 				)}
 
 				{actionData?.data?.key && (
-					<Card className='border-yellow-500 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-700 shadow-none'>
-						<CardContent className='flex flex-col gap-2 pt-4'>
-							<p className='text-sm font-semibold text-amber-800'>Copy your API key now — it won't be shown again.</p>
-							<code className='text-sm break-all text-amber-900'>{actionData.data.key}</code>
-							<p className='text-xs text-amber-800'>Scopes: {actionData.data.scopes.join(', ')}</p>
-							<Button
-								variant='outline'
-								className='self-start'
-								onClick={() => navigator.clipboard.writeText(actionData.data.key)}
-							>
-								Copy to clipboard
-							</Button>
-						</CardContent>
-					</Card>
+					<Alert variant='warning'>
+						<KeyRound />
+						<AlertTitle>Copy your API key now — it won't be shown again.</AlertTitle>
+						<AlertDescription className='w-full gap-3'>
+							<div className='mt-1 flex w-full flex-col gap-2 sm:flex-row sm:items-center'>
+								<code className='flex-1 rounded-md border bg-background px-3 py-2 font-mono text-[13px] break-all text-foreground'>
+									{actionData.data.key}
+								</code>
+								<CopyButton value={actionData.data.key} />
+							</div>
+							<p className='text-xs'>Scopes: {actionData.data.scopes.join(', ')}</p>
+						</AlertDescription>
+					</Alert>
 				)}
 
-				<Section title='New key'>
-					<Card className='shadow-none max-w-xl'>
+				<div className='grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]'>
+					<Section title='Keys' description={`${activeCount} active, ${loaderData.keys.length - activeCount} revoked`}>
+						{loaderData.keys.length === 0 ? (
+							<div className='flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-card/50 px-6 py-12 text-center'>
+								<KeyRound className='size-5 text-muted-foreground' />
+								<p className='text-sm text-muted-foreground'>No API keys yet. Generate one to start sending events.</p>
+							</div>
+						) : (
+							<div className='overflow-hidden rounded-lg border bg-card'>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Key</TableHead>
+											<TableHead>Scopes</TableHead>
+											<TableHead>Created</TableHead>
+											<TableHead className='w-0'>
+												<span className='sr-only'>Actions</span>
+											</TableHead>
+										</TableRow>
+									</TableHeader>
+
+									<TableBody>
+										{loaderData.keys.map((key) => (
+											<TableRow key={key.id} className={key.active ? undefined : 'text-muted-foreground'}>
+												<TableCell className='whitespace-normal'>
+													<div className='flex flex-col gap-1'>
+														<div className='flex items-center gap-2'>
+															<span
+																className={cn(
+																	'size-1.5 shrink-0 rounded-[1px]',
+																	key.active ? 'bg-chart-5' : 'bg-muted-foreground/40',
+																)}
+																aria-hidden
+															/>
+															<code className='font-mono text-[13px]'>{key.prefix}…</code>
+															{!key.active && <Badge variant='outline'>revoked</Badge>}
+														</div>
+														{key.legacy && key.active && (
+															<p className='max-w-sm text-xs text-muted-foreground'>
+																Created before keys had scopes, so it keeps full access. To narrow it, generate a key
+																with only the scopes you need and revoke this one.
+															</p>
+														)}
+													</div>
+												</TableCell>
+												<TableCell>
+													<div className='flex flex-row gap-1'>
+														{key.scopes.map((scope) => (
+															<Badge
+																key={scope}
+																variant={scope === 'ingest' ? 'secondary' : 'default'}
+																className='font-mono'
+															>
+																{scope}
+															</Badge>
+														))}
+													</div>
+												</TableCell>
+												<TableCell className='text-muted-foreground'>
+													{new Date(key.created_at).toLocaleDateString()}
+												</TableCell>
+												<TableCell className='text-right'>
+													{key.active && (
+														<fetcher.Form method='post'>
+															<input type='hidden' name='_csrf' value={csrfToken} />
+															<input type='hidden' name='intent' value='revoke' />
+															<input type='hidden' name='id' value={key.id} />
+															<Button
+																type='submit'
+																variant='ghost'
+																size='sm'
+																className='text-destructive hover:bg-destructive/10 hover:text-destructive'
+															>
+																Revoke
+															</Button>
+														</fetcher.Form>
+													)}
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</div>
+						)}
+					</Section>
+
+					<Card>
+						<CardHeader>
+							<CardTitle>New key</CardTitle>
+							<CardDescription>
+								Anyone holding a key can do everything its scopes allow, and keys used in a browser can be read out of
+								the page. Give read and delete only to keys that stay on a server.
+							</CardDescription>
+						</CardHeader>
+
 						<CardContent>
-							<fetcher.Form method='post'>
+							<fetcher.Form method='post' className='flex flex-col gap-4'>
 								<input type='hidden' name='_csrf' value={csrfToken} />
 								<input type='hidden' name='intent' value='create' />
-								<FieldGroup>
-									<FieldSet>
-										<FieldLegend variant='label'>Scopes</FieldLegend>
-										<FieldDescription>
-											Anyone holding a key can do everything its scopes allow, and keys used in a browser can be read
-											out of the page. Give read and delete only to keys that stay on a server.
-										</FieldDescription>
-										<FieldGroup data-slot='checkbox-group'>
-											{API_KEY_SCOPES.map((scope) => (
-												<Field key={scope} orientation='horizontal'>
-													<input
-														id={`scope-${scope}`}
-														type='checkbox'
-														name='scope'
-														value={scope}
-														defaultChecked={scope === 'ingest'}
-														className='mt-0.5 size-4 accent-primary'
-													/>
-													<FieldContent>
-														<FieldLabel htmlFor={`scope-${scope}`}>{scope}</FieldLabel>
-														<FieldDescription>{SCOPE_DESCRIPTIONS[scope]}</FieldDescription>
-													</FieldContent>
-												</Field>
-											))}
-										</FieldGroup>
-									</FieldSet>
-									<Field className='flex flex-row justify-end items-end'>
-										<Button type='submit' disabled={fetcher.state !== 'idle'} className='w-fit'>
-											Generate new key
-										</Button>
-									</Field>
-								</FieldGroup>
+
+								<fieldset className='flex flex-col gap-2'>
+									<legend className='mb-2 text-sm font-medium'>Scopes</legend>
+
+									{API_KEY_SCOPES.map((scope) => (
+										<label
+											key={scope}
+											htmlFor={`scope-${scope}`}
+											className='grid cursor-pointer grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent/50 has-checked:border-primary/40 has-checked:bg-primary/5'
+										>
+											<input
+												id={`scope-${scope}`}
+												type='checkbox'
+												name='scope'
+												value={scope}
+												defaultChecked={scope === 'ingest'}
+												className='row-span-2 mt-0.5 size-4 accent-primary'
+											/>
+											<span className='font-mono text-sm font-medium'>{scope}</span>
+											<span className='text-xs text-muted-foreground'>{SCOPE_DESCRIPTIONS[scope]}</span>
+										</label>
+									))}
+								</fieldset>
+
+								<Button type='submit' disabled={fetcher.state !== 'idle'}>
+									<Plus />
+									Generate key
+								</Button>
 							</fetcher.Form>
 						</CardContent>
 					</Card>
-				</Section>
-
-				<Section title='API Keys'>
-					<div className='flex flex-col gap-2'>
-						{loaderData.keys.length === 0 && <p className='text-sm text-muted-foreground'>No API keys yet.</p>}
-						{loaderData.keys.map((key) => (
-							<Card key={key.id} className='shadow-none'>
-								<CardContent className='flex flex-row items-center justify-between py-3'>
-									<div className='flex flex-col gap-2'>
-										<div className='flex flex-row flex-wrap items-center gap-4'>
-											<code className='text-sm'>{key.prefix}...</code>
-											<Badge variant={key.active ? 'default' : 'secondary'}>{key.active ? 'active' : 'revoked'}</Badge>
-											<div className='flex flex-row gap-1'>
-												{key.scopes.map((scope) => (
-													<Badge key={scope} variant='outline'>
-														{scope}
-													</Badge>
-												))}
-											</div>
-											<span className='text-xs text-muted-foreground'>
-												Created {new Date(key.created_at).toLocaleDateString()}
-											</span>
-										</div>
-										{key.legacy && key.active && (
-											<p className='text-xs text-muted-foreground'>
-												Created before keys had scopes, so it keeps full access. To narrow it, generate a key with only
-												the scopes you need and revoke this one.
-											</p>
-										)}
-									</div>
-									{key.active && (
-										<fetcher.Form method='post'>
-											<input type='hidden' name='_csrf' value={csrfToken} />
-											<input type='hidden' name='intent' value='revoke' />
-											<input type='hidden' name='id' value={key.id} />
-											<Button type='submit' variant='destructive' size='sm'>
-												Revoke
-											</Button>
-										</fetcher.Form>
-									)}
-								</CardContent>
-							</Card>
-						))}
-					</div>
-				</Section>
+				</div>
 			</div>
 		</Page>
 	);

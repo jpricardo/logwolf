@@ -1,7 +1,9 @@
 import { LogwolfEvent } from '@logwolf/client-js';
-import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
+import { isRouteErrorResponse, Link, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
 
 import type { Route } from './+types/root';
+import { Logo } from './components/nav/logo';
+import { Button } from './components/ui/button';
 import { eventContext } from './context';
 import { injectRequest, injectResponse, logwolf } from './lib/logwolf';
 import { DEFAULT_THEME, THEME_STORAGE_KEY } from './store/theme-provider';
@@ -60,7 +62,7 @@ export const links: Route.LinksFunction = () => [
 	},
 	{
 		rel: 'stylesheet',
-		href: 'https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap',
+		href: 'https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..600&display=swap',
 	},
 ];
 
@@ -88,12 +90,14 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-	let message = 'Oops!';
+	let message = 'Something went wrong';
 	let details = 'An unexpected error occurred.';
+	let status: string | undefined;
 	let stack: string | undefined;
 
 	if (isRouteErrorResponse(error)) {
-		message = error.status === 404 ? '404' : 'Error';
+		status = String(error.status);
+		message = error.status === 404 ? 'Page not found' : 'Error';
 		details = error.status === 404 ? 'The requested page could not be found.' : error.statusText || details;
 	} else if (import.meta.env.DEV && error && error instanceof Error) {
 		details = error.message;
@@ -101,14 +105,25 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	}
 
 	return (
-		<main className='pt-16 p-4 container mx-auto'>
-			<h1>{message}</h1>
-			<p>{details}</p>
-			{stack && (
-				<pre className='w-full p-4 overflow-x-auto'>
-					<code>{stack}</code>
-				</pre>
-			)}
+		<main className='relative flex min-h-screen items-center justify-center overflow-hidden p-6'>
+			<div className='bg-grid bg-grid-centered pointer-events-none absolute inset-0' aria-hidden />
+
+			<div className='relative flex w-full max-w-2xl flex-col items-start gap-4'>
+				<Logo />
+				{status && <p className='font-mono text-sm font-medium text-primary'>{status}</p>}
+				<h1 className='text-3xl font-semibold tracking-tight'>{message}</h1>
+				<p className='text-muted-foreground'>{details}</p>
+
+				<Button asChild variant='outline'>
+					<Link to='/'>Back to Logwolf</Link>
+				</Button>
+
+				{stack && (
+					<pre className='mt-4 w-full overflow-x-auto rounded-lg border bg-card p-4 font-mono text-xs'>
+						<code>{stack}</code>
+					</pre>
+				)}
+			</div>
 		</main>
 	);
 }

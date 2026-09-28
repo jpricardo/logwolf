@@ -5,10 +5,9 @@ import { redirect, useFetcher } from 'react-router';
 import { Page } from '~/components/nav/page';
 import { Alert, AlertTitle } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent } from '~/components/ui/card';
+import { Card } from '~/components/ui/card';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
-import { Section } from '~/components/ui/section';
 import { eventContext } from '~/context';
 import { useCsrfToken } from '~/hooks/use-csrf-token';
 import { useProjects } from '~/hooks/use-projects';
@@ -72,61 +71,59 @@ export default function NewProject() {
 	const isFirstProject = projects.length === 0;
 
 	return (
-		<Page title='New Project'>
-			<Section title={isFirstProject ? 'Welcome to Logwolf' : 'New project'}>
-				<Card className='shadow-none max-w-md'>
-					<CardContent>
-						<fetcher.Form method='post'>
-							<FieldGroup>
-								{isFirstProject && (
-									<p className='text-sm text-muted-foreground'>
-										Projects keep events, API keys and retention settings separate. Create one to get started.
-									</p>
+		<Page
+			title={isFirstProject ? 'Welcome to Logwolf' : 'New project'}
+			parents={isFirstProject ? [] : [{ label: 'Projects', to: '/projects' }]}
+			description={
+				isFirstProject
+					? 'Projects keep events, API keys and retention settings separate. Create one to get started.'
+					: 'A fresh space for another application, with its own keys, members and retention.'
+			}
+		>
+			<Card className='max-w-lg gap-0 overflow-hidden py-0'>
+				<fetcher.Form method='post'>
+					<FieldGroup className='p-5'>
+						{fetcher.data?.error && (
+							<Alert variant='destructive'>
+								<AlertTitle>{fetcher.data.error}</AlertTitle>
+							</Alert>
+						)}
+
+						<input type='hidden' name='_csrf' value={csrfToken} />
+
+						<Field>
+							<FieldLabel htmlFor='name'>Name</FieldLabel>
+
+							<Input
+								id='name'
+								name='name'
+								type='text'
+								placeholder='My Application'
+								value={name}
+								onChange={(e) => setName(e.target.value)}
+								required
+							/>
+
+							<FieldDescription>
+								{slug ? (
+									<>
+										Slug: <code className='font-mono text-foreground'>{slug}</code>
+									</>
+								) : (
+									'The slug is generated from the name.'
 								)}
+							</FieldDescription>
+						</Field>
+					</FieldGroup>
 
-								{fetcher.data?.error && (
-									<Alert variant='destructive'>
-										<AlertTitle>{fetcher.data.error}</AlertTitle>
-									</Alert>
-								)}
-
-								<input type='hidden' name='_csrf' value={csrfToken} />
-
-								<Field>
-									<FieldLabel htmlFor='name'>Name</FieldLabel>
-
-									<Input
-										id='name'
-										name='name'
-										type='text'
-										placeholder='My Application'
-										value={name}
-										onChange={(e) => setName(e.target.value)}
-										required
-									/>
-
-									<FieldDescription>
-										{slug ? (
-											<>
-												Slug: <code>{slug}</code>
-											</>
-										) : (
-											'The slug is generated from the name.'
-										)}
-									</FieldDescription>
-								</Field>
-
-								<Field className='flex flex-row justify-end items-end'>
-									<Button type='submit' disabled={!slug || fetcher.state !== 'idle'} className='w-fit'>
-										<Plus />
-										Create project
-									</Button>
-								</Field>
-							</FieldGroup>
-						</fetcher.Form>
-					</CardContent>
-				</Card>
-			</Section>
+					<div className='flex justify-end border-t bg-muted/40 px-5 py-3'>
+						<Button type='submit' size='sm' disabled={!slug || fetcher.state !== 'idle'}>
+							<Plus />
+							Create project
+						</Button>
+					</div>
+				</fetcher.Form>
+			</Card>
 		</Page>
 	);
 }

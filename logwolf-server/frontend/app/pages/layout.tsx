@@ -1,7 +1,7 @@
 import { data, Outlet, redirect } from 'react-router';
 
 import { AppSidebar } from '~/components/nav/app-sidebar';
-import { SidebarProvider } from '~/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '~/components/ui/sidebar';
 import { Toaster } from '~/components/ui/sonner';
 import { eventContext } from '~/context';
 import { createApi } from '~/lib/api';
@@ -58,17 +58,23 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export default function Layout({ matches, loaderData }: Route.ComponentProps) {
-	const { projects, currentProject, csrfToken } = loaderData;
+	const { user, projects, currentProject, csrfToken } = loaderData;
 
 	return (
 		<ThemeProvider>
 			<SidebarProvider>
-				<AppSidebar matches={matches} projects={projects} currentProject={currentProject} csrfToken={csrfToken} />
+				<AppSidebar
+					matches={matches}
+					projects={projects}
+					currentProject={currentProject}
+					csrfToken={csrfToken}
+					user={user}
+				/>
 
-				<main className='flex px-4 py-4 w-full'>
+				<SidebarInset>
 					<Outlet />
 					<Toaster />
-				</main>
+				</SidebarInset>
 			</SidebarProvider>
 		</ThemeProvider>
 	);

@@ -1,48 +1,30 @@
+import { Activity } from 'lucide-react';
 import { use } from 'react';
 
-import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
-import { Skeleton } from '~/components/ui/skeleton';
 import type { Metrics } from '~/lib/api';
 import { locale } from '~/lib/locale';
-import { cn } from '~/lib/utils';
 
-type Props = React.ComponentProps<typeof Card> & { p: Promise<Metrics> };
-export function EventRate({ className = '', p, ...props }: Props) {
+import { StatCard } from './stat-card';
+
+type Props = { className?: string; p: Promise<Metrics> };
+export function EventRate({ className, p }: Props) {
 	const metrics = use(p);
 
 	const minutes = 24 * 60;
 	const perMinute = metrics.events_last_24h / minutes;
 
 	return (
-		<Card className={cn('shadow-none', className)} {...props}>
-			<CardHeader>
-				<CardDescription>Event rate</CardDescription>
-				<CardTitle className='text-3xl'>
-					~{perMinute.toLocaleString(locale, { maximumFractionDigits: 2 })} TPM
-				</CardTitle>
-			</CardHeader>
-
-			<CardFooter>
-				<span className='text-muted-foreground'>In the last 24 hours</span>
-			</CardFooter>
-		</Card>
+		<StatCard
+			className={className}
+			label='Event rate'
+			icon={Activity}
+			value={perMinute.toLocaleString(locale, { maximumFractionDigits: 2 })}
+			unit='/ min'
+			footer={`${metrics.events_last_24h.toLocaleString(locale)} in the last 24 hours`}
+		/>
 	);
 }
 
-type SkeletonProps = React.ComponentProps<typeof Card>;
-export function EventRateSkeleton({ className, ...props }: SkeletonProps) {
-	return (
-		<Card className={cn('shadow-none', className)} {...props}>
-			<CardHeader>
-				<CardDescription>Event rate</CardDescription>
-				<CardTitle>
-					<Skeleton className='h-10 w-full' />
-				</CardTitle>
-			</CardHeader>
-
-			<CardFooter>
-				<Skeleton className='h-4 w-full' />
-			</CardFooter>
-		</Card>
-	);
+export function EventRateSkeleton({ className }: { className?: string }) {
+	return <StatCard className={className} label='Event rate' icon={Activity} footer />;
 }

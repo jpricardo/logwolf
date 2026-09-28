@@ -12,7 +12,7 @@ function Line({ text }: { text: string }) {
 	return (
 		<>
 			{text.slice(0, start)}
-			<span className='text-muted-foreground'>{text.slice(start)}</span>
+			<span className='text-muted-foreground italic'>{text.slice(start)}</span>
 		</>
 	);
 }
@@ -21,7 +21,14 @@ type Props = React.ComponentProps<'div'> & { title: string; code: string };
 export function CodeBlock({ title, code, className, ...props }: Props) {
 	return (
 		<div className={cn('overflow-hidden rounded-lg border bg-card', className)} {...props}>
-			<div className='border-b px-4 py-2 font-mono text-xs text-muted-foreground'>{title}</div>
+			<div className='flex items-center gap-2 border-b bg-muted/40 px-4 py-2 font-mono text-xs text-muted-foreground'>
+				<span className='flex gap-1' aria-hidden>
+					<span className='size-2 rounded-[1px] bg-border' />
+					<span className='size-2 rounded-[1px] bg-border' />
+					<span className='size-2 rounded-[1px] bg-border' />
+				</span>
+				{title}
+			</div>
 			<pre className='overflow-x-auto p-4 font-mono text-[13px] leading-6'>
 				<code>
 					{code.split('\n').map((line, i) => (

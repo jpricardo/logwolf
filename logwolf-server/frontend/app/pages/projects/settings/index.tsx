@@ -155,7 +155,15 @@ export default function ProjectSettings({ loaderData }: Route.ComponentProps) {
 	const isOwner = project.role === 'owner';
 
 	return (
-		<Page title={`${project.name} settings`}>
+		<Page
+			title='Settings'
+			description={
+				<>
+					Settings for <span className='font-medium text-foreground'>{project.name}</span>. You are{' '}
+					{isOwner ? 'an owner' : 'a member'} of this project.
+				</>
+			}
+		>
 			<div className='flex flex-col gap-8'>
 				<GeneralSection project={project} canEdit={isOwner} />
 				<RetentionSection days={days} canLower={isOwner} />

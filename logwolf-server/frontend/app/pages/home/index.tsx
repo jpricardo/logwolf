@@ -1,5 +1,6 @@
 import {
 	Activity,
+	ArrowRight,
 	Clock,
 	Database,
 	FolderKanban,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router';
 
+import { Logo, LogoMark } from '~/components/nav/logo';
 import { ThemePicker } from '~/components/nav/theme-picker';
 import { Button } from '~/components/ui/button';
 import { cn } from '~/lib/utils';
@@ -101,11 +103,10 @@ logwolf.capture(event); // enqueues and returns immediately`;
 
 function SiteHeader() {
 	return (
-		<header className='border-b'>
+		<header className='sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md'>
 			<div className='mx-auto flex h-14 max-w-6xl items-center justify-between px-6'>
-				<Link to='/' className='flex items-center gap-2 font-semibold'>
-					<span className='size-3 rounded-xs bg-primary' aria-hidden />
-					Logwolf
+				<Link to='/'>
+					<Logo />
 				</Link>
 
 				<nav className='flex items-center gap-1'>
@@ -125,6 +126,14 @@ function SiteHeader() {
 	);
 }
 
+function StepNumber({ n }: { n: number }) {
+	return (
+		<span className='flex size-5 items-center justify-center rounded-sm bg-primary font-mono text-[11px] font-semibold text-primary-foreground'>
+			{n}
+		</span>
+	);
+}
+
 function Section({ className, children, ...props }: React.ComponentProps<'section'>) {
 	return (
 		<section className={cn('border-b', className)} {...props}>
@@ -136,8 +145,8 @@ function Section({ className, children, ...props }: React.ComponentProps<'sectio
 function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
 	return (
 		<div className='mb-10 max-w-2xl'>
-			<p className='mb-2 font-mono text-xs tracking-wide text-primary uppercase'>{eyebrow}</p>
-			<h2 className='text-3xl font-semibold tracking-tight'>{title}</h2>
+			<p className='mb-3 font-mono text-xs tracking-wide text-primary uppercase'>{eyebrow}</p>
+			<h2 className='text-3xl font-semibold tracking-tight text-balance sm:text-4xl'>{title}</h2>
 			{children && <p className='mt-3 text-muted-foreground'>{children}</p>}
 		</div>
 	);
@@ -150,13 +159,20 @@ export default function Home() {
 				<SiteHeader />
 
 				<main>
-					<Section>
-						<div className='grid grid-cols-1 items-center gap-12 lg:grid-cols-[1fr_1.1fr]'>
+					<Section className='relative overflow-hidden'>
+						<div className='bg-grid pointer-events-none absolute inset-0' aria-hidden />
+						<div
+							className='pointer-events-none absolute -top-40 left-1/2 h-80 w-[48rem] -translate-x-1/2 bg-[radial-gradient(closest-side,var(--color-primary),transparent)] opacity-15 dark:opacity-20'
+							aria-hidden
+						/>
+
+						<div className='relative grid grid-cols-1 items-center gap-12 lg:grid-cols-[1fr_1.1fr]'>
 							<div>
-								<p className='mb-4 font-mono text-xs tracking-wide text-muted-foreground uppercase'>
+								<p className='mb-6 inline-flex items-center gap-2 rounded-sm border bg-card px-2.5 py-1 font-mono text-xs tracking-wide text-muted-foreground uppercase'>
+									<span className='size-1.5 rounded-[1px] bg-primary' aria-hidden />
 									Self-hosted · Open source · GPL v3
 								</p>
-								<h1 className='text-4xl font-semibold tracking-tight sm:text-5xl'>
+								<h1 className='text-4xl font-semibold tracking-tight text-balance sm:text-6xl'>
 									Your logs stay on <br className='hidden sm:block' />
 									<span className='text-primary'>your server.</span>
 								</h1>
@@ -174,12 +190,13 @@ export default function Home() {
 									</Button>
 								</div>
 
-								<p className='mt-6 font-mono text-sm text-muted-foreground'>
-									<span className='select-none'>$ </span>npm install @logwolf/client-js
+								<p className='mt-8 inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 font-mono text-[13px] text-muted-foreground'>
+									<span className='text-primary select-none'>$</span>
+									<span className='text-foreground'>npm install @logwolf/client-js</span>
 								</p>
 							</div>
 
-							<EventFeed />
+							<EventFeed className='shadow-xl shadow-black/5 dark:shadow-black/40' />
 						</div>
 					</Section>
 
@@ -190,8 +207,10 @@ export default function Home() {
 
 						<div className='grid grid-cols-1 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 lg:grid-cols-4'>
 							{features.map((f) => (
-								<div key={f.title} className='bg-background p-6'>
-									<f.icon className='mb-4 size-5 text-primary' />
+								<div key={f.title} className='bg-card p-6 transition-colors hover:bg-accent/40'>
+									<span className='mb-4 flex size-9 items-center justify-center rounded-md border border-primary/20 bg-primary/10'>
+										<f.icon className='size-4.5 text-primary' />
+									</span>
 									<h3 className='font-medium'>{f.title}</h3>
 									<p className='mt-2 text-sm text-muted-foreground'>{f.body}</p>
 								</div>
@@ -215,7 +234,10 @@ export default function Home() {
 
 						<div className='grid grid-cols-1 gap-6 lg:grid-cols-2'>
 							<div className='flex flex-col gap-3'>
-								<h3 className='text-sm font-medium'>1. Run the server</h3>
+								<h3 className='flex items-center gap-2 text-sm font-medium'>
+									<StepNumber n={1} />
+									Run the server
+								</h3>
 								<CodeBlock title='terminal' code={serverCode} />
 								<p className='text-sm text-muted-foreground'>
 									Caddy terminates TLS; MongoDB and RabbitMQ come with the compose file. See the{' '}
@@ -227,20 +249,28 @@ export default function Home() {
 							</div>
 
 							<div className='flex flex-col gap-3'>
-								<h3 className='text-sm font-medium'>2. Instrument your app</h3>
+								<h3 className='flex items-center gap-2 text-sm font-medium'>
+									<StepNumber n={2} />
+									Instrument your app
+								</h3>
 								<CodeBlock title='app.ts' code={sdkCode} />
 							</div>
 						</div>
 					</Section>
 
 					<Section>
-						<div className='flex flex-col items-start justify-between gap-6 rounded-lg border bg-card p-8 md:flex-row md:items-center'>
-							<div>
+						<div className='relative flex flex-col items-start justify-between gap-6 overflow-hidden rounded-lg border bg-card p-8 md:flex-row md:items-center md:p-10'>
+							<div className='bg-grid pointer-events-none absolute inset-0 opacity-60' aria-hidden />
+							<div className='absolute inset-y-0 left-0 w-1 bg-primary' aria-hidden />
+							<div className='relative'>
 								<h2 className='text-2xl font-semibold tracking-tight'>Already running Logwolf?</h2>
 								<p className='mt-2 text-muted-foreground'>Sign in with GitHub to open this instance's dashboard.</p>
 							</div>
-							<Button asChild size='lg'>
-								<Link to='/dashboard'>Open dashboard</Link>
+							<Button asChild size='lg' className='relative'>
+								<Link to='/dashboard'>
+									Open dashboard
+									<ArrowRight />
+								</Link>
 							</Button>
 						</div>
 					</Section>
@@ -249,7 +279,7 @@ export default function Home() {
 				<footer>
 					<div className='mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between'>
 						<span className='flex items-center gap-2'>
-							<span className='size-2.5 rounded-xs bg-primary' aria-hidden />
+							<LogoMark className='size-4' />
 							Logwolf · GNU GPL v3
 						</span>
 						<nav className='flex gap-5'>
